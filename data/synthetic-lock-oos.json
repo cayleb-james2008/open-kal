@@ -1,0 +1,140 @@
+{
+ "synthetic_lock": {
+  "ts": "2026-11-17T22:25:47.004215+00:00",
+  "family": "synthetic_lock",
+  "config": {
+   "name": "maker_locknone_tpnone",
+   "entry_style": "maker",
+   "lock_c": null,
+   "tp_c": null
+  },
+  "rescore": false,
+  "oos": {
+   "trades": 14,
+   "wins": 8,
+   "losses": 6,
+   "win_rate": 0.5714,
+   "net": 4.0,
+   "pf": 1.0232558139534884,
+   "avg_pnl": 0.2857142857142857,
+   "max_entry_cost": 0.58,
+   "fees_entry": 0.0,
+   "fees_exit": 0.0,
+   "crossed_fills": 0,
+   "requotes": 0,
+   "profitable_lanes": 1,
+   "net_ex_best_lane": -12.0,
+   "net_ex_best_window": -40.5,
+   "windows": 13,
+   "by_lane": {
+    "KXBTC15M": {
+     "trades": 10,
+     "wins": 6,
+     "net": 16.0
+    },
+    "KXXRP15M": {
+     "trades": 4,
+     "wins": 2,
+     "net": -12.0
+    }
+   },
+   "by_reason": {
+    "settle": {
+     "trades": 14,
+     "net": 4.0
+    }
+   },
+   "skips": {
+    "cost_band": 23,
+    "unfilled": 8
+   }
+  },
+  "payoff_ece": 0.3225,
+  "gate": {
+   "oos_net_positive": true,
+   "oos_pf_at_least_1_25": false,
+   "oos_payoff_ece_at_most_0_08": false,
+   "oos_trades_at_least_25": false,
+   "two_profitable_lanes": false,
+   "not_carried_by_one_lane": false,
+   "not_carried_by_one_window": false,
+   "zero_crossed_fills": true,
+   "max_entry_cost_at_most_0_62": true,
+   "pass": false
+  },
+  "cache": "/home/cayleb/open-kal-rnd/data/frozen-cache"
+ },
+ "synthetic_lock_locked_only": {
+  "ts": "2026-11-17T22:25:47.019417+00:00",
+  "family": "synthetic_lock_locked_only",
+  "config": {
+   "name": "taker_lock0.08_tpnone",
+   "entry_style": "taker",
+   "lock_c": "0.08",
+   "tp_c": null
+  },
+  "rescore": false,
+  "oos": {
+   "trades": 14,
+   "wins": 11,
+   "losses": 3,
+   "win_rate": 0.7857,
+   "net": -53.08,
+   "pf": 0.39399474825893366,
+   "avg_pnl": -3.7914285714285714,
+   "max_entry_cost": 0.58,
+   "fees_entry": 12.08,
+   "fees_exit": 0.0,
+   "crossed_fills": 0,
+   "requotes": 0,
+   "profitable_lanes": 0,
+   "net_ex_best_lane": -39.9,
+   "net_ex_best_window": -56.22,
+   "windows": 14,
+   "by_lane": {
+    "KXBTC15M": {
+     "trades": 5,
+     "wins": 4,
+     "net": -16.82
+    },
+    "KXETH15M": {
+     "trades": 3,
+     "wins": 2,
+     "net": -23.08
+    },
+    "KXXRP15M": {
+     "trades": 6,
+     "wins": 5,
+     "net": -13.18
+    }
+   },
+   "by_reason": {
+    "lock": {
+     "trades": 11,
+     "net": 34.51
+    },
+    "settle": {
+     "trades": 3,
+     "net": -87.59
+    }
+   },
+   "skips": {
+    "cost_band": 31
+   }
+  },
+  "payoff_ece": 0.2101,
+  "gate": {
+   "oos_net_positive": false,
+   "oos_pf_at_least_1_25": false,
+   "oos_payoff_ece_at_most_0_08": false,
+   "oos_trades_at_least_25": false,
+   "two_profitable_lanes": false,
+   "not_carried_by_one_lane": false,
+   "not_carried_by_one_window": false,
+   "zero_crossed_fills": true,
+   "max_entry_cost_at_most_0_62": true,
+   "pass": false
+  },
+  "cache": "/home/cayleb/open-kal-rnd/data/frozen-cache"
+ }
+}
