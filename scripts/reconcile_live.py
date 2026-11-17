@@ -166,20 +166,33 @@ async def main() -> int:
         settled[s.get("ticker") or "?"] = settlement_cash(s)
 
     ledger = load_ledger(db, args.since)
-    tickers = sorted(set(venue_fill_cash) | set(settled) | set(ledger)
-                     | {p["ticker"] for p in pos_rows})
+    # A ticker that is still held has a cost basis at the venue and no closed
+    # trade in the ledger, so comparing the two books an open position as a
+    # delta. That is what produced `delta 127.03` at 16:01 while a 170-lot NO
+    # was legitimately live, and it tripped the $0.05 breaker mid-trade. Open
+    # tickers are booked as pending and kept out of `delta`; their exposure is
+    # reported separately so the supervisor can still see it.
+    held = {p["ticker"] for p in pos_rows}
+    tickers = sorted(set(venue_fill_cash) | set(settled) | set(ledger) | held)
     rows = []
     total_venue = total_ledger = Decimal("0")
+    pending_venue = pending_ledger = Decimal("0")
     for ticker in tickers:
         local = sum((dec(t["pnl"]) for t in ledger.get(ticker, [])), Decimal("0"))
         v = settled[ticker] if ticker in settled else venue_fill_cash.get(ticker, Decimal("0"))
-        total_venue += v
-        total_ledger += local
+        is_open = ticker in held and ticker not in settled
+        if is_open:
+            pending_venue += v
+            pending_ledger += local
+        else:
+            total_venue += v
+            total_ledger += local
         rows.append({
             "ticker": ticker,
             "venue_net": cents(v),
             "ledger_net": cents(local),
             "delta": cents(v - local),
+            "open": is_open,
             "source": "settlement" if ticker in settled else "fills",
             "venue_prints": venue_prints.get(ticker, 0),
             "venue_fees": cents(venue_fees.get(ticker, Decimal("0"))),
@@ -202,6 +215,11 @@ async def main() -> int:
         "venue_net": cents(total_venue),
         "ledger_net": cents(total_ledger),
         "delta": cents(total_venue - total_ledger),
+        "open_cost_basis": cents(sum((dec(p.get("market_exposure_dollars")) or Decimal("0")
+                                      for p in pos_rows), Decimal("0"))),
+        "pending_venue_net": cents(pending_venue),
+        "pending_ledger_net": cents(pending_ledger),
+        "delta_scope": "closed and settled tickers only; open positions are pending",
         "venue_fills": len(fills),
         "venue_settlements": len(settlements),
         "tickers": rows,

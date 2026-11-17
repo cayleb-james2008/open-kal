@@ -13,8 +13,25 @@ from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 from typing import Any
 
 from .broker import VenueOrder
+from .config import MAX_CONTRACTS, MAX_TRADE_RISK_USD
 from .execution import Executor, RestingExit, RestingOrder
 from .strategy import Decision, Position, Quote, contracts_for
+
+
+def sized_contracts(bankroll: Decimal, price: Decimal, params: Any) -> int:
+    """Contracts one entry may hold: the slot, the study and the risk cap.
+
+    `contracts_for` spends the whole slot, which is how a 24c NO became 170
+    contracts ($40.80 of premium) against a study scored at 50. A binary that
+    settles to zero loses the premium, not the 7c stop distance, so the
+    worst-case loss has to be bounded here rather than at the exit.
+    """
+    if price <= 0:
+        return 0
+    by_evidence = int(getattr(params, "max_contracts", MAX_CONTRACTS) or MAX_CONTRACTS)
+    risk_cap = getattr(params, "max_trade_risk_usd", MAX_TRADE_RISK_USD)
+    by_risk = int(Decimal(str(risk_cap)) / price)
+    return max(0, min(contracts_for(bankroll, price), by_evidence, by_risk))
 
 
 def _dec(value: Any) -> Decimal:
@@ -83,7 +100,7 @@ class LiveExecutor(Executor):
             if not (slot.params.f2_min_price <= price <= slot.params.f2_max_price):
                 self.note = f"F2 entry refused: pinned cost {price} outside the band"
                 return
-        qty = contracts_for(slot.bankroll, price)
+        qty = sized_contracts(slot.bankroll, price, slot.params)
         if qty <= 0:
             return
         reserved = price * qty

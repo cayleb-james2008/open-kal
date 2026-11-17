@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from openkal.engine import Engine  # noqa: E402
 from openkal.execution import Executor, RestingExit, RestingOrder  # noqa: E402
-from openkal.live_exec import LiveExecutor  # noqa: E402
+from openkal.live_exec import LiveExecutor, sized_contracts  # noqa: E402
 from openkal.strategy import Decision, Params, Position, Quote, decide  # noqa: E402
 
 TICKER = "KXSOL15M-26NOV161300-00"
@@ -648,6 +648,25 @@ def control_paper_f2() -> None:
           f"price={fill.get('price')} fee={fill.get('fee')} exit={slot.exit}")
 
 
+def control_sizing() -> None:
+    """The live lane may not buy more than the study scored, or risk more than $15.
+
+    The 16:00 trade that lost $42.97: a 24c NO on a $41.11 lane sized 170
+    contracts ($40.80 of premium). `forward_oos.py` scored 50; the stop cannot
+    fill at a 0.00 bid, so the premium, not the 7c stop, is the real risk.
+    """
+    params = Params()
+    qty = sized_contracts(Decimal("41.11"), Decimal("0.24"), params)
+    premium = Decimal("0.24") * qty
+    check("sizing: a 24c fill on a $41.11 lane is capped at 50 contracts",
+          qty <= 50, f"qty={qty} (the live fill was 170)")
+    check("sizing: worst-case premium on that fill stays at or under $15",
+          premium <= Decimal("15.00"), f"premium={premium} qty={qty}")
+    mid = sized_contracts(Decimal("41.11"), Decimal("0.50"), params)
+    check("sizing: a 50c entry is bounded by the $15 risk cap, not the slot",
+          Decimal("0.50") * mid <= Decimal("15.00"), f"qty={mid} premium={Decimal('0.50') * mid}")
+
+
 def main() -> int:
     tp = Decision("exit_tp", "take-profit reached", side="NO", price=Decimal("0.88"))
 
@@ -786,6 +805,7 @@ def main() -> int:
     control_fail_safe()
     control_f2_execution()
     control_paper_f2()
+    control_sizing()
 
     width = max(len(n) for n, _, _ in RESULTS)
     failed = 0

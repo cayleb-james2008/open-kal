@@ -10,6 +10,8 @@ from dataclasses import asdict, dataclass, replace
 from decimal import ROUND_DOWN, Decimal
 from typing import Any
 
+from .config import MAX_CONTRACTS, MAX_TRADE_RISK_USD
+
 
 # EVOLVE-BLOCK-START
 # Underlying spot-to-strike distance, in index points, below which a `z_obi_flow` entry
@@ -26,6 +28,11 @@ class Params:
     edge_hurdle: Decimal = Decimal("0.015")      # minimum modeled edge after fees, per contract
     min_price: Decimal = Decimal("0.20")         # never buy the longshot tail
     max_price: Decimal = Decimal("0.84")         # generic entry band (not the lock-in band)
+    # Sizing ceilings, not strategy parameters: the live executor may not take a
+    # larger position than `scripts/forward_oos.py` scored, and no single binary
+    # may risk more than $15 of premium (the stop cannot fill at a 0.00 bid).
+    max_contracts: int = MAX_CONTRACTS
+    max_trade_risk_usd: Decimal = MAX_TRADE_RISK_USD
     max_spread: Decimal = Decimal("0.05")
     # Both theses enter by crossing (IOC taker) and leave through a resting maker
     # take-profit, so the round trip pays the taker fee once, at entry, on purpose.

@@ -13,6 +13,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
+# Live sizing ceiling, set to the evidence. `scripts/forward_oos.py` scored the
+# frozen rule with MAX_QTY = 50 contracts per trade, and the live lane must not
+# buy more than the study covered: a 24c NO became 170 contracts ($40.80 of
+# premium) against a 50-contract study, and a binary that settles to zero loses
+# the whole premium, not the 7c stop distance.
+MAX_CONTRACTS = 50
+MAX_TRADE_RISK_USD = Decimal("15.00")
+
 
 def load_env(path: Path | None = None) -> dict[str, str]:
     """Read KEY=value lines. Values never leave the process; nothing is logged here."""

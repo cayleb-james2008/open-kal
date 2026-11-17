@@ -43,6 +43,7 @@ sys.path.insert(0, str(ROOT))
 from scripts import day_supervisor as DS  # noqa: E402
 
 SINCE = 1794909600.0
+DEFERRED = object()   # evaluate_slot: rebuild held back, the slot is not spent
 LOG = ROOT / "data" / "daemon-247.log"
 STATE = ROOT / "data" / "daemon-247-state.json"
 FORWARD = ROOT / "data" / "forward-oos.json"
@@ -238,6 +239,12 @@ def evaluate_slot(slot: datetime, state: dict) -> dict | None:
     stale artifact spends the slot without a result.
     """
     iso = slot.isoformat()
+    if live_position_open(state):
+        # A heavy SQLite scan while a live binary is open is the one thing this
+        # check must never do. Defer without spending the slot or deleting the
+        # last artifact; the next loop retries once the lane is flat.
+        log(f"forward check {iso}: deferred, live position open")
+        return DEFERRED
     if (state.get("slot_attempt") or {}).get("slot") == iso:
         log(f"slot {iso} already attempted; not repeating")
         return None
@@ -249,7 +256,8 @@ def evaluate_slot(slot: datetime, state: dict) -> dict | None:
     except FileNotFoundError:
         pass
     log(f"forward check {iso}: rebuilding the sub-second cache")
-    code, out = DS.run(["bash", str(ROOT / "scripts" / "rebuild_cache.sh")], timeout=7200)
+    code, out = DS.run(["nice", "-n", "19", "ionice", "-c", "3", "bash",
+                        str(ROOT / "scripts" / "rebuild_cache.sh")], timeout=7200)
     last = out.strip().splitlines()[-1] if out.strip() else ""
     log(f"rebuild rc={code} (last line: {last[:200]})")
     if code != 0:
@@ -278,7 +286,12 @@ def evaluate_slot(slot: datetime, state: dict) -> dict | None:
     return report
 
 
-def promote(fwd: dict, state: dict) -> bool:
+def operator_approved() -> bool:
+    """The second key in the arming lock: the verdict must say so in writing."""
+    return (DS.read_json(DS.VERDICT) or {}).get("operator_arm_approved") is True
+
+
+def promote(fwd: dict, state: dict, allow_auto_arm: bool = False) -> bool:
     gate = DS.artifact_gate(fwd)
     trades = int((fwd.get("trades") or {}).get("trades") or 0)
     log(f"forward: {trades} trades, gate pass={gate['pass']}, reasons={gate['reasons']}")
@@ -293,10 +306,25 @@ def promote(fwd: dict, state: dict) -> bool:
         save(state)
         write_report(state, "gate refused at the hourly check")
         return False
+    # Operator arming lock. Scoring is always allowed; putting real money at risk
+    # is not. A passing gate only becomes a candidate the operator can approve.
+    if not (allow_auto_arm and operator_approved()):
+        why = ("--allow-auto-arm is not set" if not allow_auto_arm
+               else "operator_arm_approved is not true in data/strategy-verdict.json")
+        state["decision"] = "candidate_ready_for_operator_approval"
+        state["next_action"] = (f"gate passed on {trades} trades; arming blocked: {why}")
+        state["events"].append({"ts": now().isoformat(timespec="seconds"),
+                                "event": "candidate_ready_for_operator_approval",
+                                "trades": trades, "blocked_by": why})
+        state["events"] = state["events"][-200:]
+        save(state)
+        log(f"candidate_ready_for_operator_approval: {trades} trades, gate pass; {why}")
+        write_report(state, "candidate ready; no arm (operator lock)")
+        return False
     state["decision"] = "promoting"
     save(state)
     log("gate passed; starting the audited promotion chain")
-    result = DS.attempt_promotion(fwd, state)
+    result = DS.attempt_promotion(fwd, state, allow_arm=True)
     state["promotion"] = result
     if not result.get("ok"):
         state["decision"] = "waiting"
@@ -586,7 +614,10 @@ def run(args) -> int:
     log(f"daemon up: since {int(SINCE)} floor ${floor_base} drawdown {drawdown} "
         f"delta cap ${delta_cap}")
 
-    if args.promote_now and not (DS.engine_state() or {}).get("live_armed"):
+    if args.promote_now and not args.allow_auto_arm:
+        log("promote-now ignored: the operator arming lock is active "
+            "(--allow-auto-arm is not set)")
+    elif args.promote_now and not (DS.engine_state() or {}).get("live_armed"):
         fwd = DS.read_json(FORWARD)
         age = (time.time() - FORWARD.stat().st_mtime) if FORWARD.exists() else 1e9
         gate = DS.artifact_gate(fwd) if fwd else {"pass": False, "reasons": ["no artifact"]}
@@ -595,7 +626,7 @@ def run(args) -> int:
             state["last_eval_slot"] = now().replace(
                 minute=0, second=0, microsecond=0).isoformat()
             save(state)
-            promote(fwd, state)
+            promote(fwd, state, args.allow_auto_arm)
         else:
             log(f"promote-now: no fresh passing artifact (age {age:.0f}s, "
                 f"reasons={gate.get('reasons')})")
@@ -639,6 +670,9 @@ def run(args) -> int:
                 due = (now() - slot).total_seconds() >= 5
                 if due and state.get("last_eval_slot") != slot.isoformat():
                     fwd = evaluate_slot(slot, state)
+                    if fwd is DEFERRED:
+                        time.sleep(min(args.interval, 30))
+                        continue
                     if fwd is None:
                         state["decision"] = "waiting"
                         state["next_action"] = f"hourly check {slot.isoformat()} produced no artifact"
@@ -652,7 +686,7 @@ def run(args) -> int:
                             log("artifact predates the breaker; refusing to re-arm on it")
                             state["decision"] = "waiting"
                             save(state)
-                        elif promote(fwd, state):
+                        elif promote(fwd, state, args.allow_auto_arm):
                             pass
                 time.sleep(min(args.interval, 30))
                 continue
@@ -741,6 +775,9 @@ def main() -> int:
     ap.add_argument("--drawdown", default="0.20")
     ap.add_argument("--cache-hours", type=float, default=6.0)
     ap.add_argument("--interval", type=float, default=30.0)
+    ap.add_argument("--allow-auto-arm", action="store_true", default=False,
+                    help="permit the hourly gate to arm live; still requires "
+                         "\"operator_arm_approved\": true in the verdict")
     ap.add_argument("--promote-now", action="store_true",
                     help="handover: run the audited chain now on a fresh passing artifact")
     args = ap.parse_args()

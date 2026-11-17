@@ -461,7 +461,7 @@ def artifact_gate(fwd: dict) -> dict:
                                fwd.get("lanes_profitable"))
 
 
-def attempt_promotion(fwd: dict, state: dict) -> dict:
+def attempt_promotion(fwd: dict, state: dict, allow_arm: bool = True) -> dict:
     """Verdict -> gate re-check -> tests -> dashboard -> flat -> canary -> arm.
 
     Any failing step demotes the verdict again and returns before the next step:
@@ -470,6 +470,14 @@ def attempt_promotion(fwd: dict, state: dict) -> dict:
     restart is recorded instead of executed; the ordering, the checks and the
     failure handling are the same code the real run uses.
     """
+    if not allow_arm:
+        # The operator arming lock, enforced at the only function that writes
+        # `promoted: true`: no flag, no approval, no promotion chain.
+        log("promotion refused: operator arming lock is active")
+        state["decision"] = "candidate_ready_for_operator_approval"
+        save_state(state)
+        return {"ok": False, "steps": [], "reason": "operator approval required"}
+
     steps: list[dict] = []
 
     def step(name: str, ok: bool, detail: str) -> bool:
