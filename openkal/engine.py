@@ -840,6 +840,12 @@ class Engine:
         def record(verdict: Any) -> None:
             slot.gate = verdict_payload(verdict)
             slot.gate_ts = time.time()
+            # Persist the shadow verdict on the trigger it judged: an offline ablation
+            # needs the opinion the live lane actually saw, not a re-run with hindsight.
+            try:
+                self.store.set_tick_gate(series=slot.cfg.series, gate=json.dumps(slot.gate))
+            except Exception:  # noqa: BLE001 - a logging failure is not a trading event
+                pass
 
         if self.gate.mode == "shadow":
             # Fine-tuned model not ready: log Laya's opinion, let the kernel decide.
@@ -1048,6 +1054,7 @@ class Engine:
             secs_left=seconds_left, spread=float(quote.spread),
             signal=slot.signal, can_open=can_open, stake=str(slot.bankroll),
             spot_age=spot_age, hurdle=str(hurdle), impulse_bps=impulse_bps,
+            gate=json.dumps(slot.gate) if slot.gate else "",
         )
         slot.tape.append({"ts": now, "p": slot.p_up, "mid": float(quote.mid),
                           "edge": float(decision.edge), "spot": slot.spot})

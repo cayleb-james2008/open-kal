@@ -69,17 +69,22 @@ _GIT_LOCK = threading.Lock()
 
 def _forbidden(path: str) -> bool:
     p = path.replace("\\", "/")
-    if p == ".env" or p.startswith("keys/") or "/keys/" in p:
+    # Reject on any path *component*, not just a whole-path prefix: a secrets file
+    # nested under an allowlisted directory (scripts/.env) and a root-level virtualenv
+    # (".venv/bin/python") both slipped through the prefix checks. The allowlist keeps
+    # them out of staging today, so this is the defence-in-depth layer, not the only one.
+    parts = {part for part in p.split("/") if part}
+    if parts & {"keys", ".env", ".venv", ".git", ".freebuff", ".remember"}:
+        return True
+    if p.startswith("keys/") or "/keys/" in p:
         return True
     if p.endswith((".pem", ".key", ".db", ".sqlite", ".sqlite3", ".npz", ".pyc")):
         return True
     if ".db-" in p or "/node_modules/" in p or p.startswith("node_modules/"):
         return True
-    if "/.shots/" in p or "/dist/" in p or "/.venv/" in p or "/__pycache__/" in p:
+    if "/.shots/" in p or "/dist/" in p or "/__pycache__/" in p:
         return True
     if p.startswith("data/") and p != "data/evening-report.md":
-        return True
-    if p.startswith((".freebuff/", ".remember/", ".git/")):
         return True
     return False
 

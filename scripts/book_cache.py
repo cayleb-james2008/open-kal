@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import gc
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -83,8 +84,14 @@ def build(only: list[str] | None = None) -> None:
                 tr_tid.append(np.full(len(trades), i, dtype=np.int16))
             if i % 10 == 0:
                 print(f"{lane}: {i}/{len(names)} tickers", flush=True)
+        # Write beside the live file and rename into place. A save that is killed
+        # halfway (a supervisor restart, a full disk) used to leave a truncated
+        # book_<lane>.npz that the existence check then skipped forever, and the
+        # rebuild that moved the old file aside first left no tape at all.
+        final = CACHE / f"book_{lane}.npz"
+        tmp = CACHE / f"book_{lane}.tmp.npz"
         np.savez_compressed(
-            CACHE / f"book_{lane}.npz",
+            tmp,
             tickers=np.array(names),
             ts=np.concatenate(rows_ts), bid=np.concatenate(rows_bid),
             ask=np.concatenate(rows_ask), tid=np.concatenate(rows_tid),
@@ -92,6 +99,7 @@ def build(only: list[str] | None = None) -> None:
             trade_sz=np.concatenate(tr_sz), trade_ty=np.concatenate(tr_ty),
             trade_tid=np.concatenate(tr_tid),
         )
+        os.replace(tmp, final)
         print(f"{lane}: {len(names)} tickers, {sum(len(x) for x in rows_ts):,} book rows, "
               f"{sum(len(x) for x in tr_ts):,} prints", flush=True)
         del rows_ts, rows_bid, rows_ask, rows_tid, tr_ts, tr_px, tr_sz, tr_ty, tr_tid

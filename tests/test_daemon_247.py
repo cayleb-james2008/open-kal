@@ -136,10 +136,9 @@ class GitSyncTests(unittest.TestCase):
         D._git_sync_work("test-data")
         self.assertEqual(self._head(), before)
 
-    @unittest.expectedFailure
     def test_nested_dotenv_is_refused(self) -> None:
-        # KNOWN GAP (reported, not fixed here): _forbidden matches only the root
-        # ".env". A secrets file nested under an allowlisted path is pushed.
+        # _forbidden matches path *components*, so a secrets file nested under an
+        # allowlisted directory (scripts/.env) is refused, not just a root one.
         self._write("scripts/.env", "KALSHI=redacted\n")
         before = self._head()
         D._git_sync_work("test-env-nested")
@@ -171,11 +170,9 @@ class ForbiddenPathTests(unittest.TestCase):
 
 
 class ForbiddenVenvTests(unittest.TestCase):
-    @unittest.expectedFailure
     def test_root_venv_is_forbidden_in_the_check(self) -> None:
-        # KNOWN GAP (reported, not fixed here): _forbidden matches "/.venv/" only
-        # mid-path, so a root-level ".venv/..." passes the check. The allowlist keeps
-        # .venv out of staging today, so this is defence in depth, not a live leak.
+        # A root-level ".venv" is a path component like any other, so the check
+        # catches it even though the allowlist already keeps it out of staging.
         self.assertTrue(D._forbidden(".venv/bin/python"))
 
 

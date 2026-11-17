@@ -17,7 +17,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS ticks (
     ts REAL NOT NULL, series TEXT NOT NULL, ticker TEXT NOT NULL,
     yes_bid TEXT, yes_ask TEXT, last TEXT, spot REAL, p_model REAL,
-    edge REAL, secs_left REAL, spread REAL, signal TEXT
+    edge REAL, secs_left REAL, spread REAL, signal TEXT, gate TEXT
 );
 CREATE INDEX IF NOT EXISTS ticks_series_ts ON ticks(series, ts);
 
@@ -103,7 +103,11 @@ class Store:
                            # them to re-derive the same decision instead of guessing at
                            # freshness and the calibration-adjusted hurdle.
                            ("spot_age", "REAL"), ("hurdle", "TEXT"),
-                           ("impulse_bps", "REAL")):
+                           ("impulse_bps", "REAL"),
+                           # Laya's shadow verdict for this trigger, as JSON. Without it
+                           # an ablation can only re-run the model with hindsight; with
+                           # it, the verdict the live lane actually saw is on the tape.
+                           ("gate", "TEXT")):
             if name not in cols:
                 self._db.execute(f"ALTER TABLE ticks ADD COLUMN {name} {decl}")
         self._db.commit()
@@ -127,13 +131,27 @@ class Store:
              last: str, spot: float, p_model: float, edge: float, secs_left: float,
              spread: float, signal: str = "", can_open: bool = False,
              stake: str = "", spot_age: float = 0.0, hurdle: str = "",
-             impulse_bps: float = 0.0) -> None:
+             impulse_bps: float = 0.0, gate: str = "") -> None:
         self._exec(
             "INSERT INTO ticks(ts,series,ticker,yes_bid,yes_ask,last,spot,p_model,edge,secs_left,"
-            "spread,signal,can_open,stake,spot_age,hurdle,impulse_bps)"
-            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "spread,signal,can_open,stake,spot_age,hurdle,impulse_bps,gate)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (ts, series, ticker, yes_bid, yes_ask, last, spot, p_model, edge, secs_left, spread,
-             signal, 1 if can_open else 0, stake, spot_age, hurdle, impulse_bps),
+             signal, 1 if can_open else 0, stake, spot_age, hurdle, impulse_bps, gate),
+        )
+
+    def set_tick_gate(self, *, series: str, gate: str) -> None:
+        """Attach a gate verdict to the newest tick for this lane.
+
+        A shadow review is fire-and-forget, so its answer lands just after the tick
+        row it judged was written. Updating the newest row keeps the verdict on the
+        trigger it belongs to rather than the next one, which is the difference
+        between an honest re-score and one that sees the future.
+        """
+        self._exec(
+            "UPDATE ticks SET gate=? WHERE rowid=("
+            "SELECT rowid FROM ticks WHERE series=? ORDER BY ts DESC LIMIT 1)",
+            (gate, series),
         )
 
     def printed_qty(self, *, ticker: str, t0: float, t1: float, price: Decimal,
