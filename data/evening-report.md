@@ -1,12 +1,12 @@
 # Open-Kal 24/7 report
 
-Updated 2026-11-17T16:45:11-05:00 by `scripts/daemon_247.py`.
+Updated 2026-11-17T17:08:02-05:00 by `scripts/daemon_247.py`.
 
 ## State
 
-- Decision: **waiting**
+- Decision: **candidate_ready_for_operator_approval**
 - Engine: mode=paper live_armed=False strategy=F2_taker_1s
-- Equity: 121.46 (start 163.9971, peak 164.43, realized 0.43)
+- Equity: 121.46 (start 163.9971, peak 121.46, realized -42.54)
 - Venue balance: 121.4563
 - Trailing floor: 131.54 (peak 164.4269)
 - Reconcile delta: 127.03 (cap $0.05)
@@ -32,8 +32,8 @@ Updated 2026-11-17T16:45:11-05:00 by `scripts/daemon_247.py`.
 ## Afternoon audit · 15:08–18:00 EST (live, updates each window)
 
 - Baseline equity: $164.00 (15:01 check; audit starts 15:08)
-- Equity at 2026-11-17T16:45:11-05:00: $121.46 → P&L $-42.54
-- Account realized: $0.43 · equity per lane (equity/4): $30.36
+- Equity at 2026-11-17T17:08:02-05:00: $121.46 → P&L $-42.54
+- Account realized: $-42.54 · equity per lane (equity/4): $30.36
 - Fills since 15:08: 0 (0 entries, 0 exits, exit P&L $+0.00)
 - Venue balance: $121.4563 · floor: $131.54 · reconcile: $127.03 · open lanes: 0
 
@@ -57,3 +57,5 @@ Updated 2026-11-17T16:45:11-05:00 by `scripts/daemon_247.py`.
 - 2026-11-17T16:01:05-05:00 **breaker**: venue balance 121.4563 < trailing floor 131.54; reconcile delta 127.03 > cap 0.05
 - 2026-11-17T16:45:10-05:00 **promotion stopped**: unit tests: controls (prod)
 - 2026-11-17T16:45:11-05:00 **report**: promotion stopped before arming
+- 2026-11-17T17:08:02-05:00 **candidate_ready_for_operator_approval**: 
+- 2026-11-17T17:08:02-05:00 **report**: candidate ready; no arm (operator lock)
