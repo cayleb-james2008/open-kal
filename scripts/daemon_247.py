@@ -29,6 +29,7 @@ import argparse
 import json
 import signal
 import sys
+import threading
 import time
 import traceback
 from datetime import datetime
@@ -56,6 +57,89 @@ DS.REPORT = REPORT
 DS.NEXT = NEXT
 
 STOP = {"flag": False}
+
+# Paths the daemon may commit. Everything else stays local: databases, caches,
+# keys and build output must never enter the public repository.
+GIT_PATHS = [".gitignore", "README.md", "ALIVE.md", "requirements.txt", "run.py",
+             "NEXT.json", "data/evening-report.md", "openkal", "scripts", "tests",
+             "dashboard", "docs"]
+_GIT_LOCK = threading.Lock()
+
+
+def _forbidden(path: str) -> bool:
+    p = path.replace("\\", "/")
+    if p == ".env" or p.startswith("keys/") or "/keys/" in p:
+        return True
+    if p.endswith((".pem", ".key", ".db", ".sqlite", ".sqlite3", ".npz", ".pyc")):
+        return True
+    if ".db-" in p or "/node_modules/" in p or p.startswith("node_modules/"):
+        return True
+    if "/.shots/" in p or "/dist/" in p or "/.venv/" in p or "/__pycache__/" in p:
+        return True
+    if p.startswith("data/") and p != "data/evening-report.md":
+        return True
+    if p.startswith((".freebuff/", ".remember/", ".git/")):
+        return True
+    return False
+
+
+def _git_sync_work(reason: str) -> None:
+    """Stage only source/report paths, audit them, commit and push.
+
+    Any refusal resets the index and leaves the working tree untouched; the
+    supervisor's trading loop must never depend on GitHub being reachable.
+    """
+    if not (ROOT / ".git").exists():
+        return
+    code, _ = DS.run(["git", "-C", str(ROOT), "add", "--", *GIT_PATHS], timeout=60)
+    if code != 0:
+        log(f"git sync skipped: add rc={code}")
+        return
+    code, out = DS.run(["git", "-C", str(ROOT), "diff", "--cached", "--name-only"],
+                       timeout=30)
+    staged = [line.strip() for line in out.splitlines() if line.strip()]
+    if code != 0 or not staged:
+        return
+    bad = [p for p in staged if _forbidden(p)]
+    big = []
+    for p in staged:
+        try:
+            if (ROOT / p).stat().st_size > 5_000_000:
+                big.append(p)
+        except OSError:
+            bad.append(p)
+    if bad or big:
+        DS.run(["git", "-C", str(ROOT), "reset", "--", *staged], timeout=30)
+        log(f"git sync REFUSED: forbidden={bad[:5]} oversized={big[:5]}")
+        return
+    msg = f"chore: sync {reason} · {now().isoformat(timespec='seconds')}"
+    code, out = DS.run(["git", "-C", str(ROOT), "commit", "-m", msg], timeout=90,
+                       env={"GIT_TERMINAL_PROMPT": "0"})
+    if code != 0:
+        log(f"git sync commit warning: {out[-200:]}")
+        return
+    code, out = DS.run(["git", "-C", str(ROOT), "push", "origin", "master"], timeout=120,
+                       env={"GIT_TERMINAL_PROMPT": "0"})
+    if code != 0:
+        log(f"git sync push warning (commit kept locally): {out[-200:]}")
+    else:
+        log(f"git sync pushed: {msg} ({len(staged)} file(s))")
+
+
+def git_sync(reason: str) -> None:
+    """Fire-and-forget sync; a slow network never delays a settlement check."""
+    if not _GIT_LOCK.acquire(blocking=False):
+        return
+
+    def work() -> None:
+        try:
+            _git_sync_work(reason)
+        except Exception as exc:  # noqa: BLE001 - GitHub must never stop the daemon
+            log(f"git sync error: {type(exc).__name__}: {exc}")
+        finally:
+            _GIT_LOCK.release()
+
+    threading.Thread(target=work, daemon=True, name="git-sync").start()
 
 
 def now() -> datetime:
@@ -308,6 +392,7 @@ def window_report(state: dict, st: dict) -> None:
     }
     DS.atomic_write(NEXT, json.dumps(payload, indent=1, default=str))
     log("report + NEXT.json updated")
+    git_sync(f"report {state.get('last_window') or 'gate'}")
 
 
 def write_report(state: dict, note: str) -> None:
