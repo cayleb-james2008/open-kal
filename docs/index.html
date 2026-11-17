@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Open-Kal — 15-minute crypto microstructure engine</title>
+  <meta name="description" content="A four-lane Kalshi 15-minute crypto microstructure engine with a 24/7 arming supervisor, replay-verified execution and a live React dashboard." />
+  <meta property="og:title" content="Open-Kal — microstructure execution for prediction markets" />
+  <meta property="og:description" content="Frozen F2 signal, T+1s execution, payoff-ECE gate, 20% trailing drawdown breaker, 24/7 supervisor." />
+  <meta property="og:type" content="website" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-inner">
+    <a class="brand" href="#top"><span class="brand-mark">OK</span> OPEN-KAL</a>
+    <div class="nav-links">
+      <a href="#architecture">Architecture</a>
+      <a href="#invariants">Invariants</a>
+      <a href="#method">Method</a>
+      <a href="#evidence">Evidence</a>
+    </div>
+    <a class="nav-cta" href="https://github.com/cayleb-james2008/open-kal">GitHub ↗</a>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap hero-grid">
+    <div>
+      <div class="eyebrow">Kalshi · 15-minute crypto · live</div>
+      <h1>A microstructure engine that refuses to arm on <em>faith.</em></h1>
+      <p class="lead">
+        Four independent lanes. A frozen signal. A T+1s execution path that reproduces the venue,
+        not the model. A supervisor that owns the gate, the canary and the drawdown floor — 24/7.
+      </p>
+      <div class="hero-actions">
+        <a class="btn primary" href="https://github.com/cayleb-james2008/open-kal">Read the source ↗</a>
+        <a class="btn" href="#method">The methodology</a>
+      </div>
+    </div>
+    <aside class="hero-card" aria-label="Live snapshot">
+      <div class="row"><span class="k">strategy</span><span class="v">F2_taker_1s</span></div>
+      <div class="row"><span class="k">lanes</span><span class="v">BTC · ETH · SOL · XRP</span></div>
+      <div class="row"><span class="k">window</span><span class="v">15 minutes</span></div>
+      <div class="row"><span class="k">forward OOS</span><span class="v up">20 / 20 · +$33.13</span></div>
+      <div class="row"><span class="k">payoff ECE</span><span class="v up">0.057</span></div>
+      <div class="row"><span class="k">trailing floor</span><span class="v">$131.20</span></div>
+    </aside>
+  </div>
+</header>
+
+<div class="wrap stats">
+  <div class="stat"><div class="n">4</div><div class="l">lanes</div></div>
+  <div class="stat"><div class="n">15m</div><div class="l">settlement windows</div></div>
+  <div class="stat"><div class="n">T+1s</div><div class="l">execution lag</div></div>
+  <div class="stat"><div class="n">0.057</div><div class="l">payoff ECE</div></div>
+  <div class="stat"><div class="n">20%</div><div class="l">trailing drawdown</div></div>
+</div>
+
+<section id="architecture">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">01 / Architecture</div>
+        <h2>Books in. Decisions out.<br />A supervisor over both.</h2>
+      </div>
+      <p>
+        The engine is a deterministic hot path. The supervisor is a separate process with the
+        authority to arm, demote and restart flat — never the authority to touch an open position.
+      </p>
+    </div>
+
+    <div class="arch">
+      <svg viewBox="0 0 1080 380" role="img" aria-label="Open-Kal architecture diagram">
+        <defs>
+          <marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 z" fill="#6fe7ff"/>
+          </marker>
+          <style>
+            .box { fill:#0d1418; stroke:rgba(180,220,208,.22); }
+            .box2 { fill:#101a1f; stroke:rgba(185,255,94,.35); }
+            .t { fill:#e9f4ef; font: 12px ui-monospace,monospace; }
+            .s { fill:#91a8a1; font: 10px ui-monospace,monospace; }
+            .l { stroke:#6fe7ff; stroke-width:1; fill:none; marker-end:url(#a); }
+            .lg { stroke:rgba(180,220,208,.22); stroke-width:1; fill:none; }
+          </style>
+        </defs>
+
+        <rect class="box" x="24" y="30" width="180" height="58" rx="2"/>
+        <text class="t" x="40" y="53">Kalshi WS</text>
+        <text class="s" x="40" y="70">book · trades · seq/gap</text>
+
+        <rect class="box" x="24" y="112" width="180" height="58" rx="2"/>
+        <text class="t" x="40" y="135">Spot feeds</text>
+        <text class="s" x="40" y="152">coinbase · kraken</text>
+
+        <rect class="box2" x="280" y="58" width="220" height="84" rx="2"/>
+        <text class="t" x="298" y="84">Engine</text>
+        <text class="s" x="298" y="102">4 lanes · 15m windows</text>
+        <text class="s" x="298" y="118">sizing = equity / 4</text>
+
+        <rect class="box" x="572" y="30" width="200" height="58" rx="2"/>
+        <text class="t" x="588" y="53">F2_taker_1s</text>
+        <text class="s" x="588" y="70">frozen signal + exits</text>
+
+        <rect class="box" x="572" y="112" width="200" height="58" rx="2"/>
+        <text class="t" x="588" y="135">Live executor</text>
+        <text class="s" x="588" y="152">IOC · post-only TP</text>
+
+        <rect class="box2" x="850" y="58" width="200" height="84" rx="2"/>
+        <text class="t" x="868" y="84">Kalshi venue</text>
+        <text class="s" x="868" y="102">fills · settlements</text>
+        <text class="s" x="868" y="118">portfolio/balance</text>
+
+        <path class="l" d="M204 59 C240 59 248 90 280 96"/>
+        <path class="l" d="M204 141 C240 141 248 118 280 110"/>
+        <path class="l" d="M500 96 L572 62"/>
+        <path class="l" d="M500 104 L572 132"/>
+        <path class="l" d="M772 59 L850 88"/>
+        <path class="l" d="M772 141 L850 118"/>
+
+        <rect class="box" x="280" y="210" width="492" height="64" rx="2"/>
+        <text class="t" x="298" y="236">daemon_247.py — 24/7 supervisor</text>
+        <text class="s" x="298" y="254">hourly gate · canary · new epoch · 15m checks · 20% floor · $0.05 reconcile</text>
+
+        <path class="l" d="M526 210 L526 168"/>
+        <path class="lg" d="M526 274 L526 310"/>
+        <text class="s" x="540" y="300">demote / restart flat</text>
+
+        <rect class="box" x="280" y="310" width="492" height="52" rx="2"/>
+        <text class="t" x="298" y="334">/api/state → React dashboard</text>
+        <text class="s" x="298" y="351">lanes · equity · calibration · forensics</text>
+      </svg>
+    </div>
+
+    <div class="arch-cols">
+      <div class="arch-col">
+        <h3>Engine</h3>
+        <p>Sub-second book, spot tape, four independent lane budgets, a single frozen decision path. Every window roll re-reads the venue and re-slices equity.</p>
+      </div>
+      <div class="arch-col">
+        <h3>Supervisor</h3>
+        <p>No market decisions. Only evidence and risk: the forward gate, the one-contract canary, the flat restart, the trailing floor, the reconciliation delta.</p>
+      </div>
+      <div class="arch-col">
+        <h3>Dashboard</h3>
+        <p>React 19 + Vite. Lanes, equity curve, calibration, fill forensics and the exact reason a lane abstained — served from <span class="mono">/api/state</span>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="invariants">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">02 / Live invariants</div>
+        <h2>The rules that do not move.</h2>
+      </div>
+      <p>
+        These are not defaults. They are the contract the replay, the executor and the supervisor
+        are each tested against.
+      </p>
+    </div>
+
+    <table>
+      <thead>
+        <tr><th>Invariant</th><th>Value</th><th>Enforced by</th><th>Why it exists</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Signal configuration</td><td class="mono">F2_taker_1s · single grid</td><td>strategy.py</td><td>No parameter union, no per-window tuning.</td></tr>
+        <tr><td>Execution lag</td><td class="mono">T+1s</td><td>study + live</td><td>The tape decision and the order share one clock.</td></tr>
+        <tr><td>Entry style</td><td class="mono">pinned IOC</td><td>live_exec.py</td><td>A taker fill must be a price the venue offered.</td></tr>
+        <tr><td>Take-profit</td><td class="mono">entry_fill + 0.05 · post-only</td><td>live_exec.py</td><td>$0 maker exit; the frozen structure.</td></tr>
+        <tr><td>Gap rule</td><td class="mono">3s, then take the bid</td><td>live_exec.py</td><td>A bid already paying more than +5c should not be left resting.</td></tr>
+        <tr><td>Stop</td><td class="mono">-0.07 · 2s confirmed</td><td>strategy.py</td><td>One wick through a 4Hz book is noise.</td></tr>
+        <tr><td>Barrier</td><td class="mono">90s</td><td>strategy.py</td><td>The horizon the study scored.</td></tr>
+        <tr><td>Entry cap</td><td class="mono">$0.62</td><td>decision_gate.py</td><td>No lottery-ticket convexity.</td></tr>
+        <tr><td>Payoff calibration</td><td class="mono">ECE ≤ 0.08</td><td>forward gate</td><td>The probability is the trade's payoff event.</td></tr>
+        <tr><td>Trailing floor</td><td class="mono">max($105, 0.80 × peak)</td><td>daemon_247.py</td><td>A 20% drawdown is a stop, not a mood.</td></tr>
+        <tr><td>Reconciliation</td><td class="mono">|delta| ≤ $0.05</td><td>daemon_247.py</td><td>The ledger and the venue must agree.</td></tr>
+        <tr><td>Re-arm</td><td class="mono">fresh epoch only</td><td>daemon_247.py</td><td>A demoted verdict never re-arms on the old artifact.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="method">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">03 / Methodology</div>
+        <h2>Seven conditions. No aggregate score.</h2>
+      </div>
+      <p>
+        The gate is recomputed from the artifact's own numbers before anything is promoted.
+        A hand-edited or stale file cannot arm the engine.
+      </p>
+    </div>
+
+    <div class="gates">
+      <div class="gate"><div class="idx">01</div><div class="name">Sample</div><div class="rule">trades ≥ 20</div><div class="value">forward 20</div></div>
+      <div class="gate"><div class="idx">02</div><div class="name">Net</div><div class="rule">net &gt; $0</div><div class="value">+$33.13</div></div>
+      <div class="gate"><div class="idx">03</div><div class="name">Profit factor</div><div class="rule">PF ≥ 1.15</div><div class="value">99.00</div></div>
+      <div class="gate"><div class="idx">04</div><div class="name">Calibration</div><div class="rule">payoff ECE ≤ 0.08</div><div class="value">0.057</div></div>
+      <div class="gate"><div class="idx">05</div><div class="name">Book hygiene</div><div class="rule">crossed fills = 0</div><div class="value">0</div></div>
+      <div class="gate"><div class="idx">06</div><div class="name">Cost</div><div class="rule">max entry ≤ 0.62</div><div class="value">0.59</div></div>
+      <div class="gate"><div class="idx">07</div><div class="name">Breadth</div><div class="rule">profitable lanes ≥ 2</div><div class="value">3</div></div>
+      <div class="gate"><div class="idx">→</div><div class="name">Promotion</div><div class="rule">canary → new epoch</div><div class="value">audited chain</div></div>
+    </div>
+
+    <div class="callout">
+      <strong>The split matters.</strong> The calibrator and every threshold were frozen on the in-sample 60%.
+      The forward slice starts at 05:00 EST and is scored once per scheduled slot. A short sample is a
+      refusal, not a reason to lower the floor.
+    </div>
+  </div>
+</section>
+
+<section id="evidence">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">04 / Evidence</div>
+        <h2>Tests that can fail.</h2>
+      </div>
+      <p>
+        The replay is anchored to the venue's own fills for live epochs. Exits, fees and P&amp;L are
+        still re-derived from the tape, so a wrong exit still shows up as a delta.
+      </p>
+    </div>
+
+    <div class="evidence">
+      <div class="ev"><div class="n"><span>52</span>/52</div><div class="t">live exit checks</div><p>IOC entry, partial fills, post-only TP, confirmed stop, reduce-only exit, F2 window cap.</p></div>
+      <div class="ev"><div class="n"><span>18</span>/18</div><div class="t">gate controls</div><p>Replay vs ledger, mutation binding, crossed-book refusal, risk bounds, calibration movement.</p></div>
+      <div class="ev"><div class="n"><span>76</span>/76</div><div class="t">day pipeline</div><p>Hourly slots, gate matrix, promotion order, crash recovery, 18:00 handoff, never lowering the floor.</p></div>
+    </div>
+
+    <table style="margin-top:26px">
+      <thead><tr><th>Forward OOS · 2026-11-17</th><th>Value</th><th>Context</th></tr></thead>
+      <tbody>
+        <tr><td>Post-decide trades</td><td class="mono">20 · 20W / 0L</td><td>100% win rate, avg entry 0.4255</td></tr>
+        <tr><td>Net / PF</td><td class="mono">+$33.13 · 99.00</td><td>zero-loss artifact; the 20-trade floor is the protection</td></tr>
+        <tr><td>Payoff ECE</td><td class="mono">0.057</td><td>target is the trade's own payoff event</td></tr>
+        <tr><td>All fills</td><td class="mono">22 · +$18.17 · PF 2.21</td><td>includes the two pre-decision stops</td></tr>
+        <tr><td>Lane breadth</td><td class="mono">BTC +$16.52 · ETH +$1.69 · XRP +$14.92</td><td>SOL idle in this slice</td></tr>
+        <tr><td>Max side cost / crossed</td><td class="mono">0.59 · 0</td><td>inside the $0.62 hard cap</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="risk">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">05 / Risk</div>
+        <h2>The supervisor can say no.</h2>
+      </div>
+      <p>
+        Arming is a chain, and every step can stop it. A demoted verdict is a valid outcome;
+        an unverified live order is not.
+      </p>
+    </div>
+
+    <table>
+      <thead><tr><th>Stage</th><th>What happens</th><th>Failure behavior</th></tr></thead>
+      <tbody>
+        <tr><td>Gate</td><td>Rebuild cache, score once, recompute seven conditions.</td><td>Wait for the next hour; never lower the floor.</td></tr>
+        <tr><td>Promotion</td><td>Verdict → tests → dashboard → flat check → 1-contract canary.</td><td>Demote and stop at the failing step.</td></tr>
+        <tr><td>Arm</td><td><span class="mono">restart_flat.sh --new-epoch</span>, wait for <span class="mono">live_armed=True</span>.</td><td>Demote; the engine stays paper.</td></tr>
+        <tr><td>Supervision</td><td>15-minute equity, balance, reconcile, floor.</td><td>Demote, wait flat, one restart.</td></tr>
+        <tr><td>Drawdown</td><td><span class="mono">balance &lt; max(105, 0.80 × peak)</span>.</td><td>Breaker; no re-arm on the old artifact.</td></tr>
+        <tr><td>Reconciliation</td><td><span class="mono">|venue − ledger| &gt; $0.05</span>.</td><td>Breaker; investigate before the next arm.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="foot">
+      <span>OPEN-KAL · 2026</span>
+      <span><a href="https://github.com/cayleb-james2008/open-kal">github.com/cayleb-james2008/open-kal ↗</a></span>
+      <span>BTC · ETH · SOL · XRP · KALSHI 15M</span>
+    </div>
+    <p class="disclaimer">
+      Research and execution infrastructure, not financial advice. Prediction markets are binary and can
+      settle against a position quickly. Past calibration does not remove tail risk.
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,4 +1,39 @@
+# ---- secrets: never commit ----
 .env
+.env.*
+!.env.example
 keys/
 *.pem
+*.key
+
+# ---- python ----
 __pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---- market data, databases, caches ----
+data/*
+!data/evening-report.md
+data/evolve-cache/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.npz
+*.jsonl
+*.log
+
+# ---- dashboard build output ----
+node_modules/
+dashboard/node_modules/
+dashboard/dist/
+dashboard/.shots/
+
+# ---- local tooling / agent scratch ----
+.freebuff/
+.remember/
+*.bak
+.DS_Store

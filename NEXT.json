@@ -1,0 +1,42 @@
+{
+ "updated": "2026-11-17T15:01:20-05:00",
+ "goal": "24/7 forward-OOS gate, live compounding, trailing drawdown breaker.",
+ "state": {
+  "decision": "promoted",
+  "engine_pid": 2943377,
+  "mode": "live",
+  "live_armed": true,
+  "strategy": "F2_taker_1s",
+  "verdict_promoted": true,
+  "epoch_start": 1794944463.14385,
+  "equity": "164.00",
+  "start_equity": "163.9971",
+  "realized": "0.00",
+  "venue_balance": "163.9971",
+  "peak_balance": "163.9971",
+  "floor": "131.20",
+  "reconcile_delta": "0.00",
+  "open_lanes": 0
+ },
+ "forward_oos": {
+  "start_ts": 1794909600,
+  "trades": 20,
+  "net": 33.13,
+  "pf": 99.0,
+  "payoff_ece": 0.057,
+  "gate": {
+   "pass": true,
+   "reasons": [],
+   "lanes_profitable": 3
+  },
+  "artifact": "data/forward-oos.json"
+ },
+ "supervision": {
+  "checks": 2,
+  "breaker_trips": 0,
+  "breaker_restarts": 0,
+  "log": "data/daemon-247.log",
+  "report": "data/evening-report.md",
+  "cadence": "hourly gate / 15-minute live checks / 6-hour cache rebuild"
+ }
+}
