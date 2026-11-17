@@ -2,7 +2,58 @@
 
 Worktree `/home/cayleb/open-kal-rnd`, branch `rnd/alpha-evolve`, based on origin/master `d9fd4ec`. Data: the frozen, hard-linked snapshot `data/frozen-cache/` (books from the 14:07 vintage; `SHA256SUMS.txt`), plus a copy of the live `ticks.npz` (16:20 vintage, hash appended). Nothing under `/home/cayleb/open-kal` was written, signalled or restarted. No `.env`, `keys/`, `canary.py --live` or `restart_flat.sh` was touched, and the prod DB was never opened.
 
-## Bottom line
+## Charter 2 — zero taker fees, hold to settlement (latest)
+
+**Neither architecture passes. Nothing should be promoted or traded.** Each family champion was scored once on OOS (`data/oos-ledger.jsonl`), and both champions met the IS bar first.
+
+| Family | IS champion | IS n / W-L / net / PF | OOS n | OOS W/L | OOS net | OOS PF | payoff-ECE | OOS by lane | net − best lane | Gate |
+|---|---|---|---|---|---|---|---|---|---|---|
+| A `passive_mm_fade` | `flow_thr2_vq0-1_tp0.06_scratch_hold180`, eligible | 43 / 36-7 / +69.00 / 2.55 | 46 | 33/13 | −57.50 | 0.63 | 0.149 | BTC 40 trades −56.50; ETH 6, −1.00 | −56.50 | **fail** |
+| B `student_t_settle_v2` | `h0.03_s0.02_v0.5-1.0_p10`, eligible | 216 / 87-129 / +556.50 / 1.27 | 126 | 43/83 | −192.50 | 0.87 | 0.108 | BTC −110.50, ETH +12.00, SOL −18.50, XRP −75.50 | −204.50 | **fail** |
+
+Every leg in both tracks is maker or settlement: $0 entry and exit fees in every OOS trade, 0 crossed fills, max entry cost 0.55 (A) and 0.58 (B).
+
+### Owner rulings applied (commit `85cc73e`)
+- **$0.62 on every buy leg.** A lock leg priced above $0.62 is never placed (test `LockLegCap`). No lock leg in Tracks 2–4 was ever priced above $0.62, so no earlier result changes.
+- **50-contract print-through floor** kept, unchanged.
+- New `$0`-fee **maker scratch** exit: `barrier_exit="scratch"` at `fill + hold_s` or `close − scratch_by_s`. It is a post-only sell at max(entry − scratch_c, side bid + 1c), arriving 1s after the barrier and filled on the 50-print rule; unfilled, the position settles (5 tests).
+- `tests/test_sim_core.py` is now 33 tests. Before the change, 5 of the 7 new ones failed.
+
+### Track A — passive book-imbalance fade (`scripts/passive_mm_fade.py`)
+- **Proxy, stated plainly.** The book cache holds top-of-book *prices* only, no sizes, so a depth OBI or microprice cannot be computed without the prod DB, which is off-limits. z_obi is the pool's 10s signed print-flow imbalance (`flow`) or 5s touch-revision imbalance (`rev`), z-scored per lane on IS rows only.
+- **The fade:** z_obi ≥ +thr rests a NO bid (at 1 − yes_ask); z_obi ≤ −thr rests a YES bid. Maker entry, 10s patience, cost ≤ $0.55; maker TP +4c/+6c arriving 1s after the fill; scratch (after 180s, or 120s before close) or settle.
+- **Grid:** 48 configs (2 sources × 2 thresholds × 2 vol bands × 2 TPs × 3 exits). Two were IS-eligible.
+
+| Source, threshold | IS trades (range over 12 configs) | IS net range | Lanes traded |
+|---|---|---|---|
+| flow, 1.5 | 257–375 | −$431.25 to +$15.00 | all 4 |
+| flow, 2.0 | 24–43 | −$4.50 to +$69.00 | BTC, ETH only |
+| rev, 1.5 | 421–569 | −$581.50 to −$63.00 | all 4 |
+| rev, 2.0 | 373–549 | −$787.00 to −$214.50 | all 4 |
+
+- **Structural limit:** `flow` is bounded in [−1, 1], so |z| ≥ 2 is reachable only where a lane's IS std is small. The reachable maximum is BTC 2.71, ETH 1.86 (−2.00 at the bound), SOL 1.61, XRP 1.69. So every flow-2.0 config trades almost only BTC, and the two-lane gate was out of reach for them by construction.
+- **The pattern in every config:** take-profits fill often and pay +$2–3, and the few positions that never revert lose the whole contract at settlement.
+  - OOS champion: 33 TPs made +$99.00, 4 scratches made $0.00, and 9 settled positions lost −$156.50.
+  - The +4/+6c maker exit cannot pay for the tail.
+- `rev` fades lose heavily everywhere: the touch-revision skew keeps going, it does not revert.
+
+### Track B — multi-lane Student-t settlement (`scripts/student_t_settle_v2.py`)
+- Same IS-only Student-t fit as Track 3 (ν 6–10 per lane), causal spot, `secs − 40` settlement variance.
+- Maker entry at the side's bid, 1s after the trigger, capped at p − hurdle, cost $0.22–0.58. Filled only on the 50-print rule, held to settlement, no exit leg.
+- **Grid:** 48 configs (hurdle 3/5/7/9c × spread ≤ 2/4c × vol band all/low/high × patience 10/30s). Vol quantiles come from IS samples. 9 of 48 were IS-eligible, and the champion was the best of them.
+- On IS it looked broad: all 4 lanes profitable (BTC +316.00, ETH +61.50, SOL +104.50, XRP +74.50), +$482.00 without XRP, fill rate 0.44.
+- **OOS it reversed.** Win rate went from 0.40 to 0.34, 3 of 4 lanes lost, net without XRP was −$117.00, and payoff-ECE was 0.108.
+  - It did clear the ≥ 25-trade bar (126 trades) and the "no XRP dependence" requirement.
+  - It lost money everywhere except ETH.
+- Maker entries fill when sellers push through the bid. Under this fill model, the extra fills the cheap maker price buys arrive exactly when the fair value is stale.
+
+### Outside checks for Charter 2
+- **13 sampled IS trades re-derived from the raw npz tape, without sim_core:** 9 from Track B across SOL, XRP and ETH, 4 from Track A on BTC. Arrival quote, entry price, 50-print fill, TP fill and settlement side were each recomputed. All 13 matched sim_core exactly in entry, fill and PnL.
+- The IS champions and both scripts were committed (`88a4d6a`) before the OOS look; OOS was committed in `d8e92f8`.
+
+---
+
+## Charter 1 bottom line
 
 **No candidate passes the promotion gate. Nothing here should be promoted or traded.**
 
@@ -30,10 +81,15 @@ Worktree `/home/cayleb/open-kal-rnd`, branch `rnd/alpha-evolve`, based on origin
 | `104b04e` | sim_core: take-profit and lock legs arrive 1s after the entry fill (+2 tests) | **yes**, together with `0a26266` |
 | `9e19bcc` | rnd_common: the ledger writes a "started" line before scoring; re-scores carry a reason | no (research) |
 
-The rerun results and this revision of the report are in the commits after `9e19bcc`.
+| `90e326b` | Charter 1 rerun after the exit-leg fix; report revision | no |
+| `85cc73e` | sim_core: $0.62 cap on lock legs; $0-fee maker scratch exit (+7 tests) | **yes**, with `0a26266` and `104b04e` |
+| `88a4d6a` | Charter 2 scripts (`passive_mm_fade`, `student_t_settle_v2`), IS champions frozen | no (research) |
+| `d8e92f8` | Charter 2 OOS ledger entries | no (research) |
+
+This revision of the report is in the commit after `d8e92f8`.
 
 ```bash
-git -C /home/cayleb/open-kal cherry-pick 8a5c9b6 0a26266 104b04e
+git -C /home/cayleb/open-kal cherry-pick 8a5c9b6 0a26266 104b04e 85cc73e
 ```
 
 ## The promotion gate (`scripts/rnd_common.py:promotion_gate`, committed in `e8f34f4` before any track ran)
@@ -81,7 +137,7 @@ The table shows the re-score; the last column is the first-round OOS net.
 - Every OOS row has 0 crossed fills and max entry cost ≤ $0.62. Per-lane OOS tables are in the ledger.
 - `depletion:4.11` and `spread_regime:4.7` took the same 3 OOS trades.
 
-**Multiple testing.** There were 16 champion scorings across 8 families, plus the F2 parity computation. No row passes, so no multiplicity correction can change the verdict. Any future pass found by this same process would need confirmation on a fresh forward tape, not on this OOS slice.
+**Multiple testing.** Charter 1 had 16 champion scorings across 8 families, plus the F2 parity computation; Charter 2 adds 2 more (10 families, 18 scorings in all). No row passes, so no multiplicity correction can change the verdict. Any future pass found by this same process would need confirmation on a fresh forward tape, not on this OOS slice.
 
 ---
 
@@ -250,7 +306,7 @@ OOS, the four champions made 0–3 trades each, net −$14.29 to $0.00 (ledger a
 | Suite | Baseline (before any change) | Final |
 |---|---|---|
 | `compileall openkal scripts tests` | rc 0 | rc 0 |
-| `tests/test_sim_core.py` | — (new) | 26/26 |
+| `tests/test_sim_core.py` | — (new) | 33/33 |
 | `tests/test_daemon_247.py` | 20 run, OK, 2 expected failures | 20 run, OK, 2 expected failures |
 | `tests/test_live_exit.py` | 52/52 | 52/52 |
 | `tests/test_gate_controls.py` on parity copy `/tmp/openkal-rnd/parity.db` | 18/18 | 18/18 |
