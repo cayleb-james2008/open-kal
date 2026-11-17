@@ -19,7 +19,10 @@ echo "=== market metadata $(date -Iseconds) ==="
 echo "=== index cache $(date -Iseconds) ==="
 .venv/bin/python scripts/evolve.py cache
 echo "=== book cache $(date -Iseconds) ==="
-.venv/bin/python scripts/book_cache.py KXBTC15M KXETH15M KXSOL15M KXXRP15M
+# --force: a rebuild that skips every lane because its file exists is not a rebuild.
+# Each lane is still written beside the live file and renamed into place, so the
+# last good book survives a killed run.
+.venv/bin/python scripts/book_cache.py --force KXBTC15M KXETH15M KXSOL15M KXXRP15M
 echo "=== discovery $(date -Iseconds) ==="
 .venv/bin/python scripts/subsec_discovery.py
 echo "=== done $(date -Iseconds) ==="

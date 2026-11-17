@@ -126,6 +126,33 @@ class Book:
     def no_ask(self) -> Decimal | None:
         return (Decimal(1) - max(self.yes)) if self.yes else None
 
+    @property
+    def yes_bid_sz(self) -> Decimal | None:
+        """Resting size at the best YES bid.
+
+        The ladder was already in memory and only its prices were persisted, so a
+        tape row said where the touch was but not how much was behind it. A quote
+        with one lot on it and a quote with three hundred are different evidence.
+        """
+        return self.yes.get(max(self.yes)) if self.yes else None
+
+    @property
+    def yes_ask_sz(self) -> Decimal | None:
+        """Resting size at the best YES ask (a NO bid at 1 - p)."""
+        return self.no.get(max(self.no)) if self.no else None
+
+    def ladder(self, levels: int = 3) -> str:
+        """The top `levels` of each side as JSON, in YES terms.
+
+        Recorded on snapshots only: deltas arrive thousands of times a minute on
+        four lanes, and persisting the whole ladder on each one would grow the tape
+        for no information the touch sizes do not already carry.
+        """
+        bids = sorted(self.yes.items(), reverse=True)[:levels]
+        asks = sorted(((Decimal(1) - price, size) for price, size in self.no.items()))[:levels]
+        return json.dumps({"b": [[str(p), str(s)] for p, s in bids],
+                           "a": [[str(p), str(s)] for p, s in asks]})
+
 
 @dataclass
 class IndexPrint:
@@ -316,7 +343,7 @@ class KalshiWS:
             # re-subscribe (which restarts seq at 1) look like a gap forever: 502k bogus
             # resyncs over six hours.
             self.seq.on_snapshot(sid, seq)
-            self._publish_book(book)
+            self._publish_book(book, ladder=True)
         elif kind == "orderbook_delta":
             ticker = body.get("market_ticker", "")
             book = self._book(ticker)
@@ -343,11 +370,15 @@ class KalshiWS:
     def _book(self, ticker: str) -> Book:
         return self.books.setdefault(ticker, Book(ticker=ticker))
 
-    def _publish_book(self, book: Book) -> None:
+    def _publish_book(self, book: Book, *, ladder: bool = False) -> None:
         if self.on_book:
             self.on_book(book)
+        bid_sz, ask_sz = book.yes_bid_sz, book.yes_ask_sz
         self._put(("book", book.updated_ts, book.ticker,
-                   str(book.yes_bid), str(book.yes_ask), book.seq))
+                   str(book.yes_bid), str(book.yes_ask), book.seq,
+                   str(bid_sz) if bid_sz is not None else None,
+                   str(ask_sz) if ask_sz is not None else None,
+                   book.ladder() if ladder else None))
 
     def _handle_index(self, kind: str, body: dict[str, Any]) -> None:
         index_id = body.get("index_id") or body.get("index") or ""
@@ -401,7 +432,7 @@ class KalshiWS:
                 # next delta is accepted rather than immediately flagged.
                 book.apply_snapshot({"yes_dollars_fp": ob.get("yes_dollars"),
                                      "no_dollars_fp": ob.get("no_dollars")}, 0)
-                self._publish_book(book)
+                self._publish_book(book, ladder=True)
                 self.resync_ok += 1
             else:
                 self.resync_fail += 1

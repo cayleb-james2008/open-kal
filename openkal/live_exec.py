@@ -13,25 +13,36 @@ from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 from typing import Any
 
 from .broker import VenueOrder
-from .config import MAX_CONTRACTS, MAX_TRADE_RISK_USD
+from .config import (HARD_MAX_ENTRY_PRICE, peak_drawdown_tripped, stage_for,
+                     staged_risk_cap)
 from .execution import Executor, RestingExit, RestingOrder
 from .strategy import Decision, Position, Quote, contracts_for
 
 
-def sized_contracts(bankroll: Decimal, price: Decimal, params: Any) -> int:
-    """Contracts one entry may hold: the slot, the study and the risk cap.
+def sized_contracts(bankroll: Decimal, price: Decimal, params: Any,
+                    equity: Decimal | None = None) -> int:
+    """Contracts one entry may hold: the slot, the stage's risk and its ceiling.
 
     `contracts_for` spends the whole slot, which is how a 24c NO became 170
     contracts ($40.80 of premium) against a study scored at 50. A binary that
     settles to zero loses the premium, not the 7c stop distance, so the
     worst-case loss has to be bounded here rather than at the exit.
+
+    `equity` is the *account* equity the compounding stage is read from; the lane's
+    `bankroll` stays the outer bound (a lane never spends more than its own slice).
+    The stage table in `openkal.config` replaces the flat MAX_CONTRACTS /
+    MAX_TRADE_RISK_USD pair: at stage 1 it reproduces them ($15.18 at $121.46) and
+    at stages 2-3 it lifts both the risk fraction and the contract ceiling as the
+    account compounds. `params` still carries the study's own ceilings for replay
+    and research; sizing here is owned by config so a mutated strategy parameter
+    cannot widen it.
     """
-    if price <= 0:
+    if price <= 0 or price > HARD_MAX_ENTRY_PRICE:
         return 0
-    by_evidence = int(getattr(params, "max_contracts", MAX_CONTRACTS) or MAX_CONTRACTS)
-    risk_cap = getattr(params, "max_trade_risk_usd", MAX_TRADE_RISK_USD)
-    by_risk = int(Decimal(str(risk_cap)) / price)
-    return max(0, min(contracts_for(bankroll, price), by_evidence, by_risk))
+    account = bankroll if equity is None else Decimal(str(equity))
+    stage = stage_for(account)
+    by_risk = int(staged_risk_cap(account) / price)
+    return max(0, min(contracts_for(bankroll, price), stage.max_contracts, by_risk))
 
 
 def _dec(value: Any) -> Decimal:
@@ -100,7 +111,25 @@ class LiveExecutor(Executor):
             if not (slot.params.f2_min_price <= price <= slot.params.f2_max_price):
                 self.note = f"F2 entry refused: pinned cost {price} outside the band"
                 return
-        qty = sized_contracts(slot.bankroll, price, slot.params)
+        # Two invariants outrank every stage: no entry above the $0.62 cost
+        # ceiling, and no new risk once the account is 20% below its high-water
+        # mark. Both are checked after the F2 re-pin, so a price that moved up into
+        # the ceiling is refused rather than paid.
+        if price > HARD_MAX_ENTRY_PRICE:
+            self.note = f"entry refused: {price} is above the {HARD_MAX_ENTRY_PRICE} ceiling"
+            self.record(slot, "cancel", decision.side or "YES", price, 0, Decimal("0"),
+                        "above the 0.62 cost ceiling")
+            return
+        equity = getattr(self.ctx, "equity", None)
+        if equity is None:
+            equity = getattr(self.ctx, "cash", slot.bankroll)
+        peak = getattr(self.ctx, "peak_equity", None)
+        if peak_drawdown_tripped(equity, peak):
+            self.note = (f"compounding breaker: equity {equity} is 20% below peak {peak}")
+            self.record(slot, "cancel", decision.side or "YES", price, 0, Decimal("0"),
+                        "20% trailing peak drawdown")
+            return
+        qty = sized_contracts(slot.bankroll, price, slot.params, equity=equity)
         if qty <= 0:
             return
         reserved = price * qty

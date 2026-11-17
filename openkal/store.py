@@ -58,7 +58,8 @@ CREATE TABLE IF NOT EXISTS ws_index (
 CREATE INDEX IF NOT EXISTS ws_index_ts ON ws_index(index_id, ts);
 
 CREATE TABLE IF NOT EXISTS ws_book (
-    ts REAL, ticker TEXT, yes_bid TEXT, yes_ask TEXT, seq INTEGER
+    ts REAL, ticker TEXT, yes_bid TEXT, yes_ask TEXT, seq INTEGER,
+    yes_bid_sz TEXT, yes_ask_sz TEXT, depth TEXT
 );
 CREATE INDEX IF NOT EXISTS ws_book_ts ON ws_book(ticker, ts);
 
@@ -98,6 +99,14 @@ class Store:
 
     def _migrate(self) -> None:
         cols = {row[1] for row in self._db.execute("PRAGMA table_info(ticks)")}
+        # The book ladder's resting sizes. Without them the tape says where the
+        # touch was but not how much was actually there, so no study can tell a
+        # one-lot quote from a wall. `depth` holds the top levels as JSON and is
+        # written on snapshots only; the touch sizes are on every row.
+        book_cols = {row[1] for row in self._db.execute("PRAGMA table_info(ws_book)")}
+        for name in ("yes_bid_sz", "yes_ask_sz", "depth"):
+            if name not in book_cols:
+                self._db.execute(f"ALTER TABLE ws_book ADD COLUMN {name} TEXT")
         for name, decl in (("signal", "TEXT"), ("can_open", "INTEGER"), ("stake", "TEXT"),
                            # The decision's inputs, recorded with the tick. Replay needs
                            # them to re-derive the same decision instead of guessing at
@@ -279,7 +288,12 @@ class Store:
         for row in rows:
             kind = row[0]
             if kind == "book":
-                books.append((row[1], row[2], row[3], row[4], row[5]))
+                # Older producers send only the five top-of-book fields; they are
+                # written with the sizes NULL rather than rejected.
+                books.append((row[1], row[2], row[3], row[4], row[5],
+                              row[6] if len(row) > 6 else None,
+                              row[7] if len(row) > 7 else None,
+                              row[8] if len(row) > 8 else None))
             elif kind == "index":
                 indices.append((row[1], row[2], row[3], row[4], row[5], row[6], row[7]))
             elif kind == "trade":
@@ -289,7 +303,8 @@ class Store:
         with self._lock:
             if books:
                 self._db.executemany(
-                    "INSERT INTO ws_book(ts,ticker,yes_bid,yes_ask,seq) VALUES(?,?,?,?,?)", books)
+                    "INSERT INTO ws_book(ts,ticker,yes_bid,yes_ask,seq,yes_bid_sz,"
+                    "yes_ask_sz,depth) VALUES(?,?,?,?,?,?,?,?)", books)
             if indices:
                 self._db.executemany(
                     "INSERT INTO ws_index(ts,index_id,value,avg60,final_minute,final_ticks,channel)"

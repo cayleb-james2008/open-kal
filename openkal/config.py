@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal, InvalidOperation
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -20,6 +20,77 @@ ROOT = Path(__file__).resolve().parent.parent
 # the whole premium, not the 7c stop distance.
 MAX_CONTRACTS = 50
 MAX_TRADE_RISK_USD = Decimal("15.00")
+
+# --- staged fractional-Kelly compounding ---------------------------------
+# A lane that risks a flat $15 cannot compound: at $121.46 of equity that is 12.3%
+# of the account, and at $350 it is 4.3% -- the program would shrink relative to
+# the money it trades. The stages below hold the *fraction* of equity at risk
+# roughly constant as the account grows, and cap each stage at the contract count
+# that fraction buys at the price ceiling.
+#
+# Stage 1 is the sizing this build already ships: 12.5% of equity ($15.18 at
+# $121.46, the $15 cap it replaces) and the 50-contract study ceiling. Stage 2 and
+# stage 3 lift both, and nothing in them may lift `HARD_MAX_ENTRY_PRICE` or suspend
+# the `MAX_PEAK_DRAWDOWN_PCT` trailing-peak breaker.
+@dataclass(frozen=True)
+class CompoundingStage:
+    """One equity band and the risk it is allowed to put on a single entry."""
+
+    name: str
+    equity_floor: Decimal
+    max_risk_pct: Decimal
+    max_contracts: int
+
+
+COMPOUND_STAGES: tuple[CompoundingStage, ...] = (
+    CompoundingStage("stage1", Decimal("0.00"), Decimal("0.125"), MAX_CONTRACTS),
+    CompoundingStage("stage2", Decimal("175.00"), Decimal("0.20"), 120),
+    CompoundingStage("stage3", Decimal("350.00"), Decimal("0.25"), 250),
+)
+
+# The two invariants that outrank every stage. $0.62 is the cost ceiling the
+# forward study scored (`openkal.sim_core.CAP`); a binary carried into settlement
+# loses its whole premium, so the entry price *is* the tail bound. 20% off the
+# equity high-water mark stops new risk rather than compounding a drawdown.
+HARD_MAX_ENTRY_PRICE = Decimal("0.62")
+MAX_PEAK_DRAWDOWN_PCT = Decimal("0.20")
+
+
+def stage_for(equity: Decimal | float | str) -> CompoundingStage:
+    """The compounding stage an account equity sits in (highest floor reached)."""
+    value = Decimal(str(equity))
+    stage = COMPOUND_STAGES[0]
+    for candidate in COMPOUND_STAGES:
+        if value >= candidate.equity_floor:
+            stage = candidate
+    return stage
+
+
+def staged_risk_cap(equity: Decimal | float | str) -> Decimal:
+    """Dollars of premium one entry may risk at this account equity.
+
+    Rounded *down* to the cent: the cap is a ceiling, and a rounding step must
+    never hand the lane a dollar more than the stage allows.
+    """
+    try:
+        value = max(Decimal("0"), Decimal(str(equity)))
+    except (InvalidOperation, TypeError, ValueError):
+        return Decimal("0")
+    return (value * stage_for(value).max_risk_pct).quantize(Decimal("0.01"),
+                                                            rounding=ROUND_DOWN)
+
+
+def peak_drawdown_tripped(equity: Decimal | float | str | None,
+                          peak_equity: Decimal | float | str | None) -> bool:
+    """True once equity is `MAX_PEAK_DRAWDOWN_PCT` below its high-water mark."""
+    try:
+        current = Decimal(str(equity))
+        peak = Decimal(str(peak_equity))
+    except (InvalidOperation, TypeError, ValueError):
+        return False
+    if peak <= 0:
+        return False
+    return current <= peak * (Decimal("1") - MAX_PEAK_DRAWDOWN_PCT)
 
 
 def load_env(path: Path | None = None) -> dict[str, str]:

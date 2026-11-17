@@ -28,6 +28,8 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from openkal.config import (HARD_MAX_ENTRY_PRICE, peak_drawdown_tripped,  # noqa: E402
+                            stage_for, staged_risk_cap)
 from openkal.engine import Engine  # noqa: E402
 from openkal.execution import Executor, RestingExit, RestingOrder  # noqa: E402
 from openkal.live_exec import LiveExecutor, sized_contracts  # noqa: E402
@@ -667,6 +669,107 @@ def control_sizing() -> None:
           Decimal("0.50") * mid <= Decimal("15.00"), f"qty={mid} premium={Decimal('0.50') * mid}")
 
 
+def control_compounding() -> None:
+    """Staged fractional-Kelly sizing: three tiers, one ceiling, one breaker.
+
+    The 16:00 trade lost $42.97 because a $41 lane bought 170 contracts; the fix was
+    a flat $15 / 50-contract cap, which by design cannot compound. These checks pin
+    the stage table that replaces it: the cap still binds at stage 1, stages 2 and 3
+    lift it as the account grows, and neither the $0.62 entry ceiling nor the 20%
+    trailing-peak breaker is ever stage-dependent.
+    """
+    tiers = ((Decimal("121.46"), "stage1", Decimal("0.125"), 50),
+             (Decimal("174.99"), "stage1", Decimal("0.125"), 50),
+             (Decimal("175.00"), "stage2", Decimal("0.20"), 120),
+             (Decimal("349.99"), "stage2", Decimal("0.20"), 120),
+             (Decimal("350.00"), "stage3", Decimal("0.25"), 250))
+    for equity, name, pct, ceiling in tiers:
+        stage = stage_for(equity)
+        check(f"compounding: ${equity} resolves to {name} ({pct * 100:g}%, {ceiling} contracts)",
+              stage.name == name and stage.max_risk_pct == pct
+              and stage.max_contracts == ceiling,
+              f"{stage.name} {stage.max_risk_pct} {stage.max_contracts}")
+
+    check("compounding: stage 1 at $121.46 risks $15.18, the flat cap it replaces",
+          staged_risk_cap(Decimal("121.46")) == Decimal("15.18"),
+          f"cap={staged_risk_cap(Decimal('121.46'))}")
+    check("compounding: stages 2 and 3 risk 20% and 25% of equity",
+          staged_risk_cap(Decimal("175.00")) == Decimal("35.00")
+          and staged_risk_cap(Decimal("350.00")) == Decimal("87.50"),
+          f"{staged_risk_cap(Decimal('175.00'))} / {staged_risk_cap(Decimal('350.00'))}")
+
+    # The stage's contract ceiling binds at stage 1 and lifts at stage 3.
+    params = Params()
+    s1 = sized_contracts(Decimal("30.00"), Decimal("0.24"), params, equity=Decimal("121.46"))
+    check("compounding: a 24c entry at $121.46 is still capped at 50 contracts",
+          s1 == 50 and Decimal("0.24") * s1 <= Decimal("15.18"), f"qty={s1}")
+    s2 = sized_contracts(Decimal("50.00"), Decimal("0.30"), params, equity=Decimal("200.00"))
+    check("compounding: stage 2 caps at 120 contracts where the risk cap allows it",
+          s2 == 120, f"qty={s2}")
+    s3 = sized_contracts(Decimal("87.50"), Decimal("0.30"), params, equity=Decimal("350.00"))
+    check("compounding: stage 3 caps at 250 contracts", s3 == 250, f"qty={s3}")
+    sized_by_risk = sized_contracts(Decimal("100.00"), Decimal("0.47"), params,
+                                    equity=Decimal("200.00"))
+    check("compounding: the 20% risk cap binds before the contract ceiling",
+          sized_by_risk == 85 and Decimal("0.47") * sized_by_risk <= Decimal("40.00"),
+          f"qty={sized_by_risk}")
+
+    # $0.62 is tradeable at every stage; one cent above it never is.
+    check("compounding: 0.62 is still tradeable at the top stage",
+          sized_contracts(Decimal("500"), Decimal("0.62"), params,
+                          equity=Decimal("400.00")) > 0,
+          f"qty={sized_contracts(Decimal('500'), Decimal('0.62'), params, equity=Decimal('400'))}")
+    above = [sized_contracts(Decimal("500"), Decimal("0.63"), params, equity=equity)
+             for equity in (Decimal("100"), Decimal("200"), Decimal("400"))]
+    check("compounding: 0.63 is refused at every stage",
+          above == [0, 0, 0] and HARD_MAX_ENTRY_PRICE == Decimal("0.62"), f"qty={above}")
+
+    check("compounding: 20% below the peak trips the breaker; 19.99% does not",
+          peak_drawdown_tripped(Decimal("80.00"), Decimal("100.00"))
+          and not peak_drawdown_tripped(Decimal("80.01"), Decimal("100.00"))
+          and not peak_drawdown_tripped(Decimal("121.46"), Decimal("0")),
+          f"at80={peak_drawdown_tripped(Decimal('80.00'), Decimal('100.00'))}")
+
+    # The live entry path enforces both invariants itself, after the F2 re-pin.
+    q = quote("0.60", "0.63")
+    slot, broker = f2_slot(q), FakeBroker()
+    slot.position = None
+    ex = LiveExecutor(ctx(), broker)
+    over = Decision("entry", "0.63 ask", side="YES", price=Decimal("0.63"),
+                    signal="z_obi_flow")
+    asyncio.run(ex._place_entry(slot, over, q, NOW, 300.0))
+    check("compounding: the live path refuses a 0.63 entry",
+          not broker.placed and slot.order is None and "ceiling" in (ex.note or ""),
+          f"placed={len(broker.placed)} note={ex.note!r}")
+
+    down = SimpleNamespace(cash=Decimal("100"), realized=Decimal("0"), fills=[], store=None,
+                           supervisor=None, source="live", equity=Decimal("79.99"),
+                           peak_equity=Decimal("100.00"))
+    q = quote("0.45", "0.47")
+    slot, broker = f2_slot(q), FakeBroker()
+    slot.position = None
+    ex = LiveExecutor(down, broker)
+    entry = Decision("entry", "z+flow at 0.47", side="YES", price=Decimal("0.47"),
+                     signal="z_obi_flow")
+    asyncio.run(ex._place_entry(slot, entry, q, NOW, 300.0))
+    check("compounding: a 20% drawdown stops new entries before the order",
+          not broker.placed and slot.order is None and "breaker" in (ex.note or ""),
+          f"placed={len(broker.placed)} note={ex.note!r}")
+
+    growing = SimpleNamespace(cash=Decimal("100"), realized=Decimal("0"), fills=[], store=None,
+                              supervisor=None, source="live", equity=Decimal("200.00"),
+                              peak_equity=Decimal("200.00"))
+    slot, broker = f2_slot(q), FakeBroker()
+    slot.position = None
+    slot.bankroll = Decimal("50.00")
+    ex = LiveExecutor(growing, broker)
+    asyncio.run(ex._place_entry(slot, entry, q, NOW, 300.0))
+    check("compounding: stage 2 sizes the live order to its 20% risk budget",
+          slot.order is not None and slot.order.contracts == 85
+          and broker.placed and broker.placed[-1]["contracts"] == 85,
+          f"contracts={slot.order.contracts if slot.order else None}")
+
+
 def main() -> int:
     tp = Decision("exit_tp", "take-profit reached", side="NO", price=Decimal("0.88"))
 
@@ -806,6 +909,7 @@ def main() -> int:
     control_f2_execution()
     control_paper_f2()
     control_sizing()
+    control_compounding()
 
     width = max(len(n) for n, _, _ in RESULTS)
     failed = 0
