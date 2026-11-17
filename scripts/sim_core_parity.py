@@ -8,7 +8,8 @@ close to that; known differences are listed in the output, not tuned away:
     the decision-time quote);
   * the arrival quote is the last row, never an older valid one (old: 2s walk-back).
 
-Also writes the trigger pools to data/rnd-pool/ so the tracks do not rebuild them.
+Pools here are the legacy ones (nearest-print spot) on purpose: this script checks
+the simulator, not the signal. The tracks read scripts/rnd_pool_build.py's causal pools.
 
     .venv/bin/python scripts/sim_core_parity.py
 """
@@ -31,7 +32,6 @@ from scripts import rnd_common as R  # noqa: E402
 from scripts import f2_structural as F  # noqa: E402
 from scripts.bounded_sweep import pick  # noqa: E402
 
-POOL_DIR = ROOT / "data" / "rnd-pool"
 OUT = ROOT / "data" / "sim-core-parity.json"
 
 
@@ -43,10 +43,6 @@ def main() -> int:
     per_lane_cut = {n: lane.cut_ts for n, lane in lanes.items()}
     pools = F.build_pools(lanes)
     print(f"pools built {time.time() - t0:.0f}s", flush=True)
-    POOL_DIR.mkdir(parents=True, exist_ok=True)
-    for name, p in pools.items():
-        np.savez(POOL_DIR / f"pool_{name}.npz",
-                 **{k: (v.astype(str) if v.dtype == object else v) for k, v in p.items()})
     rows = {"is": [], "oos": []}
     skips = {"is": Counter(), "oos": Counter()}
     for name, lane in lanes.items():
