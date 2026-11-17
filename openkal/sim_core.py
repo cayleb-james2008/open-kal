@@ -39,6 +39,7 @@ EXIT_BUFFER_S = 20.0        # nothing is placed or filled in the last 20s of a w
 EPS = 1e-6                  # float32 tolerance for at/through compares
 ONE = Decimal("1")
 ZERO = Decimal("0")
+CENT = Decimal("0.01")
 
 
 class CrossedBook(ValueError):
@@ -260,6 +261,7 @@ def run_trade(tape: Tape, *, side: str, trigger_ts: float, entry_style: str, qty
               tp_c: Decimal | None = None, lock_c: Decimal | None = None,
               stop_c: Decimal | None = None, stop_confirm_s: float = 2.0,
               hold_s: float | None = None, barrier_exit: str = "settle",
+              scratch_by_s: float | None = None, scratch_c: Decimal = ZERO,
               min_print: float = MIN_PRINT) -> Trade | Skip:
     """One trade from trigger to flat, under the canonical fill rules.
 
@@ -269,11 +271,18 @@ def run_trade(tape: Tape, *, side: str, trigger_ts: float, entry_style: str, qty
     one-cancels-other:
       tp_c    $0-fee post-only sell of the held side at entry + tp_c;
       lock_c  $0-fee post-only buy of the opposite side at 1 - entry - lock_c, which
-              locks YES + NO = $1 at settlement;
+              locks YES + NO = $1 at settlement; like every buy leg it must cost
+              <= CAP, or it is never placed (an unfilled lock leaves full expiry risk);
               both are sent on the entry fill and arrive `lag_s` after it;
       stop_c  confirmed adverse move of the side's taker exit price; the exit order
               arrives `lag_s` later and pays the taker fee;
-      hold_s  time barrier: settle the binary ($0) or cross out (`barrier_exit`).
+      hold_s  time barrier at fill + hold_s; `scratch_by_s` also puts one at
+              close - scratch_by_s. At the barrier, `barrier_exit` is:
+                settle   hold the binary ($0 exit fee);
+                taker    cross out at the book `lag_s` later (taker fee);
+                scratch  a $0-fee post-only sell of the held side, arriving `lag_s`
+                         later, at max(entry - scratch_c, side's bid + 1c), filled on
+                         the usual print-through; unfilled, the position settles.
     Unfilled at the end, the position settles: $1 or $0 a contract, no exit fee.
     """
     if lag_s < LAG_S - EPS:
@@ -284,6 +293,8 @@ def run_trade(tape: Tape, *, side: str, trigger_ts: float, entry_style: str, qty
         raise ValueError(f"cost ceiling {max_cost} is above {CAP}")
     if side not in (YES, NO) or entry_style not in (TAKER, MAKER):
         raise ValueError((side, entry_style))
+    if barrier_exit not in ("settle", "taker", "scratch"):
+        raise ValueError(f"barrier_exit {barrier_exit!r}")
     qty = min(int(qty), MAX_QTY)
     if qty <= 0:
         return Skip("qty")
@@ -317,6 +328,8 @@ def run_trade(tape: Tape, *, side: str, trigger_ts: float, entry_style: str, qty
     # Resting exits are orders too: sent on the entry fill, they arrive `lag_s` later and
     # are checked post-only against the book they arrive into.
     deadline = last_ts if hold_s is None else min(last_ts, fill_ts + hold_s)
+    if scratch_by_s is not None:
+        deadline = min(deadline, tape.close_ts - scratch_by_s)
     place_ts = fill_ts + lag_s
     try:
         fb, fa = tape.quote(place_ts) if place_ts < deadline else (None, None)
@@ -329,7 +342,7 @@ def run_trade(tape: Tape, *, side: str, trigger_ts: float, entry_style: str, qty
             resting.append(("tp", side, SELL, tp_px))
     if lock_c is not None:
         lock_px = ONE - cost - lock_c
-        if lock_px > 0:
+        if 0 < lock_px <= CAP:
             resting.append(("lock", opposite(side), BUY, lock_px))
     events: list[tuple[float, int, str, object]] = []
     for prio, (role, s, act, lim) in enumerate(resting):
@@ -375,7 +388,21 @@ def run_trade(tape: Tape, *, side: str, trigger_ts: float, entry_style: str, qty
             pnl = (value - cost) * qty - fee_in - fee_out
             return Trade(side, entry_style, qty, trigger_ts, order_ts, cost, "stop", pnl,
                          fee_in + fee_out, t_x, value, legs, requotes=int(waited))
-    if hold_s is not None and deadline < last_ts and barrier_exit == "taker":
+    if deadline < last_ts and barrier_exit == "scratch":
+        place2 = deadline + lag_s
+        try:
+            qb, qa = tape.quote(place2)
+            px = max(cost - scratch_c, exit_price(side, TAKER, qb, qa) + CENT)
+            ok = px < ONE and post_only_ok(side, SELL, px, qb, qa)
+        except (CrossedBook, NoQuote):
+            ok = False
+        t = tape.print_fill(place2, last_ts, side, SELL, px, need=min_print) if ok else None
+        if t is not None:
+            legs.append(Leg("scratch", side, SELL, MAKER, px, qty, t, ZERO))
+            pnl = (px - cost) * qty - fee_in
+            return Trade(side, entry_style, qty, trigger_ts, order_ts, cost, "scratch", pnl,
+                         fee_in, t, px, legs)
+    if deadline < last_ts and barrier_exit == "taker":
         q = _forced_quote(tape, deadline + lag_s, last_ts)
         if q is not None:
             t_x, (qb, qa), waited = q
