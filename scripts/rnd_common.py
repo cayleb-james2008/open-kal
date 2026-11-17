@@ -171,24 +171,33 @@ def score_oos_once(family: str, config: dict, scorer, *, rescore: bool = False) 
     """Score one frozen champion on OOS, once per family, and log the touch.
 
     `scorer()` must return (oos_rows, oos_skips, payoff_model). The ledger is
-    append-only; a family that already has an entry is refused unless `rescore`,
-    which is recorded too.
+    append-only. A "started" line is written before the scorer runs, so a crash
+    mid-score still counts as a look. A family with any prior line is refused unless
+    this is a rescore: `rescore=True`, or RND_OOS_RESCORE set to the reason, which is
+    recorded with the entry.
     """
     if os.environ.get("RND_OOS_UNSEAL") != "lead":
         raise RuntimeError("OOS is sealed: only the lead scores a champion (RND_OOS_UNSEAL=lead)")
+    reason = os.environ.get("RND_OOS_RESCORE", "").strip() or None
+    rescore = rescore or reason is not None
     prior = []
     if LEDGER.exists():
         prior = [json.loads(line) for line in LEDGER.read_text().splitlines() if line.strip()]
     if any(p["family"] == family for p in prior) and not rescore:
         raise RuntimeError(f"{family} was already scored on OOS; refusing a second look")
+    LEDGER.parent.mkdir(parents=True, exist_ok=True)
+    with LEDGER.open("a") as fh:
+        fh.write(json.dumps({"ts": datetime.now(timezone.utc).isoformat(), "family": family,
+                             "status": "started", "config": config, "rescore": rescore,
+                             "rescore_reason": reason}, default=_json_default) + "\n")
     rows, skips, model = scorer()
     oos = summarize(rows, skips)
     ece = payoff_ece(model, rows)
     verdict = promotion_gate(oos, ece)
     entry = {"ts": datetime.now(timezone.utc).isoformat(), "family": family,
-             "config": config, "rescore": rescore, "oos": oos, "payoff_ece": ece,
+             "status": "scored", "config": config, "rescore": rescore,
+             "rescore_reason": reason, "oos": oos, "payoff_ece": ece,
              "gate": verdict, "cache": str(CACHE)}
-    LEDGER.parent.mkdir(parents=True, exist_ok=True)
     with LEDGER.open("a") as fh:
         fh.write(json.dumps(entry, default=_json_default) + "\n")
     return entry
