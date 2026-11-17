@@ -32,6 +32,7 @@ import sys
 import threading
 import time
 import traceback
+import urllib.request
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -124,6 +125,59 @@ def _git_sync_work(reason: str) -> None:
         log(f"git sync push warning (commit kept locally): {out[-200:]}")
     else:
         log(f"git sync pushed: {msg} ({len(staged)} file(s))")
+
+
+def live_position_open(fallback: dict | None = None) -> bool:
+    """Ask the running engine, not a cached read, before loading SQLite.
+
+    The API is loopback and the engine is the authority on open orders and
+    positions. If it is down, fall back to the state already read this loop;
+    an unreachable engine cannot be trading.
+    """
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:8787/api/state", timeout=3) as resp:
+            payload = json.load(resp)
+        if int((payload.get("account") or {}).get("open_positions") or 0) > 0:
+            return True
+        return any(s.get("position") is not None or s.get("order") is not None
+                   for s in payload.get("slots") or [])
+    except Exception as exc:  # noqa: BLE001 - never let the probe stop the supervisor
+        log(f"live position probe unavailable ({type(exc).__name__}); using local state")
+        return any(s.get("position") is not None or s.get("order") is not None
+                   for s in (fallback or {}).get("slots") or [])
+
+
+def maybe_rebuild_cache(state: dict, args, st: dict, ts: float) -> None:
+    """Run the 6-hour cache rebuild only when the venue is flat.
+
+    A live position defers the job for 60 seconds via a persisted timestamp,
+    so the next loop can retry without waiting for the next quarter-hour. The
+    build runs at the lowest CPU and I/O priority: heavy SQLite scans must not
+    starve the engine's sub-second tick loop.
+    """
+    last_rebuild = float(state.get("last_rebuild") or 0)
+    if ts - last_rebuild < args.cache_hours * 3600:
+        return
+    if ts < float(state.get("cache_defer_until") or 0):
+        return
+    if live_position_open(st):
+        state["cache_defer_until"] = ts + 60
+        save(state)
+        log("6-hour cache rebuild deferred 60s: live position open")
+        return
+    log("6-hour cache rebuild starting (nice 19, ionice idle)")
+    code, out = DS.run(
+        ["nice", "-n", "19", "ionice", "-c", "3", "bash",
+         str(ROOT / "scripts" / "rebuild_cache.sh")],
+        timeout=7200)
+    last = out.strip().splitlines()[-1] if out.strip() else ""
+    state["last_rebuild"] = ts
+    state["cache_defer_until"] = 0
+    state["events"].append({"ts": now().isoformat(timespec="seconds"),
+                            "event": "cache rebuild", "reason": f"rc={code} {last[:160]}"})
+    state["events"] = state["events"][-200:]
+    save(state)
+    log(f"6-hour cache rebuild rc={code} ({last[:160]})")
 
 
 def git_sync(reason: str) -> None:
@@ -603,6 +657,10 @@ def run(args) -> int:
             # to every 30-second loop; a 20% trailing stop has no use for
             # sub-minute venue traffic.
             ts = time.time()
+            # Outside the settlement window, retry a deferred rebuild every
+            # loop. 120s after the boundary leaves the 15:31 reconcile clear.
+            if 120 <= ts % 900:
+                maybe_rebuild_cache(state, args, st, ts)
             boundary = int(ts // 900 * 900)
             # Check one minute after each quarter-hour close, when the venue's
             # settlement print is in. A reconcile 20s before the close sees an
@@ -658,23 +716,7 @@ def run(args) -> int:
             write_report(state, "15-minute window check")
 
             # 6-hour cache rebuild, only while every lane is flat.
-            last_rebuild = float(state.get("last_rebuild") or 0)
-            if ts - last_rebuild >= args.cache_hours * 3600:
-                slots = st.get("slots") or []
-                flat = all(s.get("position") is None and s.get("order") is None for s in slots)
-                if flat:
-                    log("6-hour cache rebuild starting")
-                    code, out = DS.run(["bash", str(ROOT / "scripts" / "rebuild_cache.sh")],
-                                       timeout=7200)
-                    last = out.strip().splitlines()[-1] if out.strip() else ""
-                    state["last_rebuild"] = ts
-                    state["events"].append({"ts": now().isoformat(timespec="seconds"),
-                                            "event": "cache rebuild", "reason": f"rc={code} {last[:160]}"})
-                    state["events"] = state["events"][-200:]
-                    save(state)
-                    log(f"6-hour cache rebuild rc={code} ({last[:160]})")
-                else:
-                    log("6-hour cache rebuild deferred: a lane is not flat")
+            maybe_rebuild_cache(state, args, st, ts)
 
             time.sleep(min(args.interval, 30))
         except Exception as exc:  # noqa: BLE001 - the loop must survive a bad read

@@ -1,6 +1,6 @@
 # Open-Kal 24/7 report
 
-Updated 2026-11-17T15:31:27-05:00 by `scripts/daemon_247.py`.
+Updated 2026-11-17T15:46:31-05:00 by `scripts/daemon_247.py`.
 
 ## State
 
@@ -27,13 +27,14 @@ Updated 2026-11-17T15:31:27-05:00 by `scripts/daemon_247.py`.
 | 2026-11-17T15:01:20-05:00 | True | 164.00 | 163.9971 | 0.00 | 131.20 |
 | 2026-11-17T15:16:25-05:00 | True | 164.43 | 164.4269 | 0.00 | 131.54 |
 | 2026-11-17T15:31:27-05:00 | True | 164.43 | 164.4269 | 0.00 | 131.54 |
+| 2026-11-17T15:46:31-05:00 | True | 164.43 | 164.4269 | 0.00 | 131.54 |
 
 ## Afternoon audit · 15:08–18:00 EST (live, updates each window)
 
 - Baseline equity: $164.00 (15:01 check; audit starts 15:08)
-- Equity at 2026-11-17T15:31:27-05:00: $164.43 → P&L $+0.43
+- Equity at 2026-11-17T15:46:31-05:00: $164.43 → P&L $+0.43
 - Account realized: $0.43 · equity per lane (equity/4): $41.11
-- Fills since 15:08: 17 (1 entries, 1 exits, exit P&L $+0.43)
+- Fills since 15:08: 21 (1 entries, 1 exits, exit P&L $+0.43)
 - Venue balance: $164.4269 · floor: $131.54 · reconcile: $0.00 · open lanes: 0
 
 ## Capacity decision · 2 vs 4 crypto slots
@@ -52,3 +53,4 @@ Updated 2026-11-17T15:31:27-05:00 by `scripts/daemon_247.py`.
 - 2026-11-17T15:01:20-05:00 **report**: 15-minute window check
 - 2026-11-17T15:16:25-05:00 **report**: 15-minute window check
 - 2026-11-17T15:31:27-05:00 **report**: 15-minute window check
+- 2026-11-17T15:46:31-05:00 **report**: 15-minute window check
