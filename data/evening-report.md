@@ -1,10 +1,10 @@
 # Open-Kal 24/7 report
 
-Updated 2026-11-17T18:00:19-05:00 by `scripts/daemon_247.py`.
+Updated 2026-11-17T18:11:12-05:00 by `scripts/daemon_247.py`.
 
 ## State
 
-- Decision: **candidate_ready_for_operator_approval**
+- Decision: **waiting**
 - Engine: mode=paper live_armed=False strategy=F2_taker_1s
 - Equity: 121.46 (start 163.9971, peak 121.46, realized -42.54)
 - Venue balance: 121.4563
@@ -14,10 +14,10 @@ Updated 2026-11-17T18:00:19-05:00 by `scripts/daemon_247.py`.
 
 ## Forward OOS
 
-- Windows scored: 20 (events 27)
-- Post-decide trades: 25 (25W/0L)
-- Net: $41.38  PF: 99.0  payoff ECE: 0.0472
-- Gate: PASS 
+- Windows scored: 19 (events 30)
+- Post-decide trades: 23 (14W/9L)
+- Net: $-20.12  PF: 0.5768  payoff ECE: 0.4263
+- Gate: FAIL forward net $-20.12 <= 0 forward PF 0.577 < 1.15 payoff ECE 0.4263 > 0.08 1 profitable lane(s) < 2
 
 ## Recent 15-minute checks
 
@@ -48,8 +48,6 @@ Updated 2026-11-17T18:00:19-05:00 by `scripts/daemon_247.py`.
 
 ## Events
 
-- 2026-11-17T14:41:13-05:00 **report**: promotion chain completed; live compounding under supervision
-- 2026-11-17T14:46:17-05:00 **report**: 15-minute window check
 - 2026-11-17T15:01:20-05:00 **report**: 15-minute window check
 - 2026-11-17T15:16:25-05:00 **report**: 15-minute window check
 - 2026-11-17T15:31:27-05:00 **report**: 15-minute window check
@@ -60,3 +58,5 @@ Updated 2026-11-17T18:00:19-05:00 by `scripts/daemon_247.py`.
 - 2026-11-17T17:08:02-05:00 **candidate_ready_for_operator_approval**: 
 - 2026-11-17T17:08:02-05:00 **report**: candidate ready; no arm (operator lock)
 - 2026-11-17T18:00:19-05:00 **report**: unarmed 15-minute reconcile
+- 2026-11-17T18:11:12-05:00 **gate refused**: ['forward net $-20.12 <= 0', 'forward PF 0.577 < 1.15', 'payoff ECE 0.4263 > 0.08', '1 profitable lane(s) < 2']
+- 2026-11-17T18:11:12-05:00 **report**: gate refused at the hourly check
