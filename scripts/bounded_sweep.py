@@ -167,8 +167,13 @@ def f1_pool(lane: Lane, sig: dict) -> dict:
 
 
 def obi_pool(lane: Lane, sig: dict, *, t_lo: float, t_hi: float,
-             delta_bps_floor: float) -> dict:
-    """Touch-book rows with level z, printed flow, revision imbalance, 5s mid shift."""
+             delta_bps_floor: float, spot_past: bool = False) -> dict:
+    """Touch-book rows with level z, printed flow, revision imbalance, 5s mid shift.
+
+    `spot_past=True` reads the settlement index backward only (no print stamped
+    after the row); it is what a forward score must use. Research slices keep the
+    nearest-print read they were fitted on.
+    """
     pool = new_pool()
     for tid, name, meta, a, b in A._segments(lane):
         ts = lane.ts[a:b]
@@ -180,7 +185,7 @@ def obi_pool(lane: Lane, sig: dict, *, t_lo: float, t_hi: float,
         n = len(ts)
         valid = ((bid > 0) & (ask < 1) & (bid < ask) & ((ask - bid) <= 0.04 + EPS)
                  & (secs >= t_lo) & (secs <= t_hi))
-        spot = A.index_at(lane, ts)
+        spot = (A.index_at_past(lane, ts) if spot_past else A.index_at(lane, ts))
         sigma = sig[tid]
         vol = sigma * np.sqrt(np.maximum(secs, 1e-9))
         delta = np.abs(spot - strike)

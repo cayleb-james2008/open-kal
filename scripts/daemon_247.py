@@ -360,6 +360,67 @@ def floor_for(state: dict, drawdown: Decimal) -> Decimal:
     return max(Decimal("105.00"), (peak * (Decimal("1") - drawdown)).quantize(Decimal("0.01")))
 
 
+def unarmed_window_check(state: dict, st: dict, floor_base: Decimal,
+                         drawdown: Decimal, delta_cap: Decimal,
+                         epoch: float | None, force: bool = False) -> bool:
+    """Refresh the venue balance and the reconcile delta while nothing is armed.
+
+    The unarmed loop only evaluated the hourly gate, so it never re-read the
+    venue: `data/evening-report.md` and `NEXT.json` kept republishing the 127.03
+    delta from the last armed window at 16:01 for the rest of the day. This runs
+    the same reconcile as the armed path on the same quarter-hour cadence, after
+    the settlement print (60-120s past the close), and is forced once right before
+    an hourly rebuild, which blocks this loop for minutes.
+
+    It is deliberately not the breaker: nothing is armed to break, no verdict is
+    demoted and no promotion chain is touched. A delta above the cap is recorded
+    as `reconcile_alarm` for the operator, because a book that does not reconcile
+    must never be the reason an artifact looks promotable.
+    """
+    ts = time.time()
+    boundary = int(ts // 900 * 900)
+    if state.get("last_unarmed_window") == boundary:
+        return False
+    if not (force or 60 <= ts % 900 < 120):
+        return False
+    bal = DS.venue_balance()
+    if bal is not None:
+        state["last_balance"] = str(bal)
+        peak = dec(state.get("peak_balance")) or bal
+        state["peak_balance"] = str(max(peak, bal))
+    floor = max(floor_base, floor_for(state, drawdown))
+    state["floor"] = str(floor)
+    rec = DS.reconcile(epoch)
+    delta = dec((rec or {}).get("delta")) if rec else None
+    if delta is not None:
+        state["last_delta"] = str(delta)
+    state["last_unarmed_window"] = boundary
+    acc = st.get("account") or {}
+    slots = st.get("slots") or []
+    state["checks"].append({
+        "ts": now().isoformat(timespec="seconds"),
+        "window": boundary,
+        "armed": False,
+        "equity": acc.get("equity"),
+        "balance": str(bal) if bal is not None else None,
+        "delta": str(delta) if delta is not None else None,
+        "floor": str(floor),
+        "peak": state.get("peak_balance"),
+        "open_lanes": sum(1 for s in slots
+                          if s.get("position") is not None or s.get("order") is not None),
+    })
+    state["checks"] = state["checks"][-2000:]
+    if delta is not None and abs(delta) > delta_cap:
+        state["reconcile_alarm"] = f"delta {delta} > cap {delta_cap} while unarmed"
+        log(f"reconcile alarm: {state['reconcile_alarm']}")
+    else:
+        state.pop("reconcile_alarm", None)
+    save(state)
+    log(f"unarmed window {boundary}: balance={bal} delta={delta} floor={floor}")
+    write_report(state, "unarmed 15-minute reconcile")
+    return True
+
+
 def trip(state: dict, reason: str) -> None:
     log(f"BREAKER: {reason}")
     DS.demote(reason)
@@ -668,7 +729,12 @@ def run(args) -> int:
                     save(state)
                 slot = now().replace(minute=0, second=0, microsecond=0)
                 due = (now() - slot).total_seconds() >= 5
-                if due and state.get("last_eval_slot") != slot.isoformat():
+                hourly = due and state.get("last_eval_slot") != slot.isoformat()
+                # The rebuild below holds this loop for minutes, so the report's
+                # reconcile is refreshed first rather than after it.
+                unarmed_window_check(state, st, floor_base, drawdown, delta_cap,
+                                     epoch, force=hourly)
+                if hourly:
                     fwd = evaluate_slot(slot, state)
                     if fwd is DEFERRED:
                         time.sleep(min(args.interval, 30))

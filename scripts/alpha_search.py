@@ -108,6 +108,27 @@ def index_at(lane: Lane, ts: np.ndarray) -> np.ndarray:
     return out
 
 
+def index_at_past(lane: Lane, ts: np.ndarray, tol: float = 1.5) -> np.ndarray:
+    """Last settlement-index print at or before `ts`, NaN when older than `tol`.
+
+    `index_at` takes the *nearest* print, which may be stamped up to 1.5s after the
+    row it scores. That is look-ahead: a live trigger could not have seen it. The
+    forward scorer uses this backward-only read so no feature depends on a print
+    that had not happened when the evidence row was written.
+    """
+    if not lane.index:
+        return np.full(len(ts), np.nan)
+    arr = lane.index["ts"]
+    val = lane.index["value"]
+    j = np.searchsorted(arr, ts, "right") - 1
+    ok = j >= 0
+    jc = np.clip(j, 0, len(arr) - 1)
+    out = np.where(ok, val[jc], np.nan).astype(np.float64)
+    gap = np.where(ok, ts - arr[jc], np.inf)
+    out[gap > tol] = np.nan
+    return out
+
+
 def mid_at(lane: Lane, tid: int, ts: float, *, lookback: float = 30.0) -> float | None:
     """Mid of the last two-sided book row at or before `ts`."""
     lo, hi = int(lane.book_bounds[tid]), int(lane.book_bounds[tid + 1])
