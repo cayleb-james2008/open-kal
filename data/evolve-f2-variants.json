@@ -1,0 +1,4672 @@
+{
+ "generated": "2026-11-17T21:28:31.677111+00:00",
+ "cache": "/home/cayleb/open-kal-rnd/data/frozen-cache",
+ "split": "chronological 60/40 by window close, per the f2_structural split",
+ "triggers": {
+  "is": 66,
+  "oos": 43
+ },
+ "selection": "IS only: >=20 IS trades, >=3 IS losers, 0 crossed; max IS net",
+ "conventions": {
+  "as_built": {
+   "grid": {
+    "taker|tp5|none": {
+     "entry": "taker",
+     "tp": "tp5",
+     "eth": "none",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 63,
+      "win_rate": 0.9048,
+      "net_pnl": 59.16,
+      "pf": 2.698,
+      "ece": 0.2379,
+      "max_dd": 23.6,
+      "avg_entry": 0.4541,
+      "taker_fees_paid": 58.84,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 57,
+      "losses": 6,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 30.13
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": 8.25
+       },
+       "KXXRP15M": {
+        "trades": 26,
+        "net": 20.78
+       }
+      },
+      "by_reason": {
+       "maker_tp": 57,
+       "stop_loss": 5,
+       "time_barrier": 1
+      },
+      "payoff_ece": 0.0285,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 41,
+      "win_rate": 0.9268,
+      "net_pnl": 40.2,
+      "pf": 2.7717,
+      "ece": 0.236,
+      "max_dd": 14.96,
+      "avg_entry": 0.4371,
+      "taker_fees_paid": 37.3,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 38,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 10.31
+       },
+       "KXETH15M": {
+        "trades": 4,
+        "net": 6.65
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 1.62
+       },
+       "KXXRP15M": {
+        "trades": 19,
+        "net": 21.62
+       }
+      },
+      "by_reason": {
+       "maker_tp": 38,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0926,
+      "lanes_profitable": 4
+     }
+    },
+    "taker|tp5|d5": {
+     "entry": "taker",
+     "tp": "tp5",
+     "eth": "d5",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 61,
+      "win_rate": 0.9016,
+      "net_pnl": 55.87,
+      "pf": 2.6036,
+      "ece": 0.2251,
+      "max_dd": 23.6,
+      "avg_entry": 0.4552,
+      "taker_fees_paid": 57.13,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 55,
+      "losses": 6,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 30.13
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": 4.96
+       },
+       "KXXRP15M": {
+        "trades": 26,
+        "net": 20.78
+       }
+      },
+      "by_reason": {
+       "maker_tp": 55,
+       "stop_loss": 5,
+       "time_barrier": 1
+      },
+      "payoff_ece": 0.0296,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 40,
+      "win_rate": 0.925,
+      "net_pnl": 38.56,
+      "pf": 2.6994,
+      "ece": 0.2513,
+      "max_dd": 14.96,
+      "avg_entry": 0.4338,
+      "taker_fees_paid": 36.44,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 37,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 10.31
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": 5.01
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 1.62
+       },
+       "KXXRP15M": {
+        "trades": 19,
+        "net": 21.62
+       }
+      },
+      "by_reason": {
+       "maker_tp": 37,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0898,
+      "lanes_profitable": 4
+     }
+    },
+    "taker|tp5|spr2": {
+     "entry": "taker",
+     "tp": "tp5",
+     "eth": "spr2",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 63,
+      "win_rate": 0.9048,
+      "net_pnl": 59.16,
+      "pf": 2.698,
+      "ece": 0.2379,
+      "max_dd": 23.6,
+      "avg_entry": 0.4541,
+      "taker_fees_paid": 58.84,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 57,
+      "losses": 6,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 30.13
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": 8.25
+       },
+       "KXXRP15M": {
+        "trades": 26,
+        "net": 20.78
+       }
+      },
+      "by_reason": {
+       "maker_tp": 57,
+       "stop_loss": 5,
+       "time_barrier": 1
+      },
+      "payoff_ece": 0.0285,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 41,
+      "win_rate": 0.9268,
+      "net_pnl": 40.2,
+      "pf": 2.7717,
+      "ece": 0.236,
+      "max_dd": 14.96,
+      "avg_entry": 0.4371,
+      "taker_fees_paid": 37.3,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 38,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 10.31
+       },
+       "KXETH15M": {
+        "trades": 4,
+        "net": 6.65
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 1.62
+       },
+       "KXXRP15M": {
+        "trades": 19,
+        "net": 21.62
+       }
+      },
+      "by_reason": {
+       "maker_tp": 38,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0926,
+      "lanes_profitable": 4
+     }
+    },
+    "taker|tp6|none": {
+     "entry": "taker",
+     "tp": "tp6",
+     "eth": "none",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 63,
+      "win_rate": 0.9048,
+      "net_pnl": 67.66,
+      "pf": 2.942,
+      "ece": 0.2379,
+      "max_dd": 23.1,
+      "avg_entry": 0.4541,
+      "taker_fees_paid": 58.84,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 57,
+      "losses": 6,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 31.63
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": 9.75
+       },
+       "KXXRP15M": {
+        "trades": 26,
+        "net": 26.28
+       }
+      },
+      "by_reason": {
+       "maker_tp": 57,
+       "stop_loss": 5,
+       "time_barrier": 1
+      },
+      "payoff_ece": 0.0285,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 41,
+      "win_rate": 0.9268,
+      "net_pnl": 48.2,
+      "pf": 3.1243,
+      "ece": 0.236,
+      "max_dd": 14.96,
+      "avg_entry": 0.4371,
+      "taker_fees_paid": 37.3,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 38,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 12.81
+       },
+       "KXETH15M": {
+        "trades": 4,
+        "net": 7.65
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.12
+       },
+       "KXXRP15M": {
+        "trades": 19,
+        "net": 25.62
+       }
+      },
+      "by_reason": {
+       "maker_tp": 38,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0926,
+      "lanes_profitable": 4
+     }
+    },
+    "taker|tp6|d5": {
+     "entry": "taker",
+     "tp": "tp6",
+     "eth": "d5",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 61,
+      "win_rate": 0.9016,
+      "net_pnl": 64.37,
+      "pf": 2.8476,
+      "ece": 0.2251,
+      "max_dd": 23.1,
+      "avg_entry": 0.4552,
+      "taker_fees_paid": 57.13,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 55,
+      "losses": 6,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 31.63
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": 6.46
+       },
+       "KXXRP15M": {
+        "trades": 26,
+        "net": 26.28
+       }
+      },
+      "by_reason": {
+       "maker_tp": 55,
+       "stop_loss": 5,
+       "time_barrier": 1
+      },
+      "payoff_ece": 0.0296,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 40,
+      "win_rate": 0.925,
+      "net_pnl": 46.56,
+      "pf": 3.052,
+      "ece": 0.2513,
+      "max_dd": 14.96,
+      "avg_entry": 0.4338,
+      "taker_fees_paid": 36.44,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 37,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 12.81
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": 6.01
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.12
+       },
+       "KXXRP15M": {
+        "trades": 19,
+        "net": 25.62
+       }
+      },
+      "by_reason": {
+       "maker_tp": 37,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0898,
+      "lanes_profitable": 4
+     }
+    },
+    "taker|tp6|spr2": {
+     "entry": "taker",
+     "tp": "tp6",
+     "eth": "spr2",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 63,
+      "win_rate": 0.9048,
+      "net_pnl": 67.66,
+      "pf": 2.942,
+      "ece": 0.2379,
+      "max_dd": 23.1,
+      "avg_entry": 0.4541,
+      "taker_fees_paid": 58.84,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 57,
+      "losses": 6,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 31.63
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": 9.75
+       },
+       "KXXRP15M": {
+        "trades": 26,
+        "net": 26.28
+       }
+      },
+      "by_reason": {
+       "maker_tp": 57,
+       "stop_loss": 5,
+       "time_barrier": 1
+      },
+      "payoff_ece": 0.0285,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 41,
+      "win_rate": 0.9268,
+      "net_pnl": 48.2,
+      "pf": 3.1243,
+      "ece": 0.236,
+      "max_dd": 14.96,
+      "avg_entry": 0.4371,
+      "taker_fees_paid": 37.3,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 38,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 12.81
+       },
+       "KXETH15M": {
+        "trades": 4,
+        "net": 7.65
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.12
+       },
+       "KXXRP15M": {
+        "trades": 19,
+        "net": 25.62
+       }
+      },
+      "by_reason": {
+       "maker_tp": 38,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0926,
+      "lanes_profitable": 4
+     }
+    },
+    "taker|tp7|none": {
+     "entry": "taker",
+     "tp": "tp7",
+     "eth": "none",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 63,
+      "win_rate": 0.9048,
+      "net_pnl": 76.16,
+      "pf": 3.186,
+      "ece": 0.2379,
+      "max_dd": 22.6,
+      "avg_entry": 0.4541,
+      "taker_fees_paid": 58.84,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 57,
+      "losses": 6,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 33.13
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": 11.25
+       },
+       "KXXRP15M": {
+        "trades": 26,
+        "net": 31.78
+       }
+      },
+      "by_reason": {
+       "maker_tp": 57,
+       "stop_loss": 5,
+       "time_barrier": 1
+      },
+      "payoff_ece": 0.0285,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 41,
+      "win_rate": 0.9268,
+      "net_pnl": 56.2,
+      "pf": 3.4769,
+      "ece": 0.236,
+      "max_dd": 14.96,
+      "avg_entry": 0.4371,
+      "taker_fees_paid": 37.3,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 38,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 15.31
+       },
+       "KXETH15M": {
+        "trades": 4,
+        "net": 8.65
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.62
+       },
+       "KXXRP15M": {
+        "trades": 19,
+        "net": 29.62
+       }
+      },
+      "by_reason": {
+       "maker_tp": 38,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0926,
+      "lanes_profitable": 4
+     }
+    },
+    "taker|tp7|d5": {
+     "entry": "taker",
+     "tp": "tp7",
+     "eth": "d5",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 61,
+      "win_rate": 0.9016,
+      "net_pnl": 72.87,
+      "pf": 3.0916,
+      "ece": 0.2251,
+      "max_dd": 22.6,
+      "avg_entry": 0.4552,
+      "taker_fees_paid": 57.13,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 55,
+      "losses": 6,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 33.13
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": 7.96
+       },
+       "KXXRP15M": {
+        "trades": 26,
+        "net": 31.78
+       }
+      },
+      "by_reason": {
+       "maker_tp": 55,
+       "stop_loss": 5,
+       "time_barrier": 1
+      },
+      "payoff_ece": 0.0296,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 40,
+      "win_rate": 0.925,
+      "net_pnl": 54.56,
+      "pf": 3.4046,
+      "ece": 0.2513,
+      "max_dd": 14.96,
+      "avg_entry": 0.4338,
+      "taker_fees_paid": 36.44,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 37,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 15.31
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": 7.01
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.62
+       },
+       "KXXRP15M": {
+        "trades": 19,
+        "net": 29.62
+       }
+      },
+      "by_reason": {
+       "maker_tp": 37,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0898,
+      "lanes_profitable": 4
+     }
+    },
+    "taker|tp7|spr2": {
+     "entry": "taker",
+     "tp": "tp7",
+     "eth": "spr2",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 63,
+      "win_rate": 0.9048,
+      "net_pnl": 76.16,
+      "pf": 3.186,
+      "ece": 0.2379,
+      "max_dd": 22.6,
+      "avg_entry": 0.4541,
+      "taker_fees_paid": 58.84,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 57,
+      "losses": 6,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 33.13
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": 11.25
+       },
+       "KXXRP15M": {
+        "trades": 26,
+        "net": 31.78
+       }
+      },
+      "by_reason": {
+       "maker_tp": 57,
+       "stop_loss": 5,
+       "time_barrier": 1
+      },
+      "payoff_ece": 0.0285,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 41,
+      "win_rate": 0.9268,
+      "net_pnl": 56.2,
+      "pf": 3.4769,
+      "ece": 0.236,
+      "max_dd": 14.96,
+      "avg_entry": 0.4371,
+      "taker_fees_paid": 37.3,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 38,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 15.31
+       },
+       "KXETH15M": {
+        "trades": 4,
+        "net": 8.65
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.62
+       },
+       "KXXRP15M": {
+        "trades": 19,
+        "net": 29.62
+       }
+      },
+      "by_reason": {
+       "maker_tp": 38,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0926,
+      "lanes_profitable": 4
+     }
+    },
+    "peg500|tp5|none": {
+     "entry": "peg500",
+     "tp": "tp5",
+     "eth": "none",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 61,
+      "win_rate": 0.918,
+      "net_pnl": 59.72,
+      "pf": 2.8285,
+      "ece": 0.2293,
+      "max_dd": 23.6,
+      "avg_entry": 0.4518,
+      "taker_fees_paid": 56.28,
+      "crossed_fills": 0,
+      "max_side_cost": 0.6,
+      "wins": 56,
+      "losses": 5,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 30.13
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": 8.25
+       },
+       "KXXRP15M": {
+        "trades": 24,
+        "net": 21.34
+       }
+      },
+      "by_reason": {
+       "maker_tp": 56,
+       "stop_loss": 5
+      },
+      "payoff_ece": 0.0532,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 36,
+      "win_rate": 0.9167,
+      "net_pnl": 31.91,
+      "pf": 2.4063,
+      "ece": 0.2095,
+      "max_dd": 14.96,
+      "avg_entry": 0.4425,
+      "taker_fees_paid": 33.09,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 33,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 10.31
+       },
+       "KXETH15M": {
+        "trades": 4,
+        "net": 6.65
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 1.62
+       },
+       "KXXRP15M": {
+        "trades": 14,
+        "net": 13.33
+       }
+      },
+      "by_reason": {
+       "maker_tp": 33,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0325,
+      "lanes_profitable": 4
+     }
+    },
+    "peg500|tp5|d5": {
+     "entry": "peg500",
+     "tp": "tp5",
+     "eth": "d5",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 59,
+      "win_rate": 0.9153,
+      "net_pnl": 56.43,
+      "pf": 2.7278,
+      "ece": 0.2158,
+      "max_dd": 23.6,
+      "avg_entry": 0.4529,
+      "taker_fees_paid": 54.57,
+      "crossed_fills": 0,
+      "max_side_cost": 0.6,
+      "wins": 54,
+      "losses": 5,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 30.13
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": 4.96
+       },
+       "KXXRP15M": {
+        "trades": 24,
+        "net": 21.34
+       }
+      },
+      "by_reason": {
+       "maker_tp": 54,
+       "stop_loss": 5
+      },
+      "payoff_ece": 0.0552,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 35,
+      "win_rate": 0.9143,
+      "net_pnl": 30.27,
+      "pf": 2.3341,
+      "ece": 0.2263,
+      "max_dd": 14.96,
+      "avg_entry": 0.4389,
+      "taker_fees_paid": 32.23,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 32,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 10.31
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": 5.01
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 1.62
+       },
+       "KXXRP15M": {
+        "trades": 14,
+        "net": 13.33
+       }
+      },
+      "by_reason": {
+       "maker_tp": 32,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0427,
+      "lanes_profitable": 4
+     }
+    },
+    "peg500|tp5|spr2": {
+     "entry": "peg500",
+     "tp": "tp5",
+     "eth": "spr2",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 61,
+      "win_rate": 0.918,
+      "net_pnl": 59.72,
+      "pf": 2.8285,
+      "ece": 0.2293,
+      "max_dd": 23.6,
+      "avg_entry": 0.4518,
+      "taker_fees_paid": 56.28,
+      "crossed_fills": 0,
+      "max_side_cost": 0.6,
+      "wins": 56,
+      "losses": 5,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 30.13
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": 8.25
+       },
+       "KXXRP15M": {
+        "trades": 24,
+        "net": 21.34
+       }
+      },
+      "by_reason": {
+       "maker_tp": 56,
+       "stop_loss": 5
+      },
+      "payoff_ece": 0.0532,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 36,
+      "win_rate": 0.9167,
+      "net_pnl": 31.91,
+      "pf": 2.4063,
+      "ece": 0.2095,
+      "max_dd": 14.96,
+      "avg_entry": 0.4425,
+      "taker_fees_paid": 33.09,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 33,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 10.31
+       },
+       "KXETH15M": {
+        "trades": 4,
+        "net": 6.65
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 1.62
+       },
+       "KXXRP15M": {
+        "trades": 14,
+        "net": 13.33
+       }
+      },
+      "by_reason": {
+       "maker_tp": 33,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0325,
+      "lanes_profitable": 4
+     }
+    },
+    "peg500|tp6|none": {
+     "entry": "peg500",
+     "tp": "tp6",
+     "eth": "none",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 61,
+      "win_rate": 0.918,
+      "net_pnl": 67.72,
+      "pf": 3.0735,
+      "ece": 0.2293,
+      "max_dd": 23.1,
+      "avg_entry": 0.4518,
+      "taker_fees_paid": 56.28,
+      "crossed_fills": 0,
+      "max_side_cost": 0.6,
+      "wins": 56,
+      "losses": 5,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 31.63
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": 9.75
+       },
+       "KXXRP15M": {
+        "trades": 24,
+        "net": 26.34
+       }
+      },
+      "by_reason": {
+       "maker_tp": 56,
+       "stop_loss": 5
+      },
+      "payoff_ece": 0.0532,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 36,
+      "win_rate": 0.9167,
+      "net_pnl": 39.41,
+      "pf": 2.7369,
+      "ece": 0.2095,
+      "max_dd": 14.96,
+      "avg_entry": 0.4425,
+      "taker_fees_paid": 33.09,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 33,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 12.81
+       },
+       "KXETH15M": {
+        "trades": 4,
+        "net": 7.65
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.12
+       },
+       "KXXRP15M": {
+        "trades": 14,
+        "net": 16.83
+       }
+      },
+      "by_reason": {
+       "maker_tp": 33,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0325,
+      "lanes_profitable": 4
+     }
+    },
+    "peg500|tp6|d5": {
+     "entry": "peg500",
+     "tp": "tp6",
+     "eth": "d5",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 59,
+      "win_rate": 0.9153,
+      "net_pnl": 64.43,
+      "pf": 2.9727,
+      "ece": 0.2158,
+      "max_dd": 23.1,
+      "avg_entry": 0.4529,
+      "taker_fees_paid": 54.57,
+      "crossed_fills": 0,
+      "max_side_cost": 0.6,
+      "wins": 54,
+      "losses": 5,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 31.63
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": 6.46
+       },
+       "KXXRP15M": {
+        "trades": 24,
+        "net": 26.34
+       }
+      },
+      "by_reason": {
+       "maker_tp": 54,
+       "stop_loss": 5
+      },
+      "payoff_ece": 0.0552,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 35,
+      "win_rate": 0.9143,
+      "net_pnl": 37.77,
+      "pf": 2.6646,
+      "ece": 0.2263,
+      "max_dd": 14.96,
+      "avg_entry": 0.4389,
+      "taker_fees_paid": 32.23,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 32,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 12.81
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": 6.01
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.12
+       },
+       "KXXRP15M": {
+        "trades": 14,
+        "net": 16.83
+       }
+      },
+      "by_reason": {
+       "maker_tp": 32,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0427,
+      "lanes_profitable": 4
+     }
+    },
+    "peg500|tp6|spr2": {
+     "entry": "peg500",
+     "tp": "tp6",
+     "eth": "spr2",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 61,
+      "win_rate": 0.918,
+      "net_pnl": 67.72,
+      "pf": 3.0735,
+      "ece": 0.2293,
+      "max_dd": 23.1,
+      "avg_entry": 0.4518,
+      "taker_fees_paid": 56.28,
+      "crossed_fills": 0,
+      "max_side_cost": 0.6,
+      "wins": 56,
+      "losses": 5,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 31.63
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": 9.75
+       },
+       "KXXRP15M": {
+        "trades": 24,
+        "net": 26.34
+       }
+      },
+      "by_reason": {
+       "maker_tp": 56,
+       "stop_loss": 5
+      },
+      "payoff_ece": 0.0532,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 36,
+      "win_rate": 0.9167,
+      "net_pnl": 39.41,
+      "pf": 2.7369,
+      "ece": 0.2095,
+      "max_dd": 14.96,
+      "avg_entry": 0.4425,
+      "taker_fees_paid": 33.09,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 33,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 12.81
+       },
+       "KXETH15M": {
+        "trades": 4,
+        "net": 7.65
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.12
+       },
+       "KXXRP15M": {
+        "trades": 14,
+        "net": 16.83
+       }
+      },
+      "by_reason": {
+       "maker_tp": 33,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0325,
+      "lanes_profitable": 4
+     }
+    },
+    "peg500|tp7|none": {
+     "entry": "peg500",
+     "tp": "tp7",
+     "eth": "none",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 61,
+      "win_rate": 0.918,
+      "net_pnl": 75.72,
+      "pf": 3.3184,
+      "ece": 0.2293,
+      "max_dd": 22.6,
+      "avg_entry": 0.4518,
+      "taker_fees_paid": 56.28,
+      "crossed_fills": 0,
+      "max_side_cost": 0.6,
+      "wins": 56,
+      "losses": 5,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 33.13
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": 11.25
+       },
+       "KXXRP15M": {
+        "trades": 24,
+        "net": 31.34
+       }
+      },
+      "by_reason": {
+       "maker_tp": 56,
+       "stop_loss": 5
+      },
+      "payoff_ece": 0.0532,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 36,
+      "win_rate": 0.9167,
+      "net_pnl": 46.91,
+      "pf": 3.0674,
+      "ece": 0.2095,
+      "max_dd": 14.96,
+      "avg_entry": 0.4425,
+      "taker_fees_paid": 33.09,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 33,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 15.31
+       },
+       "KXETH15M": {
+        "trades": 4,
+        "net": 8.65
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.62
+       },
+       "KXXRP15M": {
+        "trades": 14,
+        "net": 20.33
+       }
+      },
+      "by_reason": {
+       "maker_tp": 33,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0325,
+      "lanes_profitable": 4
+     }
+    },
+    "peg500|tp7|d5": {
+     "entry": "peg500",
+     "tp": "tp7",
+     "eth": "d5",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 59,
+      "win_rate": 0.9153,
+      "net_pnl": 72.43,
+      "pf": 3.2177,
+      "ece": 0.2158,
+      "max_dd": 22.6,
+      "avg_entry": 0.4529,
+      "taker_fees_paid": 54.57,
+      "crossed_fills": 0,
+      "max_side_cost": 0.6,
+      "wins": 54,
+      "losses": 5,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 33.13
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": 7.96
+       },
+       "KXXRP15M": {
+        "trades": 24,
+        "net": 31.34
+       }
+      },
+      "by_reason": {
+       "maker_tp": 54,
+       "stop_loss": 5
+      },
+      "payoff_ece": 0.0552,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 35,
+      "win_rate": 0.9143,
+      "net_pnl": 45.27,
+      "pf": 2.9952,
+      "ece": 0.2263,
+      "max_dd": 14.96,
+      "avg_entry": 0.4389,
+      "taker_fees_paid": 32.23,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 32,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 15.31
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": 7.01
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.62
+       },
+       "KXXRP15M": {
+        "trades": 14,
+        "net": 20.33
+       }
+      },
+      "by_reason": {
+       "maker_tp": 32,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0427,
+      "lanes_profitable": 4
+     }
+    },
+    "peg500|tp7|spr2": {
+     "entry": "peg500",
+     "tp": "tp7",
+     "eth": "spr2",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 61,
+      "win_rate": 0.918,
+      "net_pnl": 75.72,
+      "pf": 3.3184,
+      "ece": 0.2293,
+      "max_dd": 22.6,
+      "avg_entry": 0.4518,
+      "taker_fees_paid": 56.28,
+      "crossed_fills": 0,
+      "max_side_cost": 0.6,
+      "wins": 56,
+      "losses": 5,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 33.13
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": 11.25
+       },
+       "KXXRP15M": {
+        "trades": 24,
+        "net": 31.34
+       }
+      },
+      "by_reason": {
+       "maker_tp": 56,
+       "stop_loss": 5
+      },
+      "payoff_ece": 0.0532,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 36,
+      "win_rate": 0.9167,
+      "net_pnl": 46.91,
+      "pf": 3.0674,
+      "ece": 0.2095,
+      "max_dd": 14.96,
+      "avg_entry": 0.4425,
+      "taker_fees_paid": 33.09,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 33,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 15.31
+       },
+       "KXETH15M": {
+        "trades": 4,
+        "net": 8.65
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.62
+       },
+       "KXXRP15M": {
+        "trades": 14,
+        "net": 20.33
+       }
+      },
+      "by_reason": {
+       "maker_tp": 33,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0325,
+      "lanes_profitable": 4
+     }
+    },
+    "peg1000|tp5|none": {
+     "entry": "peg1000",
+     "tp": "tp5",
+     "eth": "none",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 61,
+      "win_rate": 0.918,
+      "net_pnl": 59.75,
+      "pf": 2.8295,
+      "ece": 0.2293,
+      "max_dd": 23.6,
+      "avg_entry": 0.4513,
+      "taker_fees_paid": 56.25,
+      "crossed_fills": 0,
+      "max_side_cost": 0.6,
+      "wins": 56,
+      "losses": 5,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 30.13
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": 8.25
+       },
+       "KXXRP15M": {
+        "trades": 24,
+        "net": 21.37
+       }
+      },
+      "by_reason": {
+       "maker_tp": 56,
+       "stop_loss": 5
+      },
+      "payoff_ece": 0.0532,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 38,
+      "win_rate": 0.9211,
+      "net_pnl": 35.27,
+      "pf": 2.5544,
+      "ece": 0.2311,
+      "max_dd": 14.96,
+      "avg_entry": 0.4384,
+      "taker_fees_paid": 34.73,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 35,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 10.31
+       },
+       "KXETH15M": {
+        "trades": 4,
+        "net": 6.65
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 1.62
+       },
+       "KXXRP15M": {
+        "trades": 16,
+        "net": 16.69
+       }
+      },
+      "by_reason": {
+       "maker_tp": 35,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0321,
+      "lanes_profitable": 4
+     }
+    },
+    "peg1000|tp5|d5": {
+     "entry": "peg1000",
+     "tp": "tp5",
+     "eth": "d5",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 59,
+      "win_rate": 0.9153,
+      "net_pnl": 56.46,
+      "pf": 2.7287,
+      "ece": 0.2158,
+      "max_dd": 23.6,
+      "avg_entry": 0.4524,
+      "taker_fees_paid": 54.54,
+      "crossed_fills": 0,
+      "max_side_cost": 0.6,
+      "wins": 54,
+      "losses": 5,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 30.13
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": 4.96
+       },
+       "KXXRP15M": {
+        "trades": 24,
+        "net": 21.37
+       }
+      },
+      "by_reason": {
+       "maker_tp": 54,
+       "stop_loss": 5
+      },
+      "payoff_ece": 0.0552,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 37,
+      "win_rate": 0.9189,
+      "net_pnl": 33.63,
+      "pf": 2.4822,
+      "ece": 0.2476,
+      "max_dd": 14.96,
+      "avg_entry": 0.4349,
+      "taker_fees_paid": 33.87,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 34,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 10.31
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": 5.01
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 1.62
+       },
+       "KXXRP15M": {
+        "trades": 16,
+        "net": 16.69
+       }
+      },
+      "by_reason": {
+       "maker_tp": 34,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0418,
+      "lanes_profitable": 4
+     }
+    },
+    "peg1000|tp5|spr2": {
+     "entry": "peg1000",
+     "tp": "tp5",
+     "eth": "spr2",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 61,
+      "win_rate": 0.918,
+      "net_pnl": 59.75,
+      "pf": 2.8295,
+      "ece": 0.2293,
+      "max_dd": 23.6,
+      "avg_entry": 0.4513,
+      "taker_fees_paid": 56.25,
+      "crossed_fills": 0,
+      "max_side_cost": 0.6,
+      "wins": 56,
+      "losses": 5,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 30.13
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": 8.25
+       },
+       "KXXRP15M": {
+        "trades": 24,
+        "net": 21.37
+       }
+      },
+      "by_reason": {
+       "maker_tp": 56,
+       "stop_loss": 5
+      },
+      "payoff_ece": 0.0532,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 38,
+      "win_rate": 0.9211,
+      "net_pnl": 35.27,
+      "pf": 2.5544,
+      "ece": 0.2311,
+      "max_dd": 14.96,
+      "avg_entry": 0.4384,
+      "taker_fees_paid": 34.73,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 35,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 10.31
+       },
+       "KXETH15M": {
+        "trades": 4,
+        "net": 6.65
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 1.62
+       },
+       "KXXRP15M": {
+        "trades": 16,
+        "net": 16.69
+       }
+      },
+      "by_reason": {
+       "maker_tp": 35,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0321,
+      "lanes_profitable": 4
+     }
+    },
+    "peg1000|tp6|none": {
+     "entry": "peg1000",
+     "tp": "tp6",
+     "eth": "none",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 61,
+      "win_rate": 0.918,
+      "net_pnl": 67.75,
+      "pf": 3.0744,
+      "ece": 0.2293,
+      "max_dd": 23.1,
+      "avg_entry": 0.4513,
+      "taker_fees_paid": 56.25,
+      "crossed_fills": 0,
+      "max_side_cost": 0.6,
+      "wins": 56,
+      "losses": 5,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 31.63
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": 9.75
+       },
+       "KXXRP15M": {
+        "trades": 24,
+        "net": 26.37
+       }
+      },
+      "by_reason": {
+       "maker_tp": 56,
+       "stop_loss": 5
+      },
+      "payoff_ece": 0.0532,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 38,
+      "win_rate": 0.9211,
+      "net_pnl": 42.77,
+      "pf": 2.885,
+      "ece": 0.2311,
+      "max_dd": 14.96,
+      "avg_entry": 0.4384,
+      "taker_fees_paid": 34.73,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 35,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 12.81
+       },
+       "KXETH15M": {
+        "trades": 4,
+        "net": 7.65
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.12
+       },
+       "KXXRP15M": {
+        "trades": 16,
+        "net": 20.19
+       }
+      },
+      "by_reason": {
+       "maker_tp": 35,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0321,
+      "lanes_profitable": 4
+     }
+    },
+    "peg1000|tp6|d5": {
+     "entry": "peg1000",
+     "tp": "tp6",
+     "eth": "d5",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 59,
+      "win_rate": 0.9153,
+      "net_pnl": 64.46,
+      "pf": 2.9737,
+      "ece": 0.2158,
+      "max_dd": 23.1,
+      "avg_entry": 0.4524,
+      "taker_fees_paid": 54.54,
+      "crossed_fills": 0,
+      "max_side_cost": 0.6,
+      "wins": 54,
+      "losses": 5,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 31.63
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": 6.46
+       },
+       "KXXRP15M": {
+        "trades": 24,
+        "net": 26.37
+       }
+      },
+      "by_reason": {
+       "maker_tp": 54,
+       "stop_loss": 5
+      },
+      "payoff_ece": 0.0552,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 37,
+      "win_rate": 0.9189,
+      "net_pnl": 41.13,
+      "pf": 2.8127,
+      "ece": 0.2476,
+      "max_dd": 14.96,
+      "avg_entry": 0.4349,
+      "taker_fees_paid": 33.87,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 34,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 12.81
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": 6.01
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.12
+       },
+       "KXXRP15M": {
+        "trades": 16,
+        "net": 20.19
+       }
+      },
+      "by_reason": {
+       "maker_tp": 34,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0418,
+      "lanes_profitable": 4
+     }
+    },
+    "peg1000|tp6|spr2": {
+     "entry": "peg1000",
+     "tp": "tp6",
+     "eth": "spr2",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 61,
+      "win_rate": 0.918,
+      "net_pnl": 67.75,
+      "pf": 3.0744,
+      "ece": 0.2293,
+      "max_dd": 23.1,
+      "avg_entry": 0.4513,
+      "taker_fees_paid": 56.25,
+      "crossed_fills": 0,
+      "max_side_cost": 0.6,
+      "wins": 56,
+      "losses": 5,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 31.63
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": 9.75
+       },
+       "KXXRP15M": {
+        "trades": 24,
+        "net": 26.37
+       }
+      },
+      "by_reason": {
+       "maker_tp": 56,
+       "stop_loss": 5
+      },
+      "payoff_ece": 0.0532,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 38,
+      "win_rate": 0.9211,
+      "net_pnl": 42.77,
+      "pf": 2.885,
+      "ece": 0.2311,
+      "max_dd": 14.96,
+      "avg_entry": 0.4384,
+      "taker_fees_paid": 34.73,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 35,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 12.81
+       },
+       "KXETH15M": {
+        "trades": 4,
+        "net": 7.65
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.12
+       },
+       "KXXRP15M": {
+        "trades": 16,
+        "net": 20.19
+       }
+      },
+      "by_reason": {
+       "maker_tp": 35,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0321,
+      "lanes_profitable": 4
+     }
+    },
+    "peg1000|tp7|none": {
+     "entry": "peg1000",
+     "tp": "tp7",
+     "eth": "none",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 61,
+      "win_rate": 0.918,
+      "net_pnl": 75.75,
+      "pf": 3.3194,
+      "ece": 0.2293,
+      "max_dd": 22.6,
+      "avg_entry": 0.4513,
+      "taker_fees_paid": 56.25,
+      "crossed_fills": 0,
+      "max_side_cost": 0.6,
+      "wins": 56,
+      "losses": 5,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 33.13
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": 11.25
+       },
+       "KXXRP15M": {
+        "trades": 24,
+        "net": 31.37
+       }
+      },
+      "by_reason": {
+       "maker_tp": 56,
+       "stop_loss": 5
+      },
+      "payoff_ece": 0.0532,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 38,
+      "win_rate": 0.9211,
+      "net_pnl": 50.27,
+      "pf": 3.2155,
+      "ece": 0.2311,
+      "max_dd": 14.96,
+      "avg_entry": 0.4384,
+      "taker_fees_paid": 34.73,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 35,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 15.31
+       },
+       "KXETH15M": {
+        "trades": 4,
+        "net": 8.65
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.62
+       },
+       "KXXRP15M": {
+        "trades": 16,
+        "net": 23.69
+       }
+      },
+      "by_reason": {
+       "maker_tp": 35,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0321,
+      "lanes_profitable": 4
+     }
+    },
+    "peg1000|tp7|d5": {
+     "entry": "peg1000",
+     "tp": "tp7",
+     "eth": "d5",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 59,
+      "win_rate": 0.9153,
+      "net_pnl": 72.46,
+      "pf": 3.2186,
+      "ece": 0.2158,
+      "max_dd": 22.6,
+      "avg_entry": 0.4524,
+      "taker_fees_paid": 54.54,
+      "crossed_fills": 0,
+      "max_side_cost": 0.6,
+      "wins": 54,
+      "losses": 5,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 33.13
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": 7.96
+       },
+       "KXXRP15M": {
+        "trades": 24,
+        "net": 31.37
+       }
+      },
+      "by_reason": {
+       "maker_tp": 54,
+       "stop_loss": 5
+      },
+      "payoff_ece": 0.0552,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 37,
+      "win_rate": 0.9189,
+      "net_pnl": 48.63,
+      "pf": 3.1432,
+      "ece": 0.2476,
+      "max_dd": 14.96,
+      "avg_entry": 0.4349,
+      "taker_fees_paid": 33.87,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 34,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 15.31
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": 7.01
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.62
+       },
+       "KXXRP15M": {
+        "trades": 16,
+        "net": 23.69
+       }
+      },
+      "by_reason": {
+       "maker_tp": 34,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0418,
+      "lanes_profitable": 4
+     }
+    },
+    "peg1000|tp7|spr2": {
+     "entry": "peg1000",
+     "tp": "tp7",
+     "eth": "spr2",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 61,
+      "win_rate": 0.918,
+      "net_pnl": 75.75,
+      "pf": 3.3194,
+      "ece": 0.2293,
+      "max_dd": 22.6,
+      "avg_entry": 0.4513,
+      "taker_fees_paid": 56.25,
+      "crossed_fills": 0,
+      "max_side_cost": 0.6,
+      "wins": 56,
+      "losses": 5,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 32,
+        "net": 33.13
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": 11.25
+       },
+       "KXXRP15M": {
+        "trades": 24,
+        "net": 31.37
+       }
+      },
+      "by_reason": {
+       "maker_tp": 56,
+       "stop_loss": 5
+      },
+      "payoff_ece": 0.0532,
+      "lanes_profitable": 3
+     },
+     "oos": {
+      "trades": 38,
+      "win_rate": 0.9211,
+      "net_pnl": 50.27,
+      "pf": 3.2155,
+      "ece": 0.2311,
+      "max_dd": 14.96,
+      "avg_entry": 0.4384,
+      "taker_fees_paid": 34.73,
+      "crossed_fills": 0,
+      "max_side_cost": 0.59,
+      "wins": 35,
+      "losses": 3,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 17,
+        "net": 15.31
+       },
+       "KXETH15M": {
+        "trades": 4,
+        "net": 8.65
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.62
+       },
+       "KXXRP15M": {
+        "trades": 16,
+        "net": 23.69
+       }
+      },
+      "by_reason": {
+       "maker_tp": 35,
+       "stop_loss": 3
+      },
+      "payoff_ece": 0.0321,
+      "lanes_profitable": 4
+     }
+    }
+   },
+   "chosen_on_is": "taker|tp7|none",
+   "chosen_oos": {
+    "trades": 41,
+    "win_rate": 0.9268,
+    "net_pnl": 56.2,
+    "pf": 3.4769,
+    "ece": 0.236,
+    "max_dd": 14.96,
+    "avg_entry": 0.4371,
+    "taker_fees_paid": 37.3,
+    "crossed_fills": 0,
+    "max_side_cost": 0.59,
+    "wins": 38,
+    "losses": 3,
+    "by_lane": {
+     "KXBTC15M": {
+      "trades": 17,
+      "net": 15.31
+     },
+     "KXETH15M": {
+      "trades": 4,
+      "net": 8.65
+     },
+     "KXSOL15M": {
+      "trades": 1,
+      "net": 2.62
+     },
+     "KXXRP15M": {
+      "trades": 19,
+      "net": 29.62
+     }
+    },
+    "by_reason": {
+     "maker_tp": 38,
+     "stop_loss": 3
+    },
+    "payoff_ece": 0.0926,
+    "lanes_profitable": 4
+   },
+   "gate_on_chosen_oos": {
+    "oos_net_positive": true,
+    "oos_pf_at_least_1_15": true,
+    "oos_payoff_ece_at_most_0_08": false,
+    "oos_trades_at_least_20": true,
+    "oos_zero_crossed": true,
+    "oos_two_lanes_profitable": true,
+    "pass": false
+   },
+   "baseline_row": {
+    "entry": "taker",
+    "tp": "tp5",
+    "eth": "none",
+    "crossed_fills": {
+     "is": 0,
+     "oos": 0
+    },
+    "is": {
+     "trades": 63,
+     "win_rate": 0.9048,
+     "net_pnl": 59.16,
+     "pf": 2.698,
+     "ece": 0.2379,
+     "max_dd": 23.6,
+     "avg_entry": 0.4541,
+     "taker_fees_paid": 58.84,
+     "crossed_fills": 0,
+     "max_side_cost": 0.61,
+     "wins": 57,
+     "losses": 6,
+     "by_lane": {
+      "KXBTC15M": {
+       "trades": 32,
+       "net": 30.13
+      },
+      "KXETH15M": {
+       "trades": 5,
+       "net": 8.25
+      },
+      "KXXRP15M": {
+       "trades": 26,
+       "net": 20.78
+      }
+     },
+     "by_reason": {
+      "maker_tp": 57,
+      "stop_loss": 5,
+      "time_barrier": 1
+     },
+     "payoff_ece": 0.0285,
+     "lanes_profitable": 3
+    },
+    "oos": {
+     "trades": 41,
+     "win_rate": 0.9268,
+     "net_pnl": 40.2,
+     "pf": 2.7717,
+     "ece": 0.236,
+     "max_dd": 14.96,
+     "avg_entry": 0.4371,
+     "taker_fees_paid": 37.3,
+     "crossed_fills": 0,
+     "max_side_cost": 0.59,
+     "wins": 38,
+     "losses": 3,
+     "by_lane": {
+      "KXBTC15M": {
+       "trades": 17,
+       "net": 10.31
+      },
+      "KXETH15M": {
+       "trades": 4,
+       "net": 6.65
+      },
+      "KXSOL15M": {
+       "trades": 1,
+       "net": 1.62
+      },
+      "KXXRP15M": {
+       "trades": 19,
+       "net": 21.62
+      }
+     },
+     "by_reason": {
+      "maker_tp": 38,
+      "stop_loss": 3
+     },
+     "payoff_ece": 0.0926,
+     "lanes_profitable": 4
+    }
+   }
+  },
+  "corrected": {
+   "grid": {
+    "taker|tp5|none": {
+     "entry": "taker",
+     "tp": "tp5",
+     "eth": "none",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 58,
+      "win_rate": 0.6379,
+      "net_pnl": -79.31,
+      "pf": 0.4345,
+      "ece": 0.2218,
+      "max_dd": 83.45,
+      "avg_entry": 0.584,
+      "taker_fees_paid": 67.81,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 37,
+      "losses": 21,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -25.98
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": -18.38
+       },
+       "KXXRP15M": {
+        "trades": 23,
+        "net": -34.95
+       }
+      },
+      "by_reason": {
+       "maker_tp": 37,
+       "stop_loss": 20,
+       "time_barrier": 1
+      },
+      "payoff_ece": 0.0776,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 34,
+      "win_rate": 0.5294,
+      "net_pnl": -73.48,
+      "pf": 0.2877,
+      "ece": 0.2154,
+      "max_dd": 75.13,
+      "avg_entry": 0.5862,
+      "taker_fees_paid": 42.98,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 18,
+      "losses": 16,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -15.49
+       },
+       "KXETH15M": {
+        "trades": 2,
+        "net": 3.28
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 1.62
+       },
+       "KXXRP15M": {
+        "trades": 15,
+        "net": -62.89
+       }
+      },
+      "by_reason": {
+       "maker_tp": 18,
+       "stop_loss": 16
+      },
+      "payoff_ece": 0.1154,
+      "lanes_profitable": 2
+     }
+    },
+    "taker|tp5|d5": {
+     "entry": "taker",
+     "tp": "tp5",
+     "eth": "d5",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 56,
+      "win_rate": 0.6607,
+      "net_pnl": -63.85,
+      "pf": 0.4883,
+      "ece": 0.2073,
+      "max_dd": 69.15,
+      "avg_entry": 0.5841,
+      "taker_fees_paid": 64.35,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 37,
+      "losses": 19,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -25.98
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": -2.92
+       },
+       "KXXRP15M": {
+        "trades": 23,
+        "net": -34.95
+       }
+      },
+      "by_reason": {
+       "maker_tp": 37,
+       "stop_loss": 18,
+       "time_barrier": 1
+      },
+      "payoff_ece": 0.0304,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 33,
+      "win_rate": 0.5152,
+      "net_pnl": -75.12,
+      "pf": 0.2718,
+      "ece": 0.2334,
+      "max_dd": 76.77,
+      "avg_entry": 0.5867,
+      "taker_fees_paid": 42.12,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 17,
+      "losses": 16,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -15.49
+       },
+       "KXETH15M": {
+        "trades": 1,
+        "net": 1.64
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 1.62
+       },
+       "KXXRP15M": {
+        "trades": 15,
+        "net": -62.89
+       }
+      },
+      "by_reason": {
+       "maker_tp": 17,
+       "stop_loss": 16
+      },
+      "payoff_ece": 0.181,
+      "lanes_profitable": 2
+     }
+    },
+    "taker|tp5|spr2": {
+     "entry": "taker",
+     "tp": "tp5",
+     "eth": "spr2",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 58,
+      "win_rate": 0.6379,
+      "net_pnl": -79.31,
+      "pf": 0.4345,
+      "ece": 0.2218,
+      "max_dd": 83.45,
+      "avg_entry": 0.584,
+      "taker_fees_paid": 67.81,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 37,
+      "losses": 21,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -25.98
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": -18.38
+       },
+       "KXXRP15M": {
+        "trades": 23,
+        "net": -34.95
+       }
+      },
+      "by_reason": {
+       "maker_tp": 37,
+       "stop_loss": 20,
+       "time_barrier": 1
+      },
+      "payoff_ece": 0.0776,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 34,
+      "win_rate": 0.5294,
+      "net_pnl": -73.48,
+      "pf": 0.2877,
+      "ece": 0.2154,
+      "max_dd": 75.13,
+      "avg_entry": 0.5862,
+      "taker_fees_paid": 42.98,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 18,
+      "losses": 16,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -15.49
+       },
+       "KXETH15M": {
+        "trades": 2,
+        "net": 3.28
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 1.62
+       },
+       "KXXRP15M": {
+        "trades": 15,
+        "net": -62.89
+       }
+      },
+      "by_reason": {
+       "maker_tp": 18,
+       "stop_loss": 16
+      },
+      "payoff_ece": 0.1154,
+      "lanes_profitable": 2
+     }
+    },
+    "taker|tp6|none": {
+     "entry": "taker",
+     "tp": "tp6",
+     "eth": "none",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 58,
+      "win_rate": 0.6034,
+      "net_pnl": -89.07,
+      "pf": 0.4109,
+      "ece": 0.2218,
+      "max_dd": 93.71,
+      "avg_entry": 0.584,
+      "taker_fees_paid": 69.57,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 35,
+      "losses": 23,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -24.98
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": -17.38
+       },
+       "KXXRP15M": {
+        "trades": 23,
+        "net": -46.71
+       }
+      },
+      "by_reason": {
+       "maker_tp": 35,
+       "stop_loss": 22,
+       "time_barrier": 1
+      },
+      "payoff_ece": 0.1139,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 34,
+      "win_rate": 0.5294,
+      "net_pnl": -69.98,
+      "pf": 0.3216,
+      "ece": 0.2154,
+      "max_dd": 71.63,
+      "avg_entry": 0.5862,
+      "taker_fees_paid": 42.98,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 18,
+      "losses": 16,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -13.99
+       },
+       "KXETH15M": {
+        "trades": 2,
+        "net": 3.78
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.12
+       },
+       "KXXRP15M": {
+        "trades": 15,
+        "net": -61.89
+       }
+      },
+      "by_reason": {
+       "maker_tp": 18,
+       "stop_loss": 16
+      },
+      "payoff_ece": 0.1715,
+      "lanes_profitable": 2
+     }
+    },
+    "taker|tp6|d5": {
+     "entry": "taker",
+     "tp": "tp6",
+     "eth": "d5",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 56,
+      "win_rate": 0.625,
+      "net_pnl": -73.61,
+      "pf": 0.4577,
+      "ece": 0.2073,
+      "max_dd": 79.91,
+      "avg_entry": 0.5841,
+      "taker_fees_paid": 66.11,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 35,
+      "losses": 21,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -24.98
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": -1.92
+       },
+       "KXXRP15M": {
+        "trades": 23,
+        "net": -46.71
+       }
+      },
+      "by_reason": {
+       "maker_tp": 35,
+       "stop_loss": 20,
+       "time_barrier": 1
+      },
+      "payoff_ece": 0.1462,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 33,
+      "win_rate": 0.5152,
+      "net_pnl": -71.62,
+      "pf": 0.3057,
+      "ece": 0.2334,
+      "max_dd": 73.27,
+      "avg_entry": 0.5867,
+      "taker_fees_paid": 42.12,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 17,
+      "losses": 16,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -13.99
+       },
+       "KXETH15M": {
+        "trades": 1,
+        "net": 2.14
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.12
+       },
+       "KXXRP15M": {
+        "trades": 15,
+        "net": -61.89
+       }
+      },
+      "by_reason": {
+       "maker_tp": 17,
+       "stop_loss": 16
+      },
+      "payoff_ece": 0.1771,
+      "lanes_profitable": 2
+     }
+    },
+    "taker|tp6|spr2": {
+     "entry": "taker",
+     "tp": "tp6",
+     "eth": "spr2",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 58,
+      "win_rate": 0.6034,
+      "net_pnl": -89.07,
+      "pf": 0.4109,
+      "ece": 0.2218,
+      "max_dd": 93.71,
+      "avg_entry": 0.584,
+      "taker_fees_paid": 69.57,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 35,
+      "losses": 23,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -24.98
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": -17.38
+       },
+       "KXXRP15M": {
+        "trades": 23,
+        "net": -46.71
+       }
+      },
+      "by_reason": {
+       "maker_tp": 35,
+       "stop_loss": 22,
+       "time_barrier": 1
+      },
+      "payoff_ece": 0.1139,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 34,
+      "win_rate": 0.5294,
+      "net_pnl": -69.98,
+      "pf": 0.3216,
+      "ece": 0.2154,
+      "max_dd": 71.63,
+      "avg_entry": 0.5862,
+      "taker_fees_paid": 42.98,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 18,
+      "losses": 16,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -13.99
+       },
+       "KXETH15M": {
+        "trades": 2,
+        "net": 3.78
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.12
+       },
+       "KXXRP15M": {
+        "trades": 15,
+        "net": -61.89
+       }
+      },
+      "by_reason": {
+       "maker_tp": 18,
+       "stop_loss": 16
+      },
+      "payoff_ece": 0.1715,
+      "lanes_profitable": 2
+     }
+    },
+    "taker|tp7|none": {
+     "entry": "taker",
+     "tp": "tp7",
+     "eth": "none",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 58,
+      "win_rate": 0.6034,
+      "net_pnl": -84.57,
+      "pf": 0.4407,
+      "ece": 0.2218,
+      "max_dd": 89.71,
+      "avg_entry": 0.584,
+      "taker_fees_paid": 69.57,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 35,
+      "losses": 23,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -23.98
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": -16.38
+       },
+       "KXXRP15M": {
+        "trades": 23,
+        "net": -44.21
+       }
+      },
+      "by_reason": {
+       "maker_tp": 35,
+       "stop_loss": 22,
+       "time_barrier": 1
+      },
+      "payoff_ece": 0.1139,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 34,
+      "win_rate": 0.5294,
+      "net_pnl": -66.48,
+      "pf": 0.3556,
+      "ece": 0.2154,
+      "max_dd": 68.13,
+      "avg_entry": 0.5862,
+      "taker_fees_paid": 42.98,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 18,
+      "losses": 16,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -12.49
+       },
+       "KXETH15M": {
+        "trades": 2,
+        "net": 4.28
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.62
+       },
+       "KXXRP15M": {
+        "trades": 15,
+        "net": -60.89
+       }
+      },
+      "by_reason": {
+       "maker_tp": 18,
+       "stop_loss": 16
+      },
+      "payoff_ece": 0.1715,
+      "lanes_profitable": 2
+     }
+    },
+    "taker|tp7|d5": {
+     "entry": "taker",
+     "tp": "tp7",
+     "eth": "d5",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 56,
+      "win_rate": 0.625,
+      "net_pnl": -69.11,
+      "pf": 0.4909,
+      "ece": 0.2073,
+      "max_dd": 76.41,
+      "avg_entry": 0.5841,
+      "taker_fees_paid": 66.11,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 35,
+      "losses": 21,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -23.98
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": -0.92
+       },
+       "KXXRP15M": {
+        "trades": 23,
+        "net": -44.21
+       }
+      },
+      "by_reason": {
+       "maker_tp": 35,
+       "stop_loss": 20,
+       "time_barrier": 1
+      },
+      "payoff_ece": 0.1462,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 33,
+      "win_rate": 0.5152,
+      "net_pnl": -68.12,
+      "pf": 0.3397,
+      "ece": 0.2334,
+      "max_dd": 69.77,
+      "avg_entry": 0.5867,
+      "taker_fees_paid": 42.12,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 17,
+      "losses": 16,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -12.49
+       },
+       "KXETH15M": {
+        "trades": 1,
+        "net": 2.64
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.62
+       },
+       "KXXRP15M": {
+        "trades": 15,
+        "net": -60.89
+       }
+      },
+      "by_reason": {
+       "maker_tp": 17,
+       "stop_loss": 16
+      },
+      "payoff_ece": 0.1771,
+      "lanes_profitable": 2
+     }
+    },
+    "taker|tp7|spr2": {
+     "entry": "taker",
+     "tp": "tp7",
+     "eth": "spr2",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 58,
+      "win_rate": 0.6034,
+      "net_pnl": -84.57,
+      "pf": 0.4407,
+      "ece": 0.2218,
+      "max_dd": 89.71,
+      "avg_entry": 0.584,
+      "taker_fees_paid": 69.57,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 35,
+      "losses": 23,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -23.98
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": -16.38
+       },
+       "KXXRP15M": {
+        "trades": 23,
+        "net": -44.21
+       }
+      },
+      "by_reason": {
+       "maker_tp": 35,
+       "stop_loss": 22,
+       "time_barrier": 1
+      },
+      "payoff_ece": 0.1139,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 34,
+      "win_rate": 0.5294,
+      "net_pnl": -66.48,
+      "pf": 0.3556,
+      "ece": 0.2154,
+      "max_dd": 68.13,
+      "avg_entry": 0.5862,
+      "taker_fees_paid": 42.98,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 18,
+      "losses": 16,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -12.49
+       },
+       "KXETH15M": {
+        "trades": 2,
+        "net": 4.28
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.62
+       },
+       "KXXRP15M": {
+        "trades": 15,
+        "net": -60.89
+       }
+      },
+      "by_reason": {
+       "maker_tp": 18,
+       "stop_loss": 16
+      },
+      "payoff_ece": 0.1715,
+      "lanes_profitable": 2
+     }
+    },
+    "peg500|tp5|none": {
+     "entry": "peg500",
+     "tp": "tp5",
+     "eth": "none",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 55,
+      "win_rate": 0.6545,
+      "net_pnl": -75.04,
+      "pf": 0.4413,
+      "ece": 0.2225,
+      "max_dd": 79.18,
+      "avg_entry": 0.5833,
+      "taker_fees_paid": 63.54,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 36,
+      "losses": 19,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -25.98
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": -18.38
+       },
+       "KXXRP15M": {
+        "trades": 20,
+        "net": -30.68
+       }
+      },
+      "by_reason": {
+       "maker_tp": 36,
+       "stop_loss": 19
+      },
+      "payoff_ece": 0.0742,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 36,
+      "win_rate": 0.5556,
+      "net_pnl": -66.96,
+      "pf": 0.3357,
+      "ece": 0.238,
+      "max_dd": 68.61,
+      "avg_entry": 0.5867,
+      "taker_fees_paid": 42.96,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 20,
+      "losses": 16,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -15.49
+       },
+       "KXETH15M": {
+        "trades": 2,
+        "net": 3.28
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 1.62
+       },
+       "KXXRP15M": {
+        "trades": 17,
+        "net": -56.37
+       }
+      },
+      "by_reason": {
+       "maker_tp": 20,
+       "stop_loss": 16
+      },
+      "payoff_ece": 0.1007,
+      "lanes_profitable": 2
+     }
+    },
+    "peg500|tp5|d5": {
+     "entry": "peg500",
+     "tp": "tp5",
+     "eth": "d5",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 53,
+      "win_rate": 0.6792,
+      "net_pnl": -59.58,
+      "pf": 0.4987,
+      "ece": 0.2073,
+      "max_dd": 64.88,
+      "avg_entry": 0.5834,
+      "taker_fees_paid": 60.08,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 36,
+      "losses": 17,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -25.98
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": -2.92
+       },
+       "KXXRP15M": {
+        "trades": 20,
+        "net": -30.68
+       }
+      },
+      "by_reason": {
+       "maker_tp": 36,
+       "stop_loss": 17
+      },
+      "payoff_ece": 0.0711,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 35,
+      "win_rate": 0.5429,
+      "net_pnl": -68.6,
+      "pf": 0.3194,
+      "ece": 0.2556,
+      "max_dd": 70.25,
+      "avg_entry": 0.5871,
+      "taker_fees_paid": 42.1,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 19,
+      "losses": 16,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -15.49
+       },
+       "KXETH15M": {
+        "trades": 1,
+        "net": 1.64
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 1.62
+       },
+       "KXXRP15M": {
+        "trades": 17,
+        "net": -56.37
+       }
+      },
+      "by_reason": {
+       "maker_tp": 19,
+       "stop_loss": 16
+      },
+      "payoff_ece": 0.16,
+      "lanes_profitable": 2
+     }
+    },
+    "peg500|tp5|spr2": {
+     "entry": "peg500",
+     "tp": "tp5",
+     "eth": "spr2",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 55,
+      "win_rate": 0.6545,
+      "net_pnl": -75.04,
+      "pf": 0.4413,
+      "ece": 0.2225,
+      "max_dd": 79.18,
+      "avg_entry": 0.5833,
+      "taker_fees_paid": 63.54,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 36,
+      "losses": 19,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -25.98
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": -18.38
+       },
+       "KXXRP15M": {
+        "trades": 20,
+        "net": -30.68
+       }
+      },
+      "by_reason": {
+       "maker_tp": 36,
+       "stop_loss": 19
+      },
+      "payoff_ece": 0.0742,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 36,
+      "win_rate": 0.5556,
+      "net_pnl": -66.96,
+      "pf": 0.3357,
+      "ece": 0.238,
+      "max_dd": 68.61,
+      "avg_entry": 0.5867,
+      "taker_fees_paid": 42.96,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 20,
+      "losses": 16,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -15.49
+       },
+       "KXETH15M": {
+        "trades": 2,
+        "net": 3.28
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 1.62
+       },
+       "KXXRP15M": {
+        "trades": 17,
+        "net": -56.37
+       }
+      },
+      "by_reason": {
+       "maker_tp": 20,
+       "stop_loss": 16
+      },
+      "payoff_ece": 0.1007,
+      "lanes_profitable": 2
+     }
+    },
+    "peg500|tp6|none": {
+     "entry": "peg500",
+     "tp": "tp6",
+     "eth": "none",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 55,
+      "win_rate": 0.6182,
+      "net_pnl": -84.8,
+      "pf": 0.4163,
+      "ece": 0.2225,
+      "max_dd": 89.44,
+      "avg_entry": 0.5833,
+      "taker_fees_paid": 65.3,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 34,
+      "losses": 21,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -24.98
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": -17.38
+       },
+       "KXXRP15M": {
+        "trades": 20,
+        "net": -42.44
+       }
+      },
+      "by_reason": {
+       "maker_tp": 34,
+       "stop_loss": 21
+      },
+      "payoff_ece": 0.0865,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 36,
+      "win_rate": 0.5556,
+      "net_pnl": -62.96,
+      "pf": 0.3754,
+      "ece": 0.238,
+      "max_dd": 64.61,
+      "avg_entry": 0.5867,
+      "taker_fees_paid": 42.96,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 20,
+      "losses": 16,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -13.99
+       },
+       "KXETH15M": {
+        "trades": 2,
+        "net": 3.78
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.12
+       },
+       "KXXRP15M": {
+        "trades": 17,
+        "net": -54.87
+       }
+      },
+      "by_reason": {
+       "maker_tp": 20,
+       "stop_loss": 16
+      },
+      "payoff_ece": 0.1891,
+      "lanes_profitable": 2
+     }
+    },
+    "peg500|tp6|d5": {
+     "entry": "peg500",
+     "tp": "tp6",
+     "eth": "d5",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 53,
+      "win_rate": 0.6415,
+      "net_pnl": -69.34,
+      "pf": 0.4659,
+      "ece": 0.2073,
+      "max_dd": 75.64,
+      "avg_entry": 0.5834,
+      "taker_fees_paid": 61.84,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 34,
+      "losses": 19,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -24.98
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": -1.92
+       },
+       "KXXRP15M": {
+        "trades": 20,
+        "net": -42.44
+       }
+      },
+      "by_reason": {
+       "maker_tp": 34,
+       "stop_loss": 19
+      },
+      "payoff_ece": 0.0778,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 35,
+      "win_rate": 0.5429,
+      "net_pnl": -64.6,
+      "pf": 0.3591,
+      "ece": 0.2556,
+      "max_dd": 66.25,
+      "avg_entry": 0.5871,
+      "taker_fees_paid": 42.1,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 19,
+      "losses": 16,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -13.99
+       },
+       "KXETH15M": {
+        "trades": 1,
+        "net": 2.14
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.12
+       },
+       "KXXRP15M": {
+        "trades": 17,
+        "net": -54.87
+       }
+      },
+      "by_reason": {
+       "maker_tp": 19,
+       "stop_loss": 16
+      },
+      "payoff_ece": 0.1959,
+      "lanes_profitable": 2
+     }
+    },
+    "peg500|tp6|spr2": {
+     "entry": "peg500",
+     "tp": "tp6",
+     "eth": "spr2",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 55,
+      "win_rate": 0.6182,
+      "net_pnl": -84.8,
+      "pf": 0.4163,
+      "ece": 0.2225,
+      "max_dd": 89.44,
+      "avg_entry": 0.5833,
+      "taker_fees_paid": 65.3,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 34,
+      "losses": 21,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -24.98
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": -17.38
+       },
+       "KXXRP15M": {
+        "trades": 20,
+        "net": -42.44
+       }
+      },
+      "by_reason": {
+       "maker_tp": 34,
+       "stop_loss": 21
+      },
+      "payoff_ece": 0.0865,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 36,
+      "win_rate": 0.5556,
+      "net_pnl": -62.96,
+      "pf": 0.3754,
+      "ece": 0.238,
+      "max_dd": 64.61,
+      "avg_entry": 0.5867,
+      "taker_fees_paid": 42.96,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 20,
+      "losses": 16,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -13.99
+       },
+       "KXETH15M": {
+        "trades": 2,
+        "net": 3.78
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.12
+       },
+       "KXXRP15M": {
+        "trades": 17,
+        "net": -54.87
+       }
+      },
+      "by_reason": {
+       "maker_tp": 20,
+       "stop_loss": 16
+      },
+      "payoff_ece": 0.1891,
+      "lanes_profitable": 2
+     }
+    },
+    "peg500|tp7|none": {
+     "entry": "peg500",
+     "tp": "tp7",
+     "eth": "none",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 55,
+      "win_rate": 0.6182,
+      "net_pnl": -80.3,
+      "pf": 0.4473,
+      "ece": 0.2225,
+      "max_dd": 85.44,
+      "avg_entry": 0.5833,
+      "taker_fees_paid": 65.3,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 34,
+      "losses": 21,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -23.98
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": -16.38
+       },
+       "KXXRP15M": {
+        "trades": 20,
+        "net": -39.94
+       }
+      },
+      "by_reason": {
+       "maker_tp": 34,
+       "stop_loss": 21
+      },
+      "payoff_ece": 0.0865,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 36,
+      "win_rate": 0.5556,
+      "net_pnl": -58.96,
+      "pf": 0.4151,
+      "ece": 0.238,
+      "max_dd": 60.61,
+      "avg_entry": 0.5867,
+      "taker_fees_paid": 42.96,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 20,
+      "losses": 16,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -12.49
+       },
+       "KXETH15M": {
+        "trades": 2,
+        "net": 4.28
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.62
+       },
+       "KXXRP15M": {
+        "trades": 17,
+        "net": -53.37
+       }
+      },
+      "by_reason": {
+       "maker_tp": 20,
+       "stop_loss": 16
+      },
+      "payoff_ece": 0.1891,
+      "lanes_profitable": 2
+     }
+    },
+    "peg500|tp7|d5": {
+     "entry": "peg500",
+     "tp": "tp7",
+     "eth": "d5",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 53,
+      "win_rate": 0.6415,
+      "net_pnl": -64.84,
+      "pf": 0.5005,
+      "ece": 0.2073,
+      "max_dd": 72.14,
+      "avg_entry": 0.5834,
+      "taker_fees_paid": 61.84,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 34,
+      "losses": 19,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -23.98
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": -0.92
+       },
+       "KXXRP15M": {
+        "trades": 20,
+        "net": -39.94
+       }
+      },
+      "by_reason": {
+       "maker_tp": 34,
+       "stop_loss": 19
+      },
+      "payoff_ece": 0.0778,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 35,
+      "win_rate": 0.5429,
+      "net_pnl": -60.6,
+      "pf": 0.3988,
+      "ece": 0.2556,
+      "max_dd": 62.25,
+      "avg_entry": 0.5871,
+      "taker_fees_paid": 42.1,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 19,
+      "losses": 16,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -12.49
+       },
+       "KXETH15M": {
+        "trades": 1,
+        "net": 2.64
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.62
+       },
+       "KXXRP15M": {
+        "trades": 17,
+        "net": -53.37
+       }
+      },
+      "by_reason": {
+       "maker_tp": 19,
+       "stop_loss": 16
+      },
+      "payoff_ece": 0.1959,
+      "lanes_profitable": 2
+     }
+    },
+    "peg500|tp7|spr2": {
+     "entry": "peg500",
+     "tp": "tp7",
+     "eth": "spr2",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 55,
+      "win_rate": 0.6182,
+      "net_pnl": -80.3,
+      "pf": 0.4473,
+      "ece": 0.2225,
+      "max_dd": 85.44,
+      "avg_entry": 0.5833,
+      "taker_fees_paid": 65.3,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 34,
+      "losses": 21,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -23.98
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": -16.38
+       },
+       "KXXRP15M": {
+        "trades": 20,
+        "net": -39.94
+       }
+      },
+      "by_reason": {
+       "maker_tp": 34,
+       "stop_loss": 21
+      },
+      "payoff_ece": 0.0865,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 36,
+      "win_rate": 0.5556,
+      "net_pnl": -58.96,
+      "pf": 0.4151,
+      "ece": 0.238,
+      "max_dd": 60.61,
+      "avg_entry": 0.5867,
+      "taker_fees_paid": 42.96,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 20,
+      "losses": 16,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -12.49
+       },
+       "KXETH15M": {
+        "trades": 2,
+        "net": 4.28
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.62
+       },
+       "KXXRP15M": {
+        "trades": 17,
+        "net": -53.37
+       }
+      },
+      "by_reason": {
+       "maker_tp": 20,
+       "stop_loss": 16
+      },
+      "payoff_ece": 0.1891,
+      "lanes_profitable": 2
+     }
+    },
+    "peg1000|tp5|none": {
+     "entry": "peg1000",
+     "tp": "tp5",
+     "eth": "none",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 56,
+      "win_rate": 0.6607,
+      "net_pnl": -73.39,
+      "pf": 0.4536,
+      "ece": 0.2298,
+      "max_dd": 77.53,
+      "avg_entry": 0.5834,
+      "taker_fees_paid": 64.39,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 37,
+      "losses": 19,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -25.98
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": -18.38
+       },
+       "KXXRP15M": {
+        "trades": 21,
+        "net": -29.03
+       }
+      },
+      "by_reason": {
+       "maker_tp": 37,
+       "stop_loss": 19
+      },
+      "payoff_ece": 0.0539,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 34,
+      "win_rate": 0.5588,
+      "net_pnl": -62.57,
+      "pf": 0.3453,
+      "ece": 0.2154,
+      "max_dd": 64.22,
+      "avg_entry": 0.5841,
+      "taker_fees_paid": 39.57,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 19,
+      "losses": 15,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -15.49
+       },
+       "KXETH15M": {
+        "trades": 2,
+        "net": 3.28
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 1.62
+       },
+       "KXXRP15M": {
+        "trades": 15,
+        "net": -51.98
+       }
+      },
+      "by_reason": {
+       "maker_tp": 19,
+       "stop_loss": 15
+      },
+      "payoff_ece": 0.105,
+      "lanes_profitable": 2
+     }
+    },
+    "peg1000|tp5|d5": {
+     "entry": "peg1000",
+     "tp": "tp5",
+     "eth": "d5",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 54,
+      "win_rate": 0.6852,
+      "net_pnl": -57.93,
+      "pf": 0.5126,
+      "ece": 0.215,
+      "max_dd": 63.23,
+      "avg_entry": 0.5835,
+      "taker_fees_paid": 60.93,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 37,
+      "losses": 17,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -25.98
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": -2.92
+       },
+       "KXXRP15M": {
+        "trades": 21,
+        "net": -29.03
+       }
+      },
+      "by_reason": {
+       "maker_tp": 37,
+       "stop_loss": 17
+      },
+      "payoff_ece": 0.0561,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 33,
+      "win_rate": 0.5455,
+      "net_pnl": -64.21,
+      "pf": 0.3281,
+      "ece": 0.2334,
+      "max_dd": 65.86,
+      "avg_entry": 0.5845,
+      "taker_fees_paid": 38.71,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 18,
+      "losses": 15,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -15.49
+       },
+       "KXETH15M": {
+        "trades": 1,
+        "net": 1.64
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 1.62
+       },
+       "KXXRP15M": {
+        "trades": 15,
+        "net": -51.98
+       }
+      },
+      "by_reason": {
+       "maker_tp": 18,
+       "stop_loss": 15
+      },
+      "payoff_ece": 0.203,
+      "lanes_profitable": 2
+     }
+    },
+    "peg1000|tp5|spr2": {
+     "entry": "peg1000",
+     "tp": "tp5",
+     "eth": "spr2",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 56,
+      "win_rate": 0.6607,
+      "net_pnl": -73.39,
+      "pf": 0.4536,
+      "ece": 0.2298,
+      "max_dd": 77.53,
+      "avg_entry": 0.5834,
+      "taker_fees_paid": 64.39,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 37,
+      "losses": 19,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -25.98
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": -18.38
+       },
+       "KXXRP15M": {
+        "trades": 21,
+        "net": -29.03
+       }
+      },
+      "by_reason": {
+       "maker_tp": 37,
+       "stop_loss": 19
+      },
+      "payoff_ece": 0.0539,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 34,
+      "win_rate": 0.5588,
+      "net_pnl": -62.57,
+      "pf": 0.3453,
+      "ece": 0.2154,
+      "max_dd": 64.22,
+      "avg_entry": 0.5841,
+      "taker_fees_paid": 39.57,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 19,
+      "losses": 15,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -15.49
+       },
+       "KXETH15M": {
+        "trades": 2,
+        "net": 3.28
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 1.62
+       },
+       "KXXRP15M": {
+        "trades": 15,
+        "net": -51.98
+       }
+      },
+      "by_reason": {
+       "maker_tp": 19,
+       "stop_loss": 15
+      },
+      "payoff_ece": 0.105,
+      "lanes_profitable": 2
+     }
+    },
+    "peg1000|tp6|none": {
+     "entry": "peg1000",
+     "tp": "tp6",
+     "eth": "none",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 56,
+      "win_rate": 0.625,
+      "net_pnl": -83.15,
+      "pf": 0.4277,
+      "ece": 0.2298,
+      "max_dd": 87.79,
+      "avg_entry": 0.5834,
+      "taker_fees_paid": 66.15,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 35,
+      "losses": 21,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -24.98
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": -17.38
+       },
+       "KXXRP15M": {
+        "trades": 21,
+        "net": -40.79
+       }
+      },
+      "by_reason": {
+       "maker_tp": 35,
+       "stop_loss": 21
+      },
+      "payoff_ece": 0.1272,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 34,
+      "win_rate": 0.5588,
+      "net_pnl": -58.57,
+      "pf": 0.3872,
+      "ece": 0.2154,
+      "max_dd": 60.22,
+      "avg_entry": 0.5841,
+      "taker_fees_paid": 39.57,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 19,
+      "losses": 15,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -13.99
+       },
+       "KXETH15M": {
+        "trades": 2,
+        "net": 3.78
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.12
+       },
+       "KXXRP15M": {
+        "trades": 15,
+        "net": -50.48
+       }
+      },
+      "by_reason": {
+       "maker_tp": 19,
+       "stop_loss": 15
+      },
+      "payoff_ece": 0.1303,
+      "lanes_profitable": 2
+     }
+    },
+    "peg1000|tp6|d5": {
+     "entry": "peg1000",
+     "tp": "tp6",
+     "eth": "d5",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 54,
+      "win_rate": 0.6481,
+      "net_pnl": -67.69,
+      "pf": 0.4786,
+      "ece": 0.215,
+      "max_dd": 73.99,
+      "avg_entry": 0.5835,
+      "taker_fees_paid": 62.69,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 35,
+      "losses": 19,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -24.98
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": -1.92
+       },
+       "KXXRP15M": {
+        "trades": 21,
+        "net": -40.79
+       }
+      },
+      "by_reason": {
+       "maker_tp": 35,
+       "stop_loss": 19
+      },
+      "payoff_ece": 0.0555,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 33,
+      "win_rate": 0.5455,
+      "net_pnl": -60.21,
+      "pf": 0.37,
+      "ece": 0.2334,
+      "max_dd": 61.86,
+      "avg_entry": 0.5845,
+      "taker_fees_paid": 38.71,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 18,
+      "losses": 15,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -13.99
+       },
+       "KXETH15M": {
+        "trades": 1,
+        "net": 2.14
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.12
+       },
+       "KXXRP15M": {
+        "trades": 15,
+        "net": -50.48
+       }
+      },
+      "by_reason": {
+       "maker_tp": 18,
+       "stop_loss": 15
+      },
+      "payoff_ece": 0.1688,
+      "lanes_profitable": 2
+     }
+    },
+    "peg1000|tp6|spr2": {
+     "entry": "peg1000",
+     "tp": "tp6",
+     "eth": "spr2",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 56,
+      "win_rate": 0.625,
+      "net_pnl": -83.15,
+      "pf": 0.4277,
+      "ece": 0.2298,
+      "max_dd": 87.79,
+      "avg_entry": 0.5834,
+      "taker_fees_paid": 66.15,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 35,
+      "losses": 21,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -24.98
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": -17.38
+       },
+       "KXXRP15M": {
+        "trades": 21,
+        "net": -40.79
+       }
+      },
+      "by_reason": {
+       "maker_tp": 35,
+       "stop_loss": 21
+      },
+      "payoff_ece": 0.1272,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 34,
+      "win_rate": 0.5588,
+      "net_pnl": -58.57,
+      "pf": 0.3872,
+      "ece": 0.2154,
+      "max_dd": 60.22,
+      "avg_entry": 0.5841,
+      "taker_fees_paid": 39.57,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 19,
+      "losses": 15,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -13.99
+       },
+       "KXETH15M": {
+        "trades": 2,
+        "net": 3.78
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.12
+       },
+       "KXXRP15M": {
+        "trades": 15,
+        "net": -50.48
+       }
+      },
+      "by_reason": {
+       "maker_tp": 19,
+       "stop_loss": 15
+      },
+      "payoff_ece": 0.1303,
+      "lanes_profitable": 2
+     }
+    },
+    "peg1000|tp7|none": {
+     "entry": "peg1000",
+     "tp": "tp7",
+     "eth": "none",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 56,
+      "win_rate": 0.625,
+      "net_pnl": -78.65,
+      "pf": 0.4586,
+      "ece": 0.2298,
+      "max_dd": 83.79,
+      "avg_entry": 0.5834,
+      "taker_fees_paid": 66.15,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 35,
+      "losses": 21,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -23.98
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": -16.38
+       },
+       "KXXRP15M": {
+        "trades": 21,
+        "net": -38.29
+       }
+      },
+      "by_reason": {
+       "maker_tp": 35,
+       "stop_loss": 21
+      },
+      "payoff_ece": 0.1272,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 34,
+      "win_rate": 0.5588,
+      "net_pnl": -54.57,
+      "pf": 0.429,
+      "ece": 0.2154,
+      "max_dd": 56.22,
+      "avg_entry": 0.5841,
+      "taker_fees_paid": 39.57,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 19,
+      "losses": 15,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -12.49
+       },
+       "KXETH15M": {
+        "trades": 2,
+        "net": 4.28
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.62
+       },
+       "KXXRP15M": {
+        "trades": 15,
+        "net": -48.98
+       }
+      },
+      "by_reason": {
+       "maker_tp": 19,
+       "stop_loss": 15
+      },
+      "payoff_ece": 0.1303,
+      "lanes_profitable": 2
+     }
+    },
+    "peg1000|tp7|d5": {
+     "entry": "peg1000",
+     "tp": "tp7",
+     "eth": "d5",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 54,
+      "win_rate": 0.6481,
+      "net_pnl": -63.19,
+      "pf": 0.5132,
+      "ece": 0.215,
+      "max_dd": 70.49,
+      "avg_entry": 0.5835,
+      "taker_fees_paid": 62.69,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 35,
+      "losses": 19,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -23.98
+       },
+       "KXETH15M": {
+        "trades": 3,
+        "net": -0.92
+       },
+       "KXXRP15M": {
+        "trades": 21,
+        "net": -38.29
+       }
+      },
+      "by_reason": {
+       "maker_tp": 35,
+       "stop_loss": 19
+      },
+      "payoff_ece": 0.0555,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 33,
+      "win_rate": 0.5455,
+      "net_pnl": -56.21,
+      "pf": 0.4118,
+      "ece": 0.2334,
+      "max_dd": 57.86,
+      "avg_entry": 0.5845,
+      "taker_fees_paid": 38.71,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 18,
+      "losses": 15,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -12.49
+       },
+       "KXETH15M": {
+        "trades": 1,
+        "net": 2.64
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.62
+       },
+       "KXXRP15M": {
+        "trades": 15,
+        "net": -48.98
+       }
+      },
+      "by_reason": {
+       "maker_tp": 18,
+       "stop_loss": 15
+      },
+      "payoff_ece": 0.1688,
+      "lanes_profitable": 2
+     }
+    },
+    "peg1000|tp7|spr2": {
+     "entry": "peg1000",
+     "tp": "tp7",
+     "eth": "spr2",
+     "crossed_fills": {
+      "is": 0,
+      "oos": 0
+     },
+     "is": {
+      "trades": 56,
+      "win_rate": 0.625,
+      "net_pnl": -78.65,
+      "pf": 0.4586,
+      "ece": 0.2298,
+      "max_dd": 83.79,
+      "avg_entry": 0.5834,
+      "taker_fees_paid": 66.15,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 35,
+      "losses": 21,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 30,
+        "net": -23.98
+       },
+       "KXETH15M": {
+        "trades": 5,
+        "net": -16.38
+       },
+       "KXXRP15M": {
+        "trades": 21,
+        "net": -38.29
+       }
+      },
+      "by_reason": {
+       "maker_tp": 35,
+       "stop_loss": 21
+      },
+      "payoff_ece": 0.1272,
+      "lanes_profitable": 0
+     },
+     "oos": {
+      "trades": 34,
+      "win_rate": 0.5588,
+      "net_pnl": -54.57,
+      "pf": 0.429,
+      "ece": 0.2154,
+      "max_dd": 56.22,
+      "avg_entry": 0.5841,
+      "taker_fees_paid": 39.57,
+      "crossed_fills": 0,
+      "max_side_cost": 0.61,
+      "wins": 19,
+      "losses": 15,
+      "by_lane": {
+       "KXBTC15M": {
+        "trades": 16,
+        "net": -12.49
+       },
+       "KXETH15M": {
+        "trades": 2,
+        "net": 4.28
+       },
+       "KXSOL15M": {
+        "trades": 1,
+        "net": 2.62
+       },
+       "KXXRP15M": {
+        "trades": 15,
+        "net": -48.98
+       }
+      },
+      "by_reason": {
+       "maker_tp": 19,
+       "stop_loss": 15
+      },
+      "payoff_ece": 0.1303,
+      "lanes_profitable": 2
+     }
+    }
+   },
+   "chosen_on_is": "peg1000|tp5|d5",
+   "chosen_oos": {
+    "trades": 33,
+    "win_rate": 0.5455,
+    "net_pnl": -64.21,
+    "pf": 0.3281,
+    "ece": 0.2334,
+    "max_dd": 65.86,
+    "avg_entry": 0.5845,
+    "taker_fees_paid": 38.71,
+    "crossed_fills": 0,
+    "max_side_cost": 0.61,
+    "wins": 18,
+    "losses": 15,
+    "by_lane": {
+     "KXBTC15M": {
+      "trades": 16,
+      "net": -15.49
+     },
+     "KXETH15M": {
+      "trades": 1,
+      "net": 1.64
+     },
+     "KXSOL15M": {
+      "trades": 1,
+      "net": 1.62
+     },
+     "KXXRP15M": {
+      "trades": 15,
+      "net": -51.98
+     }
+    },
+    "by_reason": {
+     "maker_tp": 18,
+     "stop_loss": 15
+    },
+    "payoff_ece": 0.203,
+    "lanes_profitable": 2
+   },
+   "gate_on_chosen_oos": {
+    "oos_net_positive": false,
+    "oos_pf_at_least_1_15": false,
+    "oos_payoff_ece_at_most_0_08": false,
+    "oos_trades_at_least_20": true,
+    "oos_zero_crossed": true,
+    "oos_two_lanes_profitable": true,
+    "pass": false
+   },
+   "baseline_row": {
+    "entry": "taker",
+    "tp": "tp5",
+    "eth": "none",
+    "crossed_fills": {
+     "is": 0,
+     "oos": 0
+    },
+    "is": {
+     "trades": 58,
+     "win_rate": 0.6379,
+     "net_pnl": -79.31,
+     "pf": 0.4345,
+     "ece": 0.2218,
+     "max_dd": 83.45,
+     "avg_entry": 0.584,
+     "taker_fees_paid": 67.81,
+     "crossed_fills": 0,
+     "max_side_cost": 0.61,
+     "wins": 37,
+     "losses": 21,
+     "by_lane": {
+      "KXBTC15M": {
+       "trades": 30,
+       "net": -25.98
+      },
+      "KXETH15M": {
+       "trades": 5,
+       "net": -18.38
+      },
+      "KXXRP15M": {
+       "trades": 23,
+       "net": -34.95
+      }
+     },
+     "by_reason": {
+      "maker_tp": 37,
+      "stop_loss": 20,
+      "time_barrier": 1
+     },
+     "payoff_ece": 0.0776,
+     "lanes_profitable": 0
+    },
+    "oos": {
+     "trades": 34,
+     "win_rate": 0.5294,
+     "net_pnl": -73.48,
+     "pf": 0.2877,
+     "ece": 0.2154,
+     "max_dd": 75.13,
+     "avg_entry": 0.5862,
+     "taker_fees_paid": 42.98,
+     "crossed_fills": 0,
+     "max_side_cost": 0.61,
+     "wins": 18,
+     "losses": 16,
+     "by_lane": {
+      "KXBTC15M": {
+       "trades": 16,
+       "net": -15.49
+      },
+      "KXETH15M": {
+       "trades": 2,
+       "net": 3.28
+      },
+      "KXSOL15M": {
+       "trades": 1,
+       "net": 1.62
+      },
+      "KXXRP15M": {
+       "trades": 15,
+       "net": -62.89
+      }
+     },
+     "by_reason": {
+      "maker_tp": 18,
+      "stop_loss": 16
+     },
+     "payoff_ece": 0.1154,
+     "lanes_profitable": 2
+    }
+   }
+  }
+ }
+}

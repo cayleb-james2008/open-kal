@@ -1,0 +1,359 @@
+{
+ "generated": "2026-11-17T21:28:31.625929+00:00",
+ "cache": "/home/cayleb/open-kal-rnd/data/frozen-cache",
+ "split": {
+  "is_close_max_utc": "2026-11-17T02:00:00+00:00",
+  "oos_close_min_utc": "2026-11-17T02:15:00+00:00"
+ },
+ "triggers": {
+  "is": 66,
+  "oos": 43
+ },
+ "gate_findings": {
+  "status": "blocked: no per-trigger LayaGate verdicts exist on disk for the frozen triggers. Not contaminated for OOS by time.",
+  "verdict_shape": "openkal/decision_gate.py Verdict(available, allow, confidence=P(enter), note, model, latency_ms, error); allow = P(enter) >= 0.55. Live mode is 'shadow' (no ONNX), so engine._gate_entry logs the verdict and never vetoes.",
+  "historical_verdicts_on_disk": "none in this worktree: data/laya-rank.json and data/laya-rlcd/ are absent here. The main repo has data/laya-rank.json, which scores post-cutoff prod ticks from openkal-prod.db (not F2 triggers, per laya_rank.py); it was not opened.",
+  "model_training_data": "data/laya-rlcd/labels.jsonl (mtime 2026-11-16 00:57 UTC), then labels.csv, the fine-tune input (mtime 2026-11-16 10:05 UTC). Built from prod-DB ticks. Training text contains the realised 30s post-fee return, so the label is readable from the prompt (leakage, per laya_rank.py).",
+  "oos_start_utc": "last IS close 2026-11-17 02:00 UTC, first OOS close 2026-11-17 02:15 UTC (Lane 60/40 split, see split).",
+  "contamination": "NOT contaminated for OOS by time: the training labels end about 16 h before the first OOS close. IS windows that start before 2026-11-16 10:05 UTC may overlap training data; the IS start was not recorded by this run.",
+  "fine_tuned_checkpoint_present_in_worktree": false,
+  "laya_onnx_present": false,
+  "which_checkpoint_the_gate_serves": "unverified: the endpoint at OPENKAL_GATE_URL is not in this worktree and was not called.",
+  "base_checkpoint": "convaiinnovations/laya typed-decisions in the HF hub cache. Its training cutoff was not verified. It is zero-shot, about 1.7s per item on CPU, and was not run here.",
+  "still_needed": "per-trigger LayaGate scores for the 43 OOS triggers, from offline scoring with the fine-tuned checkpoint (not run here), or from the engine's logged verdicts (not in this worktree)."
+ },
+ "rows": {
+  "baseline_as_built": {
+   "crossed_fills": {
+    "is": 0,
+    "oos": 0
+   },
+   "is": {
+    "trades": 63,
+    "win_rate": 0.9048,
+    "net_pnl": 59.16,
+    "pf": 2.698,
+    "ece": 0.2379,
+    "max_dd": 23.6,
+    "avg_entry": 0.4541,
+    "taker_fees_paid": 58.84,
+    "crossed_fills": 0,
+    "max_side_cost": 0.61,
+    "wins": 57,
+    "losses": 6,
+    "by_lane": {
+     "KXBTC15M": {
+      "trades": 32,
+      "net": 30.13
+     },
+     "KXETH15M": {
+      "trades": 5,
+      "net": 8.25
+     },
+     "KXXRP15M": {
+      "trades": 26,
+      "net": 20.78
+     }
+    },
+    "by_reason": {
+     "maker_tp": 57,
+     "stop_loss": 5,
+     "time_barrier": 1
+    },
+    "payoff_ece": 0.0285,
+    "lanes_profitable": 3
+   },
+   "oos": {
+    "trades": 41,
+    "win_rate": 0.9268,
+    "net_pnl": 40.2,
+    "pf": 2.7717,
+    "ece": 0.236,
+    "max_dd": 14.96,
+    "avg_entry": 0.4371,
+    "taker_fees_paid": 37.3,
+    "crossed_fills": 0,
+    "max_side_cost": 0.59,
+    "wins": 38,
+    "losses": 3,
+    "by_lane": {
+     "KXBTC15M": {
+      "trades": 17,
+      "net": 10.31
+     },
+     "KXETH15M": {
+      "trades": 4,
+      "net": 6.65
+     },
+     "KXSOL15M": {
+      "trades": 1,
+      "net": 1.62
+     },
+     "KXXRP15M": {
+      "trades": 19,
+      "net": 21.62
+     }
+    },
+    "by_reason": {
+     "maker_tp": 38,
+     "stop_loss": 3
+    },
+    "payoff_ece": 0.0926,
+    "lanes_profitable": 4
+   },
+   "removed_stop_loss": {
+    "is": 0,
+    "oos": 0
+   },
+   "gate_arm": "blocked"
+  },
+  "oracle_hindsight_as_built": {
+   "crossed_fills": {
+    "is": 0,
+    "oos": 0
+   },
+   "is": {
+    "trades": 58,
+    "win_rate": 0.9828,
+    "net_pnl": 91.82,
+    "pf": 43.1193,
+    "ece": 0.2605,
+    "max_dd": 2.18,
+    "avg_entry": 0.4429,
+    "taker_fees_paid": 50.18,
+    "crossed_fills": 0,
+    "max_side_cost": 0.61,
+    "wins": 57,
+    "losses": 1,
+    "by_lane": {
+     "KXBTC15M": {
+      "trades": 29,
+      "net": 47.82
+     },
+     "KXETH15M": {
+      "trades": 5,
+      "net": 8.25
+     },
+     "KXXRP15M": {
+      "trades": 24,
+      "net": 35.75
+     }
+    },
+    "by_reason": {
+     "maker_tp": 57,
+     "time_barrier": 1
+    },
+    "payoff_ece": 0.0219,
+    "lanes_profitable": 3
+   },
+   "oos": {
+    "trades": 38,
+    "win_rate": 1.0,
+    "net_pnl": 62.89,
+    "pf": 99.0,
+    "ece": 0.2579,
+    "max_dd": 0.0,
+    "avg_entry": 0.4255,
+    "taker_fees_paid": 32.11,
+    "crossed_fills": 0,
+    "max_side_cost": 0.59,
+    "wins": 38,
+    "losses": 0,
+    "by_lane": {
+     "KXBTC15M": {
+      "trades": 15,
+      "net": 24.77
+     },
+     "KXETH15M": {
+      "trades": 4,
+      "net": 6.65
+     },
+     "KXSOL15M": {
+      "trades": 1,
+      "net": 1.62
+     },
+     "KXXRP15M": {
+      "trades": 18,
+      "net": 29.85
+     }
+    },
+    "by_reason": {
+     "maker_tp": 38
+    },
+    "payoff_ece": 0.0269,
+    "lanes_profitable": 4
+   },
+   "removed_stop_loss": {
+    "is": 5,
+    "oos": 3
+   },
+   "gate_arm": "blocked"
+  },
+  "baseline_corrected": {
+   "crossed_fills": {
+    "is": 0,
+    "oos": 0
+   },
+   "is": {
+    "trades": 58,
+    "win_rate": 0.6379,
+    "net_pnl": -79.31,
+    "pf": 0.4345,
+    "ece": 0.2218,
+    "max_dd": 83.45,
+    "avg_entry": 0.584,
+    "taker_fees_paid": 67.81,
+    "crossed_fills": 0,
+    "max_side_cost": 0.61,
+    "wins": 37,
+    "losses": 21,
+    "by_lane": {
+     "KXBTC15M": {
+      "trades": 30,
+      "net": -25.98
+     },
+     "KXETH15M": {
+      "trades": 5,
+      "net": -18.38
+     },
+     "KXXRP15M": {
+      "trades": 23,
+      "net": -34.95
+     }
+    },
+    "by_reason": {
+     "maker_tp": 37,
+     "stop_loss": 20,
+     "time_barrier": 1
+    },
+    "payoff_ece": 0.0776,
+    "lanes_profitable": 0
+   },
+   "oos": {
+    "trades": 34,
+    "win_rate": 0.5294,
+    "net_pnl": -73.48,
+    "pf": 0.2877,
+    "ece": 0.2154,
+    "max_dd": 75.13,
+    "avg_entry": 0.5862,
+    "taker_fees_paid": 42.98,
+    "crossed_fills": 0,
+    "max_side_cost": 0.61,
+    "wins": 18,
+    "losses": 16,
+    "by_lane": {
+     "KXBTC15M": {
+      "trades": 16,
+      "net": -15.49
+     },
+     "KXETH15M": {
+      "trades": 2,
+      "net": 3.28
+     },
+     "KXSOL15M": {
+      "trades": 1,
+      "net": 1.62
+     },
+     "KXXRP15M": {
+      "trades": 15,
+      "net": -62.89
+     }
+    },
+    "by_reason": {
+     "maker_tp": 18,
+     "stop_loss": 16
+    },
+    "payoff_ece": 0.1154,
+    "lanes_profitable": 2
+   },
+   "removed_stop_loss": {
+    "is": 0,
+    "oos": 0
+   },
+   "gate_arm": "blocked"
+  },
+  "oracle_hindsight_corrected": {
+   "crossed_fills": {
+    "is": 0,
+    "oos": 0
+   },
+   "is": {
+    "trades": 38,
+    "win_rate": 0.9737,
+    "net_pnl": 58.75,
+    "pf": 27.9495,
+    "ece": 0.3053,
+    "max_dd": 2.18,
+    "avg_entry": 0.5837,
+    "taker_fees_paid": 33.25,
+    "crossed_fills": 0,
+    "max_side_cost": 0.61,
+    "wins": 37,
+    "losses": 1,
+    "by_lane": {
+     "KXBTC15M": {
+      "trades": 21,
+      "net": 34.53
+     },
+     "KXETH15M": {
+      "trades": 2,
+      "net": 3.31
+     },
+     "KXXRP15M": {
+      "trades": 15,
+      "net": 20.91
+     }
+    },
+    "by_reason": {
+     "maker_tp": 37,
+     "time_barrier": 1
+    },
+    "payoff_ece": 0.0246,
+    "lanes_profitable": 3
+   },
+   "oos": {
+    "trades": 18,
+    "win_rate": 1.0,
+    "net_pnl": 29.68,
+    "pf": 99.0,
+    "ece": 0.3489,
+    "max_dd": 0.0,
+    "avg_entry": 0.5844,
+    "taker_fees_paid": 15.32,
+    "crossed_fills": 0,
+    "max_side_cost": 0.61,
+    "wins": 18,
+    "losses": 0,
+    "by_lane": {
+     "KXBTC15M": {
+      "trades": 11,
+      "net": 18.15
+     },
+     "KXETH15M": {
+      "trades": 2,
+      "net": 3.28
+     },
+     "KXSOL15M": {
+      "trades": 1,
+      "net": 1.62
+     },
+     "KXXRP15M": {
+      "trades": 4,
+      "net": 6.63
+     }
+    },
+    "by_reason": {
+     "maker_tp": 18
+    },
+    "payoff_ece": 0.0463,
+    "lanes_profitable": 4
+   },
+   "removed_stop_loss": {
+    "is": 20,
+    "oos": 16
+   },
+   "gate_arm": "blocked"
+  }
+ }
+}
