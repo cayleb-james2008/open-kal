@@ -270,6 +270,7 @@ def run_trade(tape: Tape, *, side: str, trigger_ts: float, entry_style: str, qty
       tp_c    $0-fee post-only sell of the held side at entry + tp_c;
       lock_c  $0-fee post-only buy of the opposite side at 1 - entry - lock_c, which
               locks YES + NO = $1 at settlement;
+              both are sent on the entry fill and arrive `lag_s` after it;
       stop_c  confirmed adverse move of the side's taker exit price; the exit order
               arrives `lag_s` later and pays the taker fee;
       hold_s  time barrier: settle the binary ($0) or cross out (`barrier_exit`).
@@ -313,10 +314,12 @@ def run_trade(tape: Tape, *, side: str, trigger_ts: float, entry_style: str, qty
             return Skip("unfilled")
     legs = [Leg("entry", side, BUY, entry_style, cost, qty, fill_ts, fee_in)]
 
-    # Resting exits are placed when the entry fills, against the book at that moment.
+    # Resting exits are orders too: sent on the entry fill, they arrive `lag_s` later and
+    # are checked post-only against the book they arrive into.
     deadline = last_ts if hold_s is None else min(last_ts, fill_ts + hold_s)
+    place_ts = fill_ts + lag_s
     try:
-        fb, fa = tape.quote(fill_ts)
+        fb, fa = tape.quote(place_ts) if place_ts < deadline else (None, None)
     except (CrossedBook, NoQuote):
         fb = fa = None
     resting: list[tuple[str, str, str, Decimal]] = []
@@ -332,7 +335,7 @@ def run_trade(tape: Tape, *, side: str, trigger_ts: float, entry_style: str, qty
     for prio, (role, s, act, lim) in enumerate(resting):
         if fb is None or not post_only_ok(s, act, lim, fb, fa):
             continue  # post-only would reject it: the leg is never live
-        t = tape.print_fill(fill_ts, deadline, s, act, lim, need=min_print)
+        t = tape.print_fill(place_ts, deadline, s, act, lim, need=min_print)
         if t is not None:
             events.append((t, prio, role, (s, act, lim)))
 

@@ -209,5 +209,24 @@ class PairLock(unittest.TestCase):
         self.assertEqual(tr.pnl, -D("0.40") * 20 - tr.fees)
 
 
+class ExitLegArrival(unittest.TestCase):
+    """A take-profit or lock is an order too: it arrives 1s after the fill that sends it."""
+
+    BOOK = [(T0 - 10.0, 0.39, 0.40)]   # YES taker entry 0.40, fill at T0 + 1
+
+    def _run(self, prints, **kw):
+        return S.run_trade(tape(self.BOOK, prints, result_yes=0), side=S.YES,
+                           trigger_ts=T0, entry_style=S.TAKER, qty=20, **kw)
+
+    def test_print_inside_the_first_second_after_the_fill_does_not_count(self):
+        for kw in ({"tp_c": D("0.05")}, {"lock_c": D("0.05")}):
+            tr = self._run([(T0 + 1.5, 0.45, 50, 1)], **kw)
+            self.assertEqual(tr.reason, "settle", kw)
+
+    def test_print_after_the_leg_arrives_fills_it(self):
+        tr = self._run([(T0 + 1.5, 0.45, 50, 1), (T0 + 2.5, 0.45, 50, 1)], tp_c=D("0.05"))
+        self.assertEqual((tr.reason, tr.exit_ts), ("tp", T0 + 2.5))
+
+
 if __name__ == "__main__":
     unittest.main()
