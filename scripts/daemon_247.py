@@ -301,10 +301,58 @@ def trip(state: dict, reason: str) -> None:
     save(state)
 
 
+AFTERNOON_DATE = "2026-11-17"
+AFTERNOON_BASELINE = 164.00   # last pre-audit check, 15:01 EST
+AFTERNOON_START_TS = 1794946080  # 15:08:00 EST
+EVENING_FINAL = ROOT / "data" / "evening-final.json"
+
+
+def afternoon_snapshot(state: dict, st: dict, acc: dict, open_slots: list) -> dict:
+    """Live 15:08-18:00 P&L, frozen at the first report after 18:00.
+
+    Freezing matters: every later window would otherwise replace the 6 PM
+    number with a 6:15 or 9 PM number. `data/evening-final.json` is local and
+    ignored; the public artifacts are the report and NEXT.json.
+    """
+    frozen = DS.read_json(EVENING_FINAL) or {}
+    if frozen:
+        return frozen
+    if now().strftime("%Y-%m-%d") != AFTERNOON_DATE:
+        return {}
+    fills = [f for f in (st.get("fills") or [])
+             if float(f.get("ts") or 0) >= AFTERNOON_START_TS]
+    entries = [f for f in fills if f.get("kind") == "entry"]
+    exits = [f for f in fills if f.get("kind") == "exit"]
+    equity = float(acc.get("equity") or 0)
+    snap = {
+        "window": "2026-11-17 15:08-18:00 EST",
+        "final": now().strftime("%H:%M") >= "18:00",
+        "as_of": now().isoformat(timespec="seconds"),
+        "baseline_equity": AFTERNOON_BASELINE,
+        "equity": round(equity, 4),
+        "pnl": round(equity - AFTERNOON_BASELINE, 4),
+        "slot_equity": round(equity / 4, 4),
+        "realized": acc.get("realized"),
+        "venue_balance": state.get("last_balance"),
+        "floor": state.get("floor"),
+        "reconcile_delta": state.get("last_delta"),
+        "open_lanes": len(open_slots),
+        "fills": len(fills),
+        "entries": len(entries),
+        "exits": len(exits),
+        "exit_pnl": round(sum(float(f.get("pnl") or 0) for f in exits), 4),
+    }
+    if snap["final"]:
+        DS.atomic_write(EVENING_FINAL, json.dumps(snap, indent=1))
+    return snap
+
+
 def window_report(state: dict, st: dict) -> None:
     acc = st.get("account") or {}
     slots = st.get("slots") or []
     open_slots = [s for s in slots if s.get("position") is not None or s.get("order") is not None]
+    snap = afternoon_snapshot(state, st, acc, open_slots)
+    mc = DS.read_json(ROOT / "data" / "mc-drawdown.json") or {}
     lines = [
         "# Open-Kal 24/7 report",
         "",
@@ -343,6 +391,51 @@ def window_report(state: dict, st: dict) -> None:
     for c in (state.get("checks") or [])[-12:]:
         lines.append(f"| {c.get('ts')} | {c.get('armed')} | {c.get('equity')} | "
                      f"{c.get('balance')} | {c.get('delta')} | {c.get('floor')} |")
+    if snap:
+        label = "final 18:00 snapshot" if snap.get("final") else "live, updates each window"
+        lines += ["", f"## Afternoon audit · 15:08–18:00 EST ({label})", "",
+                  f"- Baseline equity: ${snap.get('baseline_equity'):.2f} "
+                  f"(15:01 check; audit starts 15:08)",
+                  f"- Equity at {snap.get('as_of')}: ${snap.get('equity'):.2f} "
+                  f"→ P&L ${snap.get('pnl'):+.2f}",
+                  f"- Account realized: ${snap.get('realized')} · "
+                  f"equity per lane (equity/4): ${snap.get('slot_equity'):.2f}",
+                  f"- Fills since 15:08: {snap.get('fills')} "
+                  f"({snap.get('entries')} entries, {snap.get('exits')} exits, "
+                  f"exit P&L ${snap.get('exit_pnl'):+.2f})",
+                  f"- Venue balance: ${snap.get('venue_balance')} · "
+                  f"floor: ${snap.get('floor')} · "
+                  f"reconcile: ${snap.get('reconcile_delta')} · "
+                  f"open lanes: {snap.get('open_lanes')}"]
+    if mc:
+        sens = {(round(float(r.get("p_win", 0)), 2), r.get("slots")): r
+                for r in (mc.get("sensitivity") or [])}
+        obs = {r.get("slots"): r for r in (mc.get("results") or [])
+               if r.get("arrival") == "observed"}
+        lines += ["", "## Capacity decision · 2 vs 4 crypto slots", "",
+                  "- OOS: 36 trades, 34W/2L (94.4%), +$42.65. Forward: 20/20, +$33.13.",
+                  "- Peak concurrent: 2 in-sample / 1 out-of-sample; "
+                  "skipped fills at cap 2: 0 ($0.00).",
+                  f"- MC observed concurrency: 20k paths, 250 windows; "
+                  f"K=2 breach {100*obs.get(2, {}).get('breach_prob', 0):.3f}% vs "
+                  f"K=4 {100*obs.get(4, {}).get('breach_prob', 0):.3f}%; "
+                  f"median P&L ${obs.get(2, {}).get('median_final', 0):,.0f} vs "
+                  f"${obs.get(4, {}).get('median_final', 0):,.0f}.",
+                  "- Edge erosion (simultaneous, breach K=2 vs K=4): "
+                  + "; ".join(
+                      f"{100*p:.0f}% {100*sens[(p,2)]['breach_prob']:.3f}% vs "
+                      f"{100*sens[(p,4)]['breach_prob']:.3f}%"
+                      for p in (0.90, 0.80, 0.70) if (p, 2) in sens and (p, 4) in sens)
+                  + ".",
+                  f"- **Recommendation: keep `max_concurrent_crypto=2`.** "
+                  f"A fourth slot adds no filled trades on the observed tape; "
+                  f"revisit only if forward peak concurrency exceeds 2 with "
+                  f"skipped fills, or the 94.4% OOS win rate holds through a "
+                  f"full 30-day forward sample. The MC does not justify 4: at "
+                  f"94.4% both caps never touch the $131.20 floor, and below "
+                  f"80% both breach; 4 is marginally safer only because more "
+                  f"positive-EV trades compound the buffer faster, which is a "
+                  f"counterfactual the tape does not support."]
     if state.get("events"):
         lines += ["", "## Events", ""]
         for e in state["events"][-12:]:
@@ -379,6 +472,19 @@ def window_report(state: dict, st: dict) -> None:
             "payoff_ece": fwd.get("payoff_ece"),
             "gate": fwd.get("gate"),
             "artifact": "data/forward-oos.json",
+        },
+        "afternoon_audit": snap or None,
+        "capacity_decision": {
+            "recommendation": (mc.get("recommendation") or
+                               "Keep max_concurrent_crypto=2; no observed skipped fills."),
+            "observed_peak_concurrency": {"is": 2, "oos": 1},
+            "skipped_fills": 0,
+            "mc_artifact": "data/mc-drawdown.json",
+            "mc_observed_breach": {
+                str(r.get("slots")): r.get("breach_prob")
+                for r in (mc.get("results") or [])
+                if r.get("arrival") == "observed"
+            },
         },
         "supervision": {
             "checks": len(state.get("checks") or []),

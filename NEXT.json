@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-17T15:16:25-05:00",
+ "updated": "2026-11-17T15:31:27-05:00",
  "goal": "24/7 forward-OOS gate, live compounding, trailing drawdown breaker.",
  "state": {
   "decision": "promoted",
@@ -31,8 +31,39 @@
   },
   "artifact": "data/forward-oos.json"
  },
+ "afternoon_audit": {
+  "window": "2026-11-17 15:08-18:00 EST",
+  "final": false,
+  "as_of": "2026-11-17T15:31:27-05:00",
+  "baseline_equity": 164.0,
+  "equity": 164.43,
+  "pnl": 0.43,
+  "slot_equity": 41.1075,
+  "realized": "0.43",
+  "venue_balance": "164.4269",
+  "floor": "131.54",
+  "reconcile_delta": "0.00",
+  "open_lanes": 0,
+  "fills": 17,
+  "entries": 1,
+  "exits": 1,
+  "exit_pnl": 0.4298
+ },
+ "capacity_decision": {
+  "recommendation": "Keep max_concurrent_crypto=2. Observed peak concurrency is 2 in-sample and 1 out-of-sample, so a fourth slot adds no filled trades; it only doubles the worst simultaneous stop from $13.00 to $26.00 against a ~$32.80 buffer. The two-slot cap never binds on the OOS tape.",
+  "observed_peak_concurrency": {
+   "is": 2,
+   "oos": 1
+  },
+  "skipped_fills": 0,
+  "mc_artifact": "data/mc-drawdown.json",
+  "mc_observed_breach": {
+   "2": 0.0,
+   "4": 0.0
+  }
+ },
  "supervision": {
-  "checks": 3,
+  "checks": 4,
   "breaker_trips": 0,
   "breaker_restarts": 0,
   "log": "data/daemon-247.log",
