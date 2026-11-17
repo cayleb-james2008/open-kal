@@ -71,26 +71,26 @@
   },
   "oos": {
    "trades": 39,
-   "wins": 19,
-   "losses": 20,
-   "win_rate": 0.4872,
-   "net": -87.52,
-   "pf": 0.2637334903676285,
-   "avg_pnl": -2.244102564102564,
+   "wins": 18,
+   "losses": 21,
+   "win_rate": 0.4615,
+   "net": -87.04,
+   "pf": 0.28119580477330913,
+   "avg_pnl": -2.2317948717948717,
    "max_entry_cost": 0.62,
    "fees_entry": 33.09,
-   "fees_exit": 17.43,
+   "fees_exit": 18.95,
    "crossed_fills": 0,
-   "requotes": 0,
+   "requotes": 1,
    "profitable_lanes": 2,
-   "net_ex_best_lane": -90.8,
-   "net_ex_best_window": -89.19,
+   "net_ex_best_lane": -90.32,
+   "net_ex_best_window": -93.04,
    "windows": 30,
    "by_lane": {
     "KXBTC15M": {
      "trades": 19,
-     "wins": 11,
-     "net": -29.02
+     "wins": 10,
+     "net": -28.54
     },
     "KXETH15M": {
      "trades": 2,
@@ -109,13 +109,17 @@
     }
    },
    "by_reason": {
+    "barrier_taker": {
+     "trades": 2,
+     "net": 3.78
+    },
     "stop": {
      "trades": 20,
      "net": -118.87
     },
     "tp": {
-     "trades": 19,
-     "net": 31.35
+     "trades": 17,
+     "net": 28.05
     }
    },
    "skips": {
@@ -123,5 +127,5 @@
    }
   }
  },
- "seconds": 296.3
+ "seconds": 86.9
 }

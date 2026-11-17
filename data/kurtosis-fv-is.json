@@ -646,17 +646,17 @@
     "wins": 156,
     "losses": 43,
     "win_rate": 0.7839,
-    "net": -335.73,
-    "pf": 0.5147288390379279,
-    "avg_pnl": -1.6870854271356783,
+    "net": -300.73,
+    "pf": 0.5653185707678076,
+    "avg_pnl": -1.5112060301507537,
     "max_entry_cost": 0.58,
     "fees_entry": 143.23,
     "fees_exit": 0.0,
     "crossed_fills": 0,
     "requotes": 0,
     "profitable_lanes": 0,
-    "net_ex_best_lane": -307.05,
-    "net_ex_best_window": -354.23,
+    "net_ex_best_lane": -272.05,
+    "net_ex_best_window": -349.4,
     "windows": 70,
     "by_lane": {
      "KXBTC15M": {
@@ -672,7 +672,7 @@
      "KXSOL15M": {
       "trades": 47,
       "wins": 34,
-      "net": -134.39
+      "net": -99.39
      },
      "KXXRP15M": {
       "trades": 45,
@@ -682,12 +682,12 @@
     },
     "by_reason": {
      "settle": {
-      "trades": 43,
-      "net": -691.84
+      "trades": 44,
+      "net": -654.48
      },
      "tp": {
-      "trades": 156,
-      "net": 356.11
+      "trades": 155,
+      "net": 353.75
      }
     },
     "skips": {

@@ -1,14 +1,16 @@
 {
  "synthetic_lock": {
-  "ts": "2026-11-17T22:25:47.004215+00:00",
+  "ts": "2026-11-17T22:44:13.652698+00:00",
   "family": "synthetic_lock",
+  "status": "scored",
   "config": {
    "name": "maker_locknone_tpnone",
    "entry_style": "maker",
    "lock_c": null,
    "tp_c": null
   },
-  "rescore": false,
+  "rescore": true,
+  "rescore_reason": "sim_core 104b04e: TP/lock legs now arrive 1s after the entry fill; first-round OOS used the pre-fix core",
   "oos": {
    "trades": 14,
    "wins": 8,
@@ -65,37 +67,39 @@
   "cache": "/home/cayleb/open-kal-rnd/data/frozen-cache"
  },
  "synthetic_lock_locked_only": {
-  "ts": "2026-11-17T22:25:47.019417+00:00",
+  "ts": "2026-11-17T22:44:13.661378+00:00",
   "family": "synthetic_lock_locked_only",
+  "status": "scored",
   "config": {
    "name": "taker_lock0.08_tpnone",
    "entry_style": "taker",
    "lock_c": "0.08",
    "tp_c": null
   },
-  "rescore": false,
+  "rescore": true,
+  "rescore_reason": "sim_core 104b04e: TP/lock legs now arrive 1s after the entry fill; first-round OOS used the pre-fix core",
   "oos": {
    "trades": 14,
    "wins": 11,
    "losses": 3,
    "win_rate": 0.7857,
-   "net": -53.08,
-   "pf": 0.39399474825893366,
-   "avg_pnl": -3.7914285714285714,
+   "net": -36.08,
+   "pf": 0.5880808311451079,
+   "avg_pnl": -2.577142857142857,
    "max_entry_cost": 0.58,
    "fees_entry": 12.08,
    "fees_exit": 0.0,
    "crossed_fills": 0,
    "requotes": 0,
-   "profitable_lanes": 0,
-   "net_ex_best_lane": -39.9,
+   "profitable_lanes": 1,
+   "net_ex_best_lane": -36.26,
    "net_ex_best_window": -56.22,
    "windows": 14,
    "by_lane": {
     "KXBTC15M": {
      "trades": 5,
      "wins": 4,
-     "net": -16.82
+     "net": 0.18
     },
     "KXETH15M": {
      "trades": 3,
@@ -110,12 +114,12 @@
    },
    "by_reason": {
     "lock": {
-     "trades": 11,
-     "net": 34.51
+     "trades": 10,
+     "net": 31.37
     },
     "settle": {
-     "trades": 3,
-     "net": -87.59
+     "trades": 4,
+     "net": -67.45
     }
    },
    "skips": {
