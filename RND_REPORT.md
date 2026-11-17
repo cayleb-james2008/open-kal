@@ -14,7 +14,10 @@ Worktree `/home/cayleb/open-kal-rnd`, branch `rnd/alpha-evolve`, based on origin
 Every leg in both tracks is maker or settlement: $0 entry and exit fees in every OOS trade, 0 crossed fills, max entry cost 0.55 (A) and 0.58 (B).
 
 ### Owner rulings applied (commit `85cc73e`)
-- **$0.62 on every buy leg.** A lock leg priced above $0.62 is never placed (test `LockLegCap`). No lock leg in Tracks 2–4 was ever priced above $0.62, so no earlier result changes.
+- **$0.62 on every buy leg.** A lock leg priced above $0.62 is never placed (test `LockLegCap`). No earlier result changes. Checked two ways:
+  - every Track 2 config's own count of lock legs above $0.62 (over all its fills, not only the champion's) is 0; the cheapest lock leg was $0.34;
+  - a rerun of Track 2 IS on the capped core reproduces all 16 IS summaries exactly.
+  - Tracks 3 and 4 have no lock legs.
 - **50-contract print-through floor** kept, unchanged.
 - New `$0`-fee **maker scratch** exit: `barrier_exit="scratch"` at `fill + hold_s` or `close − scratch_by_s`. It is a post-only sell at max(entry − scratch_c, side bid + 1c), arriving 1s after the barrier and filled on the 50-print rule; unfilled, the position settles (5 tests).
 - `tests/test_sim_core.py` is now 33 tests. Before the change, 5 of the 7 new ones failed.
@@ -23,6 +26,10 @@ Every leg in both tracks is maker or settlement: $0 entry and exit fees in every
 - **Proxy, stated plainly.** The book cache holds top-of-book *prices* only, no sizes, so a depth OBI or microprice cannot be computed without the prod DB, which is off-limits. z_obi is the pool's 10s signed print-flow imbalance (`flow`) or 5s touch-revision imbalance (`rev`), z-scored per lane on IS rows only.
 - **The fade:** z_obi ≥ +thr rests a NO bid (at 1 − yes_ask); z_obi ≤ −thr rests a YES bid. Maker entry, 10s patience, cost ≤ $0.55; maker TP +4c/+6c arriving 1s after the fill; scratch (after 180s, or 120s before close) or settle.
 - **Grid:** 48 configs (2 sources × 2 thresholds × 2 vol bands × 2 TPs × 3 exits). Two were IS-eligible.
+- **The champion has no volatility filter.** Its 0–1 band admits every row; it is the grid's unfiltered control.
+  - None of the 24 bounded-band (0.2–0.8) configs was IS-eligible.
+  - The best bounded config with ≥ 30 IS trades made +$15.00 at PF 1.02 (257 trades). The best bounded config overall made +$66.00 on 24 trades.
+  - So the charter's bounded-volatility version of Track A has no candidate even before OOS.
 
 | Source, threshold | IS trades (range over 12 configs) | IS net range | Lanes traded |
 |---|---|---|---|
@@ -43,13 +50,26 @@ Every leg in both tracks is maker or settlement: $0 entry and exit fees in every
 - **Grid:** 48 configs (hurdle 3/5/7/9c × spread ≤ 2/4c × vol band all/low/high × patience 10/30s). Vol quantiles come from IS samples. 9 of 48 were IS-eligible, and the champion was the best of them.
 - On IS it looked broad: all 4 lanes profitable (BTC +316.00, ETH +61.50, SOL +104.50, XRP +74.50), +$482.00 without XRP, fill rate 0.44.
 - **OOS it reversed.** Win rate went from 0.40 to 0.34, 3 of 4 lanes lost, net without XRP was −$117.00, and payoff-ECE was 0.108.
-  - It did clear the ≥ 25-trade bar (126 trades) and the "no XRP dependence" requirement.
-  - It lost money everywhere except ETH.
-- Maker entries fill when sellers push through the bid. Under this fill model, the extra fills the cheap maker price buys arrive exactly when the fair value is stale.
+  - It cleared the ≥ 25-trade bar (126 trades).
+  - It was not XRP-dependent in the sense the charter meant: it lost money without XRP too (−$117.00).
+  - The gate's "not carried by one lane" check still fails, because net is negative even before a lane is removed.
+  - It lost money everywhere except ETH (+$12.00).
+- A reading, not tested here: a maker bid fills when sellers push through it, which may select the moments when the market knows more than the model.
 
 ### Outside checks for Charter 2
-- **13 sampled IS trades re-derived from the raw npz tape, without sim_core:** 9 from Track B across SOL, XRP and ETH, 4 from Track A on BTC. Arrival quote, entry price, 50-print fill, TP fill and settlement side were each recomputed. All 13 matched sim_core exactly in entry, fill and PnL.
+- **13 sampled IS trades re-derived from the raw npz tape, without sim_core:** 9 from Track B across SOL, XRP and ETH, 4 from Track A on BTC.
+  - Arrival quote, entry price, 50-print fill, TP fill and settlement side were each recomputed.
+  - All 13 matched sim_core exactly in entry, fill and PnL.
+  - Script `scripts/rnd_indep_check.py`, sample `data/indep-check-pick.json`, output `data/indep-check.txt`.
 - The IS champions and both scripts were committed (`88a4d6a`) before the OOS look; OOS was committed in `d8e92f8`.
+- A fresh Haiku review re-derived every Charter 2 number from the data files and confirmed the scratch and cap logic, the timing and IS-only behaviour. It found one false statement, now corrected: the XRP wording above. Its other findings:
+  - The champion has no vol filter; now stated above.
+  - The lock-cap claim was unproven; now checked above.
+  - The trade check was unreproducible; now committed.
+  - Two `sim_core` edge cases with no effect on any reported number, left as they are:
+    - a confirmed stop that finds no valid quote before the end falls through to the barrier exit or settlement;
+    - a scratch that arrives into a crossed book is not placed, and the position settles.
+  - Track B is maker-only by construction: `entry_style=MAKER` and no exit legs. It has no runtime guard against taker legs; every OOS trade shows $0.00 fees.
 
 ---
 

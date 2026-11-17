@@ -1,0 +1,13 @@
+KXSOL15M KXSOL15M-26NOV160130-30 NO settle: entry sim=0.35 indep=0.35 | filled indep=True | pnl sim=32.50 indep=32.50 | won=True
+KXSOL15M KXSOL15M-26NOV152215-15 NO settle: entry sim=0.31 indep=0.31 | filled indep=True | pnl sim=-15.50 indep=-15.50 | won=False
+KXSOL15M KXSOL15M-26NOV160415-15 YES settle: entry sim=0.24 indep=0.24 | filled indep=True | pnl sim=-12.00 indep=-12.00 | won=False
+KXXRP15M KXXRP15M-26NOV162100-00 YES settle: entry sim=0.4 indep=0.4 | filled indep=True | pnl sim=-20.0 indep=-20.0 | won=False
+KXXRP15M KXXRP15M-26NOV152030-30 NO settle: entry sim=0.55 indep=0.55 | filled indep=True | pnl sim=22.50 indep=22.50 | won=True
+KXXRP15M KXXRP15M-26NOV152030-30 YES settle: entry sim=0.32 indep=0.32 | filled indep=True | pnl sim=-16.00 indep=-16.00 | won=False
+KXETH15M KXETH15M-26NOV161915-15 YES settle: entry sim=0.25 indep=0.25 | filled indep=True | pnl sim=-12.50 indep=-12.50 | won=False
+KXETH15M KXETH15M-26NOV160800-00 YES settle: entry sim=0.29 indep=0.29 | filled indep=True | pnl sim=-14.50 indep=-14.50 | won=False
+KXETH15M KXETH15M-26NOV152145-45 NO settle: entry sim=0.46 indep=0.46 | filled indep=True | pnl sim=27.00 indep=27.00 | won=True
+KXBTC15M KXBTC15M-26NOV160930-30 YES tp: entry sim=0.37 indep=0.37 | filled indep=True | pnl sim=3.00 indep=3.00 | won=True
+KXBTC15M KXBTC15M-26NOV162100-00 YES tp: entry sim=0.39 indep=0.39 | filled indep=True | pnl sim=3.00 indep=3.00 | won=False
+KXBTC15M KXBTC15M-26NOV152245-45 YES settle: entry sim=0.36 indep=0.36 | filled indep=True | pnl sim=-18.00 indep=-18.00 | won=False
+KXBTC15M KXBTC15M-26NOV161945-45 YES tp: entry sim=0.23 indep=0.23 | filled indep=True | pnl sim=3.00 indep=3.00 | won=True
