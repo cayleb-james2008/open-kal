@@ -1,105 +1,244 @@
 # RND report — rnd/alpha-evolve
 
-Branch base: origin/master d9fd4ec. Worktree: /home/cayleb/open-kal-rnd (outside the live repo).
-Live engine and `scripts/daemon_247.py` in /home/cayleb/open-kal were not read for writes, signalled, or restarted.
+Worktree `/home/cayleb/open-kal-rnd`, branch `rnd/alpha-evolve`, based on origin/master `d9fd4ec`. Data: the frozen, hard-linked snapshot `data/frozen-cache/` (books from the 14:07 vintage; `SHA256SUMS.txt`), plus a copy of the live `ticks.npz` (16:20 vintage, hash appended). Nothing under `/home/cayleb/open-kal` was written, signalled or restarted. No `.env`, `keys/`, `canary.py --live` or `restart_flat.sh` was touched, and the prod DB was never opened.
 
-## Track A — deterministic tests (commit 8a5c9b6, tests only)
+## Bottom line
 
-`tests/test_daemon_247.py`: 20 tests, 18 pass, 2 `expectedFailure` (known gaps, not fixed here).
+**No candidate passes the promotion gate. Nothing here should be promoted or traded.**
 
-| Check | Result |
-|---|---|
-| git_sync allowlist: allowlisted change committed and pushed; untouched paths not staged | pass |
-| git_sync refuses `openkal/*.db`, `scripts/keys/*.pem`, `data/*` (non-report), oversized >5 MB; index reset | pass |
-| 5,000,000-byte file (at limit) is not refused | pass |
-| Root `.env` never staged | pass |
-| Nested `scripts/.env` is refused | **expectedFailure: pushed** |
-| Root-level `.venv/…` matched by `_forbidden` | **expectedFailure: not matched** (unreachable via GIT_PATHS) |
-| floor = max(105.00, 0.80·peak), incl. exact 105.00 boundary and rounding | pass |
-| float floor in mc_drawdown agrees with Decimal floor_for on 0.01 grid | pass |
-| 18:00 freeze: live before 18:00, frozen once, later windows return the same numbers | pass |
-| mc_drawdown: p_win=1 → 0 breach; p_win=0 on observed schedule → 1 breach; breach non-increasing in p_win (3 arrival models); observed schedule ignores slot cap | pass |
+- Eight family champions were each scored exactly once on the frozen 40% OOS slice, and all eight fail.
+- The best OOS net is Track 3's fat-tail sniper: +$94.20 on 18 trades. Removing its best lane (XRP) leaves −$2.65. Its IS sample was too small to fit a payoff model.
+- Two defects were found and fixed in the research pipeline before any OOS look:
+  - **pool look-ahead:** spot was read up to 1.5s after the trigger;
+  - **float32 boundary compares:** cost-$0.62 trades were silently dropped.
+- Both defects also live in the legacy scripts behind earlier results. The legacy scripts were not changed.
 
-Existing suites, run in the worktree (parity DB copied to /tmp/openkal-rnd/parity.db):
+## Commits on this branch
 
-| Suite | Result | Note |
+| Commit | What | Cherry-pick to master? |
 |---|---|---|
-| compileall openkal scripts tests | rc 0 | |
-| tests/test_live_exit.py | 52/52 | matches requested count |
-| tests/test_gate_controls.py parity.db | 18/18 | matches requested count |
-| tests/test_day_pipeline.py | **74/74** | request said 76/76; the suite now reports 74 |
+| `8a5c9b6` | tests: daemon git sync, drawdown floor, 18:00 freeze, mc floor model | **yes** (tests only) |
+| `9e39dee` | earlier research: F2 peg/TP/ETH variants, LayaGate ablation | no (research) |
+| `0a26266` | `openkal/sim_core.py` + `tests/test_sim_core.py` | **yes**: new module and tests, nothing existing changed |
+| `e8f34f4` | `scripts/rnd_common.py` (split, gate, sealed OOS ledger), `scripts/sim_core_parity.py`, parity JSON | no (research; adds a `data/` file) |
+| `5bf301b` | `scripts/rnd_pool_slim.py` | no; superseded and deleted in `b27c27f` |
+| `b27c27f` | Tracks 2–4 scripts, causal pool builder, frozen IS results | no (research) |
+| `a27edf7` | OOS ledger for Tracks 2 and 4 | no (research) |
 
-## Track B — F2 upgrades, and a NO-side convention bug
+```bash
+git -C /home/cayleb/open-kal cherry-pick 8a5c9b6 0a26266
+```
 
-### B1. Baseline reproduction does not match the request
+## The promotion gate (`scripts/rnd_common.py:promotion_gate`, committed in `e8f34f4` before any track ran)
 
-- Request: OOS +$49.56 / PF 99.00 / payoff-ECE 0.0595.
-- `data/f2-structural.json` (generated 2026-11-17 05:18 EST, older cache): `F2_taker_1s` OOS +$42.65, 36 trades, PF 4.17.
-- README forward OOS (live): 20 trades, 20W/0L, +$33.13, PF 99.00, payoff-ECE 0.057. PF 99.00 is the no-loss cap in `summarize`, not a measured PF.
-- Rerun of the existing `scripts/f2_structural.py` on the frozen snapshot (`data/frozen-cache`, books from the 14:07 vintage): IS 63 trades +$59.16 PF 2.70; OOS 41 trades **+$40.20, PF 2.77**, win 0.927, payoff-ECE 0.0926.
+- OOS net > 0
+- OOS PF ≥ 1.25
+- OOS payoff-ECE ≤ 0.08, from a ridge-logistic P(pnl > 0) fitted on IS trades only. With fewer than 20 IS trades there is no model, and the check fails.
+- ≥ 25 OOS trades
+- ≥ 2 profitable lanes
+- net still > 0 after removing the best lane, and after removing the best window (windows grouped by close time across lanes)
+- 0 crossed fills, max entry cost ≤ $0.62
 
-None of the stored figures reproduce exactly. The request's +$49.56 is not in any file on disk.
+Split: one global chronological cut at 60% of the distinct window closes (`1794881700` = 2026-11-17 02:15 UTC). All four lanes' own cuts coincide with it.
 
-### B2. Suspected NO-side convention bug (verified on data)
+IS selection rule, for every track: eligible means IS trades ≥ 30, IS PF ≥ 1.20 and 0 crossed fills; the champion is the eligible config with the highest IS net. If no config is eligible, the highest-IS-net config is taken and flagged ineligible. It is still scored once, so every family has an OOS row.
 
-`scripts/f2_structural.py:limit_price` and `events_for` pass a NO taker order to the simulator at `1 - bid`. The simulator (`alpha_search._sim_event`) reads its price argument as the YES-level price, so `side_cost = 1 - price` is charged as `bid`, not `1 - bid`.
+OOS is sealed. `score_oos_once` refuses without `RND_OOS_UNSEAL=lead`, refuses a second scoring of a family, and appends every look to `data/oos-ledger.jsonl`. The Haiku workers built the scripts in IS-only mode; only the lead ran OOS.
 
-Checked against the book at each trade's arrival (`data/frozen-cache`, 79 NO trades in the frozen run):
+## OOS ledger: every champion, one look each
 
-- 79/79 NO trades store `entry = 1 - bid` (the true NO ask). 0/79 store `bid`.
-- Consequence: a NO trade is costed at `bid`, not at its real cost `1 - bid`. Example: bid 0.44, ask 0.45 → stored entry 0.56, which is the real NO cost. The simulator charges 0.44.
-- 7 OOS NO trades have a real cost above the 0.62 cap (`entry_price <= $0.62` is a stated risk gate).
-- NO take-profit targets are set at `entry - 5c` in the mirrored price, so exits are checked against prints about 5c from the real level. Stops are checked at the mirrored ask.
-- The OOS win rate (0.927) and PF (2.77) are in this mirrored frame. Their size is not yet shown to be real.
+| Track / family | Champion (IS) | IS n / net / PF | OOS n | OOS W/L | OOS net | OOS PF | payoff-ECE | lanes > 0 | net − best lane | net − best window | entry / exit fees | Gate |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2 `synthetic_lock` | `maker_locknone_tpnone` (settle-only control), ineligible | 29 / +384.00 / 3.72 | 14 | 8/6 | +4.00 | 1.02 | 0.323 | 1 | −12.00 | −40.50 | 0.00 / 0.00 | **fail** |
+| 2 `synthetic_lock_locked_only` | `taker_lock0.08_tpnone`, ineligible | 28 / +87.82 / ∞ | 14 | 11/3 | −53.08 | 0.39 | 0.210 | 0 | −39.90 | −56.22 | 12.08 / 0.00 | **fail** |
+| 3 `kurtosis_fv_snipe` | `fat_h0.09_settle`, ineligible | 19 / +22.25 / 1.12 | 18 | 7/11 | +94.20 | 1.64 | none (19 IS trades < 20) | 2 | −2.65 | +56.32 | 12.30 / 0.00 | **fail** |
+| 3 `gauss_fv_control` | `gauss_h0.09_settle`, eligible | 33 / +99.08 / 1.32 | 35 | 10/25 | +13.29 | 1.04 | 0.213 | 1 | −67.25 | −59.88 | 23.71 / 0.00 | **fail** |
+| 4 `depletion` | `depletion:3.2`, ineligible | 14 / +35.00 / ∞ | 4 | 2/2 | −7.25 | 0.41 | none | 1 | −9.75 | −9.75 | 0.00 / 1.75 | **fail** |
+| 4 `divergence` | `divergence:3.2`, ineligible | 7 / +17.50 / ∞ | 3 | 2/1 | −23.00 | 0.18 | none | 1 | −28.00 | −25.50 | 0.00 / 0.00 | **fail** |
+| 4 `spread_regime` | `spread_regime:3.3`, ineligible | 16 / +24.24 / 3.25 | 2 | 1/1 | −2.38 | 0.51 | none | 1 | −4.88 | −4.88 | 0.00 / 0.88 | **fail** |
+| 4 `tod_vol` | `tod_vol:4.2`, ineligible | 6 / +9.22 / 1.86 | 0 | — | 0.00 | — | none | 0 | — | — | — | **fail** |
 
-`scripts/evolve_f2_variants.py` runs every variant under both conventions: `as_built` (the existing mapping) and `corrected` (YES-level price for NO = the YES price it rests at: taker → bid, maker → ask, peg → ask − 1c). The corrected run is the one to trust until the owner decides.
+PF ∞ means no IS losers. Every OOS row has 0 crossed fills and max entry cost ≤ $0.62. Per-lane OOS tables are in `data/oos-ledger.jsonl`.
 
-### B3. Variant grid (27 configs × 2 conventions; IS selects, OOS scored once)
+---
 
-Source: `scripts/evolve_f2_variants.py` → `data/evolve-f2-variants.json`. Frozen snapshot, 66 IS / 43 OOS triggers. Selection rule: max IS net among rows with ≥20 IS trades, ≥3 IS losers, 0 crossed fills.
+## Track 1 — canonical simulator `openkal/sim_core.py`
 
-| Convention | Row | IS n / net | OOS n / net | OOS PF | OOS win | payoff-ECE | Gate |
-|---|---|---|---|---|---|---|---|
-| as_built | baseline `taker\|tp5\|none` | 63 / +59.16 | 41 / +40.20 | 2.77 | 0.927 | 0.093 | — |
-| as_built | **IS-chosen** `taker\|tp7\|none` | 63 / +76.16 | 41 / +56.20 | 3.48 | 0.927 | 0.093 | fails ECE (0.093 > 0.08) |
-| corrected | baseline `taker\|tp5\|none` | 58 / −79.31 | 34 / −73.48 | 0.29 | 0.529 | 0.115 | fails |
-| corrected | **IS-chosen** `peg1000\|tp5\|d5` | 54 / −57.93 | 33 / −64.21 | 0.33 | 0.546 | 0.203 | fails net, PF, ECE |
+New standalone module; no existing file changed. Callers pass `side`, `style` and the YES quote, and the core derives every price, so the earlier "limit in YES terms" bug class cannot be expressed through it.
 
-Findings:
-- The as_built edge is produced by the NO-side convention. Under the corrected convention, every one of the 27 variants loses money on IS and OOS (OOS range −$54 to −$75).
-- Under as_built, take-profit 7c is the only upgrade that helps (OOS +$56 vs +$40). Peg entry hurts OOS in that frame (peg500 +$32, peg1000 +$35 at 5c TP). The ETH filter (d≥5bp or spread ≤2c) changes little; OOS ETH trades are 4–5 per run.
-- Adaptive TP here is "tp6/tp7 when d≥6bp". I ran it as a flat TP for every d≥6bp trade, not split by band. The variant had no separate effect on the 3–6bp band, since that band keeps 5c.
-- Peg fills need ≥50 printed contracts through the rest, so fills are rare and fallback IOC carries most entries. The `peg` rows are close to baseline in trade count (36–38 of 41).
-- Not a deployable result: the chosen rows fail the gate under both conventions. The OOS sample is 33–41 trades.
+| Rule | How it is enforced | Test |
+|---|---|---|
+| YES taker / maker entry = `yes_ask` / `yes_bid` | `entry_price` | `test_entry_prices` |
+| NO taker / maker entry = `1 − yes_bid` / `1 − yes_ask` | `entry_price` | `test_entry_prices`, `test_no_taker_entry_is_never_the_yes_bid`, `test_no_taker_trade_charges_one_minus_bid` |
+| YES taker / maker exit = `yes_bid` / `yes_ask`; NO = `1 − yes_ask` / `1 − yes_bid` | `exit_price` | `test_exit_prices`, `test_no_taker_stop_sells_at_one_minus_ask` |
+| Crossed book raises; the trade skips; never walks back to an older row | `check_book`, `Tape.quote` | `CrossedBooks` (3 tests) |
+| Order arrives ≥ 1s after the trigger; lag < 1s raises; stop and barrier exits also arrive 1s after the decision | `run_trade` | `Arrival` (5 tests); the stop test checks `exit_ts = breach + 2s + 1s` |
+| Passive fill needs ≥ 50 contracts at/through the limit, after arrival, from the aggressor side that can hit it; a floor < 50 raises | `Tape.print_fill`, `print_rule` | `PrintThrough` (6 tests) |
+| Exact `Decimal` `openkal.fees.taker_fee` on taker legs, $0 on maker legs | `run_trade` | fee asserts in 5 tests |
+| Cap ≤ $0.62 on the held side's cost; a ceiling > 0.62 raises; qty ≤ 50 | `run_trade` | `test_entry_above_cap_is_skipped`, `test_cap_and_print_floor_cannot_be_loosened`, `test_qty_is_capped` |
+| Lock ≡ maker take-profit at the same distance; one-cancels-other | `run_trade` | `PairLock` (3 tests) |
 
-## Track C — LayaGate ablation
+`tests/test_sim_core.py`: 24 tests, all pass. Mutation check: each of 8 injected bugs fails at least one test. The bugs were: NO taker entry = `yes_bid`; NO taker exit = `1 − yes_bid`; print floor 20; no arrival lag; crossed book accepted; wrong aggressor side for a NO bid; maker fee charged; stop with no exit lag.
 
-**Blocked on availability, not on contamination.** Oracle rows are hindsight ceilings, not filters.
+### Outside check: F2 `taker|tp5|none` rerun through sim_core (`scripts/sim_core_parity.py`)
 
-- LayaGate returns `Verdict(allow = P(enter) >= 0.55, confidence, …)`. The live mode is `shadow` (no ONNX), so `engine._gate_entry` only logs the verdict and never vetoes. Today the gate does not filter trades even in production.
-- No historical per-trigger LayaGate verdicts exist on disk for the frozen tape, so the gated arm cannot be scored without calling the endpoint or running the checkpoint offline. Neither was done.
-- Training cutoff: `labels.csv` (fine-tune input) ends 2026-11-16 10:05 UTC. The frozen OOS starts 2026-11-17 02:15 UTC, about 16 h later, so the OOS slice is not contaminated by time. IS may overlap training data; the IS start was not recorded. The training text contains realised outcomes, so there is leakage inside training.
-- Not verified: which checkpoint the live endpoint serves, its base cutoff, and the content of the main repo's `data/laya-rank.json` (it scores post-cutoff prod ticks, not F2 triggers).
+| | Prior corrected row (legacy simulator) | sim_core |
+|---|---|---|
+| IS trades / net | 58 / −$79.31 | 61 / −$74.14 (PF 0.46) |
+| OOS trades / net | 34 / −$73.48 | 39 / −$87.52 (PF 0.26) |
 
-| Row (taker, tp5, no ETH filter) | IS trades / net / PF / win | OOS trades / net / PF / win | Removed IS / OOS |
-|---|---|---|---|
-| baseline, as_built | 63 / +59.16 / 2.70 / 0.905 | 41 / +40.20 / 2.77 / 0.927 | 0 / 0 |
-| oracle (hindsight), as_built | 58 / +91.82 / 43.1 / 0.983 | 38 / +62.89 / 99.0 / 1.000 | 5 / 3 |
-| baseline, corrected | 58 / −79.31 / 0.43 / 0.638 | 34 / −73.48 / 0.29 / 0.529 | 0 / 0 |
-| oracle (hindsight), corrected | 38 / +58.75 / 28.0 / 0.974 | 18 / +29.68 / 99.0 / 1.000 | 20 / 16 |
+Trigger-by-trigger diff of the 109 frozen-rule triggers (legacy `evolve_f2_variants.sim_one` vs `sim_core.run_trade`):
+- 92 trade in both, with the same exit reason every time. PnL differs by +$7.55 in total (−$1.50 to +$5.52 a trade), from the 1s lag sim_core puts on stop and barrier exits.
+- 9 are skipped by both (cost band).
+- 8 trade only in sim_core. All 8 cost exactly $0.62 (six NO at `1 − 0.38`, two YES at ask 0.62). The legacy band test computes `1 − float32(0.38) = 0.6200000048 > 0.62 + 1e-9` and drops them. The cap is inclusive (`entry_price <= $0.62`), so sim_core is right to keep them. 5 of the 8 lost.
+- Arrival quotes are identical in both for all 109 triggers.
 
-- PF 99.0 is the code cap when a row has no losers, not a measured value.
-- In every oracle row, the removed set is exactly the losing trades. That is a ceiling on what a perfect filter could add, not evidence that LayaGate adds anything.
-- Crossed fills: 0 in all rows. Samples are small (34–41 OOS trades).
-- Files: `scripts/laya_ablation.py`, `data/laya-ablation.json` (both in the worktree; `data/` is gitignored).
+The parity script uses the legacy (nearest-spot) pools on purpose: it checks the simulator, not the signal.
 
-## Cherry-pick guidance
+## Pipeline defects found before any OOS look
 
-- Safe for master: commit 8a5c9b6 (tests only; no production code changed).
-- Not yet decided: evolve_f2_variants.py and any data JSON. The JSON is under `data/`, which the live daemon's `_forbidden` rule excludes from sync, so it needs `git add -f`.
-- Do not cherry-pick any F2 variant result as a live change until the NO-side convention question is settled.
+1. **Spot look-ahead in the trigger pools.**
+   - `bounded_sweep.obi_pool` reads spot through `alpha_search.index_at`, which returns the *nearest* index print within 1.5s on either side of a book row. So z, delta and p_up at a trigger could use a print from up to T + 1.5s, which is 0.5s after the order's own T + 1s arrival.
+   - `scripts/rnd_pool_build.py` rebuilds the pools with the last print at or before the row. Flow, revision imbalance and the trailing sigma were already causal.
+   - With causal spot, only 61 of 109 F2 triggers are unchanged; the rest move in time, appear or disappear. IS triggers stay at 66; OOS goes from 43 to 45.
+   - Tracks 2 and 4 were rerun on IS with the causal pools. The pre-fix runs are kept as `data/*-nearestspot.json`.
+   - Track 3 builds its own causal samples and was not affected.
+   - Every earlier study built on `obi_pool` (including the F2 rule's own sweep) carries this look-ahead.
+2. **float32 boundary compares.**
+   - NumPy compares a float32 array with a Python float in float32.
+   - A float32 trigger pool gave 137 F2 triggers instead of 109 (an ask of 0.60 passes `<= 0.60 + 1e-9` in float32 and fails in float64).
+   - The legacy float64 band drops $0.62 entries (above).
+   - The pools now keep every threshold column in float64. sim_core quantises prices to the $0.001 tick in `Decimal`.
+3. **A time-bucket thinning of the pools** (one row per 0.25s) lost 4 of 9 ETH F2 triggers, because a qualifying row is often a single book update. It was not used. The pools keep every row with |z| ≥ 0.10.
 
-## Live-tree issues found along the way (not changed)
+## Track 2 — synthetic intra-window pair-locking (`scripts/synthetic_lock.py`)
 
-- `/home/cayleb/open-kal/data/evolve-cache/` has **no `book_*.npz`** since the 14:24 rebuild. The four book files are in `prev-20261117-142456/`. The study used a hard-linked snapshot of those files in `data/frozen-cache/` (worktree only).
-- The daemon in the process list is PID 3729291, not 3572268 as stated in the request.
+Signals: the frozen F2 triggers, unchanged; 66 IS triggers. Entry cost ≤ $0.58, taker or maker (5s patience). No stop: anything still open settles at $0 exit fee.
+
+**Equivalence, measured on real data.** A resting NO bid at `1 − c − L` is the same order as a resting YES offer at `c + L`. Over 132 IS trigger×style pairs per L, `lock_c = L` and `tp_c = L` gave identical PnL and exit time in every case: 0 differences, 57 filled pairs at each of L = 4, 6 and 8c. So the "lock" is a $0-fee maker take-profit at +L under another name:
+- with a +6c TP, a 4c lock always fills first;
+- a 6c lock is the same order as the TP;
+- an 8c lock never fills before the TP.
+
+IS grid, causal pools. The last column is the same config on the pre-fix nearest-spot pools.
+
+| Config | IS n | W/L | IS net | PF | lock / tp / settled-won / settled-lost | entry fees | lock legs priced > 0.62 | net, nearest-spot |
+|---|---|---|---|---|---|---|---|---|
+| `taker_locknone_tpnone` | 28 | 23/5 | +330.82 | 3.28 | 0/0/23/5 | 24.18 | — | +280.32 |
+| `taker_locknone_tp0.06` | 28 | 28/0 | +59.82 | ∞ | 0/28/0/0 | 24.18 | — | +27.82 |
+| `taker_lock0.04_tpnone` | 28 | 28/0 | +31.82 | ∞ | 28/0/0/0 | 24.18 | 0 | +0.82 |
+| `taker_lock0.04_tp0.06` | 28 | 28/0 | +34.82 | ∞ | 25/3/0/0 | 24.18 | 0 | +3.82 |
+| `taker_lock0.06_tpnone` | 28 | 28/0 | +59.82 | ∞ | 28/0/0/0 | 24.18 | 0 | +27.82 |
+| `taker_lock0.06_tp0.06` | 28 | 28/0 | +59.82 | ∞ | 0/28/0/0 | 24.18 | 0 | +27.82 |
+| `taker_lock0.08_tpnone` | 28 | 28/0 | +87.82 | ∞ | 28/0/0/0 | 24.18 | 0 | +54.82 |
+| `taker_lock0.08_tp0.06` | 28 | 28/0 | +59.82 | ∞ | 0/28/0/0 | 24.18 | 0 | +27.82 |
+| `maker_locknone_tpnone` | 29 | 24/5 | +384.00 | 3.72 | 0/0/24/5 | 0.00 | — | +306.00 |
+| `maker_locknone_tp0.06` | 29 | 28/1 | +55.00 | 2.90 | 0/28/0/1 | 0.00 | — | +26.50 |
+| `maker_lock0.04_tpnone` | 29 | 29/0 | +58.00 | ∞ | 29/0/0/0 | 0.00 | 0 | +29.50 |
+| `maker_lock0.04_tp0.06` | 29 | 29/0 | +66.00 | ∞ | 21/8/0/0 | 0.00 | 0 | +36.50 |
+| `maker_lock0.06_tpnone` | 29 | 28/1 | +55.00 | 2.90 | 28/0/0/1 | 0.00 | 0 | +26.50 |
+| `maker_lock0.06_tp0.06` | 29 | 28/1 | +55.00 | 2.90 | 0/28/0/1 | 0.00 | 0 | +26.50 |
+| `maker_lock0.08_tpnone` | 29 | 28/1 | +83.00 | 3.86 | 28/0/0/1 | 0.00 | 0 | +54.50 |
+| `maker_lock0.08_tp0.06` | 29 | 28/1 | +55.00 | 2.90 | 0/28/0/1 | 0.00 | 0 | +26.50 |
+
+- No config reaches 30 IS trades, so both champions are flagged ineligible.
+- On IS, holding to settlement beats every lock with the same entry style by $243–329: locking caps a winner at +L while the F2 favourite usually settles at $1.
+- `synthetic_lock_locked_only` was added as a second family after the first IS run, before any Track 2 OOS look, so that the lock thesis got its own OOS row.
+- OOS: the settle-only control fell to +$4.00 on 14 trades (IS win 0.83 → OOS 0.57).
+- OOS: the 8c lock locked 11 of 14 (+$34.51), but the 3 that never locked settled at −$87.59. Net −$53.08.
+- Every entry here is ≤ $0.58, so no lock leg (`1 − entry − L`) was priced above $0.62. Whether the cap should bind a risk-reducing lock leg was never tested.
+
+Verdict: the thesis fails. Pair-locking does not remove expiry risk when the lock does not fill, and when it does fill it is a take-profit.
+
+## Track 3 — fat-tail fair value (`scripts/kurtosis_fv_snipe.py`)
+
+Fit, IS only. Per lane, 15-second samples of τ-second index log returns (τ ∈ 60…780s) are scaled by trailing 150s realised vol. The fit uses index points before cut − 900s only. A scaled Student-t is fitted by grid MLE against a Gaussian. The t CDF is a numerical table (scipy is not installed); its unit check passes (CDF(0) error ≤ 5e-13; ν = 100 CDF(1.96) = 0.97361).
+
+| Lane | ν | t scale s | Gaussian s | excess kurtosis | log-lik t vs Gaussian |
+|---|---|---|---|---|---|
+| BTC | 8 | 1.13 | 1.31 | 1.63 | −43,638 vs −44,130 |
+| ETH | 6 | 0.78 | 0.95 | 2.58 | −34,899 vs −35,638 |
+| SOL | 10 | 0.68 | 0.76 | 1.06 | −29,544 vs −29,776 |
+| XRP | 10 | 1.06 | 1.19 | 1.23 | −41,285 vs −41,580 |
+
+The tails are real: the t beats the Gaussian on every lane.
+- Fair value is p_yes = 1 − F_t(log(K/S) / (s·σ·√(secs − 40)); ν). The `secs − 40` is the variance of the 60s settlement average.
+- Spot is causal: the last print at or before t.
+- Settlement calibration over all 29,550 in-band IS quotes: fat ECE 0.012, Gaussian 0.023.
+- Entries: taker at T+1s, as an IOC capped at min(0.58, p_side − hurdle), cost ∈ [0.22, 0.58]. No stop.
+
+| Config | IS n | IS net | PF | win | lanes > 0 | entry fees | | Config | IS n | IS net | PF | win |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| fat h0.06 tp6 | 98 | −229.54 | 0.43 | 0.77 | 0 | 72.54 | | gauss h0.06 tp6 | 199 | −335.73 | 0.51 | 0.78 |
+| fat h0.06 tp8 | 98 | −202.04 | 0.54 | 0.73 | 0 | 72.54 | | gauss h0.06 tp8 | 199 | −328.73 | 0.59 | 0.74 |
+| fat h0.06 settle | 98 | +13.96 | 1.01 | 0.35 | 3 | 72.54 | | gauss h0.06 settle | 199 | −86.23 | 0.96 | 0.31 |
+| fat h0.09 tp6 | 19 | −68.75 | 0.31 | 0.74 | 1 | 14.75 | | gauss h0.09 tp6 | 33 | −95.92 | 0.36 | 0.73 |
+| fat h0.09 tp8 | 19 | −54.75 | 0.45 | 0.74 | 1 | 14.75 | | gauss h0.09 tp8 | 33 | −89.42 | 0.46 | 0.70 |
+| **fat h0.09 settle** | 19 | +22.25 | 1.12 | 0.42 | 2 | 14.75 | | **gauss h0.09 settle** | 33 | +99.08 | 1.32 | 0.39 |
+| fat h0.12 tp6 | 10 | −66.23 | 0.17 | 0.60 | 1 | 7.73 | | gauss h0.12 tp6 | 12 | −57.94 | 0.24 | 0.67 |
+| fat h0.12 tp8 | 10 | −60.23 | 0.24 | 0.60 | 1 | 7.73 | | gauss h0.12 tp8 | 12 | −49.94 | 0.34 | 0.67 |
+| fat h0.12 settle | 10 | −96.73 | 0.31 | 0.20 | 1 | 7.73 | | gauss h0.12 settle | 12 | −116.94 | 0.27 | 0.17 |
+
+- Maker take-profits lose everywhere. The taker entry fee (about $0.75 a trade) plus a capped +6c/+8c upside does not pay for the tickets that settle at $0.
+- OOS, the fat champion made +$94.20 on 18 trades. It fails three checks: under 25 trades, no payoff model (19 IS trades), and it is carried by XRP (4 trades, +$96.85; the other three lanes −$2.65).
+- OOS, the Gaussian control made +$13.29 at PF 1.04 and is also carried by XRP.
+
+Verdict: better-calibrated probabilities do not turn into a tradeable edge at these hurdles on this tape.
+
+## Track 4 — evolutionary search (`scripts/alpha_evolve_v2.py`)
+
+The run had 4 families × (1 seed + 4 generations × 12 mutations) = 196 evaluations, 149 of them distinct genomes, all on IS, on causal pools. Every evaluation is logged in `data/alpha-evolve-v2.json`.
+
+- The seed is the F2 rule: taker, tp 5c, stop 7c, 90s taker barrier. It made 57 trades on IS, −$71.57, PF 0.46.
+- Primitives: depletion (signed flow / revision imbalance / 5s mid shift), divergence, spread regime, and time-of-day/vol regime.
+- Divergence is the engine's spot feed minus RTI: the last tick at or before the trigger within 1.5s, 98% coverage. `ticks.npz` spot is a different feed from BRTI (median −0.13bp), so this primitive is testable.
+- The book cache stores top-of-book only, so true order-book depletion velocity cannot be measured. The touch-revision imbalance stands in for it.
+- **No evaluation in any family was IS-eligible.** Every genome with ≥ 30 IS trades lost money on IS. The best of those per family:
+  - depletion: 37 trades, −$37.36;
+  - divergence: 30, −$13.91;
+  - spread_regime: 49, −$55.64;
+  - tod_vol: 58, −$43.04.
+- With nothing eligible, selection drifted to small, lucky samples. The champions have 6–16 IS trades.
+- Hour-of-day genes have few independent samples on a tape of about two days.
+
+| Family | Champion | IS n | W/L | IS net | PF | Genome (changes from seed) |
+|---|---|---|---|---|---|---|
+| depletion | `depletion:3.2` | 14 | 14/0 | +35.00 | ∞ | maker 10s, z ≥ 0.4, flow ≥ 0.2, cost 0.20–0.60 |
+| divergence | `divergence:3.2` | 7 | 7/0 | +17.50 | ∞ | maker 5s, z ≥ 0.4, div ≥ 0bp, no stop, no barrier, cost 0.30–0.60 |
+| spread_regime | `spread_regime:3.3` | 16 | 14/2 | +24.24 | 3.25 | maker 3s, z ≥ 0.4, cost 0.20–0.60 |
+| tod_vol | `tod_vol:4.2` | 6 | 5/1 | +9.22 | 1.86 | maker 5s, δ ≥ 4bp, tp 8c, cost 0.25–0.55 (its own time/vol genes ended back at the seed) |
+
+OOS, the four champions made 0–4 trades each, net −$23.00 to $0.00 (ledger above).
+
+## Tests (run in the worktree after the last code change)
+
+| Suite | Baseline (before any change) | Final |
+|---|---|---|
+| `compileall openkal scripts tests` | rc 0 | rc 0 |
+| `tests/test_sim_core.py` | — (new) | 24/24 |
+| `tests/test_daemon_247.py` | 20 run, OK, 2 expected failures | 20 run, OK, 2 expected failures |
+| `tests/test_live_exit.py` | 52/52 | 52/52 |
+| `tests/test_gate_controls.py` on parity copy `/tmp/openkal-rnd/parity.db` | 18/18 | 18/18 |
+| `tests/test_day_pipeline.py` | 74/74 | 74/74 |
+
+## How this was run
+
+- The lead wrote `sim_core`, its tests, `rnd_common`, the pool builder and the gate.
+- Three Haiku 5.5 workers each built one track script against written briefs. They ran IS only, with heavy runs serialised on `data/.heavy.lock`.
+- The lead read each script in full and found no OOS leak, no hand-computed prices and no gate bypass. The lead then reran Tracks 2 and 4 on the corrected pools and ran every OOS score.
+- Peak memory of the full pool build was about 19 GB, on the machine that runs the live engine. Hence the lock and the lane-by-lane builder.
+
+## Open questions for the owner
+
+1. **Lock-leg cap.** Should the $0.62 cap bind a risk-reducing opposite-side lock leg (`1 − entry − L`)? With entries ≤ $0.58 it never came up here.
+2. **`MIN_PASSIVE_QTY = 20`** in production `openkal/execution.py` and in `scripts/alpha_discover.py`, against the 50-contract research floor. Left unchanged.
+3. **Look-ahead in legacy studies.** The legacy `obi_pool` look-ahead (nearest spot, up to +1.5s) affects every earlier study built on it, including the sweep that produced the live F2 rule. Re-validating F2 on causal pools is the natural next step; Track 2's settle-only row is that test, and it decays to +$4.00 OOS.
+
+## Earlier work on this branch (from the previous report, commit `9e39dee`)
+
+- Track A: `tests/test_daemon_247.py` (commit `8a5c9b6`). It has 2 expected failures for known gaps:
+  - a nested `scripts/.env` would be pushed by git_sync;
+  - a root `.venv/` path is not matched by `_forbidden`.
+- Track B: the F2 NO-side convention bug. The legacy simulator charged a NO taker `yes_bid` instead of `1 − yes_bid`. Under the corrected convention every F2 variant loses on IS and OOS. sim_core makes this convention impossible to get wrong (Track 1).
+- Track C: the LayaGate ablation was blocked; there are no historical per-trigger verdicts. Oracle rows are hindsight ceilings only.
+- The live `data/evolve-cache/` was mid-rebuild during this run: at 16:36, only a partial `book_KXBTC15M.npz` was present. This study never read it.
