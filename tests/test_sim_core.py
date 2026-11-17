@@ -228,5 +228,61 @@ class ExitLegArrival(unittest.TestCase):
         self.assertEqual((tr.reason, tr.exit_ts), ("tp", T0 + 2.5))
 
 
+class LockLegCap(unittest.TestCase):
+    """Owner ruling 2026-11-17: the $0.62 ceiling binds every buy leg, the lock too."""
+
+    BOOK = [(T0 - 10.0, 0.29, 0.30)]   # YES taker entry 0.30
+
+    def _run(self, lock_c, prints):
+        return S.run_trade(tape(self.BOOK, prints, result_yes=0), side=S.YES,
+                           trigger_ts=T0, entry_style=S.TAKER, qty=10, lock_c=D(lock_c))
+
+    def test_lock_priced_above_the_cap_is_never_placed(self):
+        tr = self._run("0.04", [(T0 + 5.0, 0.34, 50, 1)])   # lock NO bid 0.66 > 0.62
+        self.assertEqual(tr.reason, "settle")
+
+    def test_lock_at_the_cap_is_placed(self):
+        tr = self._run("0.08", [(T0 + 5.0, 0.38, 50, 1)])   # lock NO bid 0.62
+        self.assertEqual((tr.reason, tr.legs[-1].price), ("lock", D("0.62")))
+
+
+class MakerScratch(unittest.TestCase):
+    """A $0-fee pre-expiry exit: a post-only sell at entry (or one tick over the bid)."""
+
+    def _yes(self, prints, **kw):
+        return S.run_trade(tape([(T0 - 10.0, 0.39, 0.40)], prints, result_yes=0),
+                           side=S.YES, trigger_ts=T0, entry_style=S.TAKER, qty=10,
+                           barrier_exit="scratch", **kw)
+
+    def test_scratch_rests_after_the_barrier_and_fills_at_breakeven(self):
+        prints = [(T0 + 11.5, 0.40, 50, 1),    # before the scratch arrives (T0 + 12)
+                  (T0 + 13.0, 0.40, 50, 1)]
+        tr = self._yes(prints, hold_s=10.0)
+        self.assertEqual((tr.reason, tr.exit_ts, tr.exit_value), ("scratch", T0 + 13.0, D("0.40")))
+        self.assertEqual(tr.legs[-1].fee, D("0"))
+        self.assertEqual(tr.pnl, -taker_fee(D("0.40"), 10))
+
+    def test_unfilled_scratch_settles(self):
+        tr = self._yes([(T0 + 11.5, 0.40, 50, 1)], hold_s=10.0)
+        self.assertEqual(tr.reason, "settle")
+
+    def test_scratch_by_close(self):
+        tr = self._yes([(CLOSE - 55.0, 0.40, 50, 1)], scratch_by_s=60.0)
+        self.assertEqual((tr.reason, tr.exit_ts), ("scratch", CLOSE - 55.0))
+
+    def test_no_scratch_is_a_yes_bid_hit_by_yes_sellers(self):
+        # NO bought at 1 - 0.60 = 0.40; NO taker exit is 1 - 0.63 = 0.37, so the scratch
+        # rests at 0.40 = a YES bid at 0.60, hit by YES sellers at <= 0.60.
+        t = tape([(T0 - 10.0, 0.60, 0.63)], [(T0 + 13.0, 0.60, 50, 0)], result_yes=1)
+        tr = S.run_trade(t, side=S.NO, trigger_ts=T0, entry_style=S.TAKER, qty=10,
+                         hold_s=10.0, barrier_exit="scratch")
+        self.assertEqual((tr.reason, tr.exit_value), ("scratch", D("0.40")))
+
+    def test_unknown_barrier_exit_is_refused(self):
+        with self.assertRaises(ValueError):
+            S.run_trade(tape(FLAT), side=S.NO, trigger_ts=T0, entry_style=S.TAKER, qty=1,
+                        hold_s=10.0, barrier_exit="market")
+
+
 if __name__ == "__main__":
     unittest.main()
