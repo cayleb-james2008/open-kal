@@ -1,6 +1,6 @@
 # Open-Kal 24/7 report
 
-Updated 2026-11-17T17:08:02-05:00 by `scripts/daemon_247.py`.
+Updated 2026-11-17T18:00:19-05:00 by `scripts/daemon_247.py`.
 
 ## State
 
@@ -9,7 +9,7 @@ Updated 2026-11-17T17:08:02-05:00 by `scripts/daemon_247.py`.
 - Equity: 121.46 (start 163.9971, peak 121.46, realized -42.54)
 - Venue balance: 121.4563
 - Trailing floor: 131.54 (peak 164.4269)
-- Reconcile delta: 127.03 (cap $0.05)
+- Reconcile delta: 0.00 (cap $0.05)
 - Open lanes: 0
 
 ## Forward OOS
@@ -28,14 +28,15 @@ Updated 2026-11-17T17:08:02-05:00 by `scripts/daemon_247.py`.
 | 2026-11-17T15:16:25-05:00 | True | 164.43 | 164.4269 | 0.00 | 131.54 |
 | 2026-11-17T15:31:27-05:00 | True | 164.43 | 164.4269 | 0.00 | 131.54 |
 | 2026-11-17T15:46:31-05:00 | True | 164.43 | 164.4269 | 0.00 | 131.54 |
+| 2026-11-17T18:00:19-05:00 | False | 121.46 | 121.4563 | 0.00 | 131.54 |
 
-## Afternoon audit · 15:08–18:00 EST (live, updates each window)
+## Afternoon audit · 15:08–18:00 EST (final 18:00 snapshot)
 
 - Baseline equity: $164.00 (15:01 check; audit starts 15:08)
-- Equity at 2026-11-17T17:08:02-05:00: $121.46 → P&L $-42.54
+- Equity at 2026-11-17T18:00:19-05:00: $121.46 → P&L $-42.54
 - Account realized: $-42.54 · equity per lane (equity/4): $30.36
 - Fills since 15:08: 0 (0 entries, 0 exits, exit P&L $+0.00)
-- Venue balance: $121.4563 · floor: $131.54 · reconcile: $127.03 · open lanes: 0
+- Venue balance: $121.4563 · floor: $131.54 · reconcile: $0.00 · open lanes: 0
 
 ## Capacity decision · 2 vs 4 crypto slots
 
@@ -47,7 +48,6 @@ Updated 2026-11-17T17:08:02-05:00 by `scripts/daemon_247.py`.
 
 ## Events
 
-- 2026-11-17T14:41:13-05:00 **live armed**: 
 - 2026-11-17T14:41:13-05:00 **report**: promotion chain completed; live compounding under supervision
 - 2026-11-17T14:46:17-05:00 **report**: 15-minute window check
 - 2026-11-17T15:01:20-05:00 **report**: 15-minute window check
@@ -59,3 +59,4 @@ Updated 2026-11-17T17:08:02-05:00 by `scripts/daemon_247.py`.
 - 2026-11-17T16:45:11-05:00 **report**: promotion stopped before arming
 - 2026-11-17T17:08:02-05:00 **candidate_ready_for_operator_approval**: 
 - 2026-11-17T17:08:02-05:00 **report**: candidate ready; no arm (operator lock)
+- 2026-11-17T18:00:19-05:00 **report**: unarmed 15-minute reconcile

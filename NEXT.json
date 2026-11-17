@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-17T17:08:02-05:00",
+ "updated": "2026-11-17T18:00:19-05:00",
  "goal": "24/7 forward-OOS gate, live compounding, trailing drawdown breaker.",
  "state": {
   "decision": "candidate_ready_for_operator_approval",
@@ -15,7 +15,7 @@
   "venue_balance": "121.4563",
   "peak_balance": "164.4269",
   "floor": "131.54",
-  "reconcile_delta": "127.03",
+  "reconcile_delta": "0.00",
   "open_lanes": 0
  },
  "forward_oos": {
@@ -33,8 +33,8 @@
  },
  "afternoon_audit": {
   "window": "2026-11-17 15:08-18:00 EST",
-  "final": false,
-  "as_of": "2026-11-17T17:08:02-05:00",
+  "final": true,
+  "as_of": "2026-11-17T18:00:19-05:00",
   "baseline_equity": 164.0,
   "equity": 121.46,
   "pnl": -42.54,
@@ -42,7 +42,7 @@
   "realized": "-42.54",
   "venue_balance": "121.4563",
   "floor": "131.54",
-  "reconcile_delta": "127.03",
+  "reconcile_delta": "0.00",
   "open_lanes": 0,
   "fills": 0,
   "entries": 0,
@@ -63,7 +63,7 @@
   }
  },
  "supervision": {
-  "checks": 5,
+  "checks": 6,
   "breaker_trips": 1,
   "breaker_restarts": 1,
   "log": "data/daemon-247.log",
