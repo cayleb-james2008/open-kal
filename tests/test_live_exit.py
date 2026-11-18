@@ -1000,6 +1000,19 @@ def control_layagate_cache() -> None:
     check("gate: a 2c mid move does send the lane back to the model",
           scheduled == [TICKER], f"scheduled={scheduled}")
 
+    # The cache is keyed by ticker and the ticker changes every window: verdicts
+    # of contracts that no longer exist are dropped.
+    old = Verdict(True, True, 0.8, "old", "laya", 600.0)
+    old.ticker = "KXSOL15M-OLD"
+    old.ts = time.time() - 7200.0
+    gate.cache["KXSOL15M-OLD"] = old
+    gate.mid_ref["KXSOL15M-OLD"] = 0.5
+    gate._prune()
+    check("gate: a verdict older than an hour is dropped from the cache",
+          "KXSOL15M-OLD" not in gate.cache and "KXSOL15M-OLD" not in gate.mid_ref
+          and gate.cached(TICKER) is not None,
+          f"cache={sorted(gate.cache)}")
+
 
 def control_layagate_filter() -> None:
     """`require_layagate_allow` is the switch that makes the gate binding."""

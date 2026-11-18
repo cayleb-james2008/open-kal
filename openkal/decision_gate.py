@@ -104,6 +104,19 @@ class LayaGate:
         return False
 
     # ---------- the background path ----------
+    def _prune(self) -> None:
+        """Drop the verdicts of contracts that no longer exist.
+
+        The ticker changes every window, so the cache would otherwise hold one
+        entry per window per lane for the life of the process. An hour is far
+        longer than any contract lives.
+        """
+        cutoff = time.time() - 3600.0
+        for key, verdict in list(self.cache.items()):
+            if verdict.ts < cutoff:
+                self.cache.pop(key, None)
+                self.mid_ref.pop(key, None)
+
     def schedule(self, slot: Any, quote: Any, seconds_left: float, decision: Any,
                  on_done: Any = None) -> None:
         """Refresh one ticker's verdict in the background. The hot path never waits.
@@ -119,6 +132,7 @@ class LayaGate:
         running = self.tasks.get(ticker)
         if running is not None and not running.done():
             return
+        self._prune()
 
         async def run() -> None:
             try:
