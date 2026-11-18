@@ -414,8 +414,24 @@ def poll_cache(job: dict, progress: dict, cache_dir: Path,
 def adopt_export(progress: dict, cache_dir: Path) -> dict | None:
     """Re-attach to an export that outlived the supervisor that started it."""
     rec = progress.get("cache") or {}
+    if rec.get("finished_at"):
+        return None
     pid = rec.get("pid")
-    if not pid or rec.get("finished_at"):
+    if not pid:
+        # Written by a supervisor that kept the job in memory only: no pid, no rc
+        # file, nothing to adopt. Close it out so it is never read as still in
+        # flight, and so the night's record says plainly that it was unaccounted.
+        progress["cache"] = {**rec,
+                             "finished_at": now().isoformat(timespec="seconds"),
+                             "rc": None,
+                             "abandoned": True,
+                             "reason": "legacy cache record carried no pid or rc file; "
+                                       "completion unknown"}
+        progress["cache_ok"] = False
+        progress["cache_history"] = (progress.get("cache_history") or [])[-8:] + [
+            {k: progress["cache"].get(k) for k in
+             ("started_at", "finished_at", "rc", "abandoned", "reason")}]
+        log("abandoned legacy cache record (no pid, no rc file); recorded as unknown")
         return None
     try:
         started = datetime.fromisoformat(str(rec.get("started_at")))
