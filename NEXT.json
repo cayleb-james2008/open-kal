@@ -500,6 +500,123 @@
    "brier_oos": null,
    "result_artifact": "data/track6-gbdt-l2-meta.json",
    "note": "Research only; no live promotion or trading."
+  },
+  "track7_cross_lane_iv_arb": {
+   "status": "IS fail; OOS unspent",
+   "config": "alt_iv_ratio_ge_1.35x_btc_buy_itm_hold",
+   "is": {
+    "trades": 275,
+    "wins": 155,
+    "losses": 120,
+    "win_rate": 0.5636,
+    "net": -102.82,
+    "pf": 0.9698657116228906,
+    "avg_pnl": -0.3738909090909091,
+    "max_entry_cost": 0.6,
+    "fees_entry": 238.32,
+    "fees_exit": 0.0,
+    "crossed_fills": 0,
+    "requotes": 0,
+    "profitable_lanes": 1,
+    "net_ex_best_lane": -300.72,
+    "net_ex_xrp": 18.39,
+    "net_ex_best_window": -213.97,
+    "windows": 90,
+    "by_lane": {
+     "KXETH15M": {
+      "trades": 97,
+      "wins": 52,
+      "net": -179.51
+     },
+     "KXSOL15M": {
+      "trades": 90,
+      "wins": 55,
+      "net": 197.9
+     },
+     "KXXRP15M": {
+      "trades": 88,
+      "wins": 48,
+      "net": -121.21
+     }
+    },
+    "by_reason": {
+     "settle": {
+      "trades": 275,
+      "net": -102.82
+     }
+    },
+    "skips": {
+     "cost_band": 21
+    }
+   },
+   "is_eligible": false,
+   "control_is": {
+    "trades": 421,
+    "wins": 246,
+    "losses": 175,
+    "win_rate": 0.5843,
+    "net": 57.02,
+    "pf": 1.0112396980932725,
+    "avg_pnl": 0.13543942992874108,
+    "max_entry_cost": 0.6,
+    "fees_entry": 362.98,
+    "fees_exit": 0.0,
+    "crossed_fills": 0,
+    "requotes": 0,
+    "profitable_lanes": 2,
+    "net_ex_best_lane": -432.64,
+    "net_ex_xrp": -106.21,
+    "net_ex_best_window": -69.3,
+    "windows": 103,
+    "by_lane": {
+     "KXETH15M": {
+      "trades": 147,
+      "wins": 95,
+      "net": 489.66
+     },
+     "KXSOL15M": {
+      "trades": 139,
+      "wins": 69,
+      "net": -595.87
+     },
+     "KXXRP15M": {
+      "trades": 135,
+      "wins": 82,
+      "net": 163.23
+     }
+    },
+    "by_reason": {
+     "settle": {
+      "trades": 421,
+      "net": 57.02
+     }
+    },
+    "skips": {
+     "cost_band": 56
+    }
+   },
+   "oos_spent": false,
+   "oos": null,
+   "payoff_ece": null,
+   "strict_gate": null,
+   "rolling_edge_bar": null,
+   "brier_is": {
+    "triggered_band_rows": {
+     "rows": 871,
+     "model": 0.24359036510090742,
+     "ask": 0.24329850746268655,
+     "base_rate": 0.24501444029521208
+    },
+    "all_band_rows": {
+     "rows": 4545,
+     "model": 0.24681565077469161,
+     "ask": 0.24763553355335535,
+     "base_rate": 0.2479556470498535
+    }
+   },
+   "brier_oos": null,
+   "result_artifact": "data/track7-cross-lane-iv.json",
+   "note": "Research only; no live promotion or trading."
   }
  },
  "state": {

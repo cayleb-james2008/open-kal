@@ -545,3 +545,14 @@ OOS, the four champions made 0–3 trades each, net −$14.29 to $0.00 (ledger a
 - IS bar missed; OOS left sealed, no ledger entry.
 - The 'sealed' OOS slice is sealed per family in the ledger only: earlier families on this tape (Tracks 2B-2D, F2 variants) already looked at overlapping late windows.
 - Receipt: `data/track6-gbdt-l2-meta.json`; no live promotion.
+
+### Track 7 — cross-lane implied-vol dispersion
+- 229 windows (137 IS / 92 OOS), cut `1794915000.0`; 5s grid, secs_left 120-720; alt iv_ratio >= 1.35x BTC's at the same second, buy the in-the-money side at its taker ask in $0.35-$0.60, hold to settlement. 873 IS decision rows met the trigger.
+- IS: 275 trades, win 0.564, net $-102.82, PF 0.97, 1 profitable lanes, ex-XRP $+18.39, max entry $0.60, 0 crossed fills; eligible (>= 20 trades, PF >= 1.25, >= 2 lanes): False.
+- Control, same side and band with no dispersion trigger: 421 trades, win 0.584, net $+57.02, PF 1.011, 2 profitable lanes, ex-XRP $-106.21, max entry $0.60, 0 crossed fills.
+- Fees: trigger: $+135.50 before $238.32 of taker fees (0.87 a trade); control: $+420.00 before $362.98 of taker fees (0.86 a trade).
+- Conditioning: median |z_mkt| 0.119 on triggered rows vs 0.155 on all in-band rows (iv is proportional to 1/|z|; quotes older than 5s are dropped).
+- IS triggered rows: BTC-premium fair 0.2436 vs side's own ask 0.2433 vs base rate 0.2450 (871 rows); all in-band rows: BTC-premium fair 0.2468 vs side's own ask 0.2476 vs base rate 0.2480 (4545 rows).
+- IS bar missed; OOS left sealed, no ledger entry.
+- The 'sealed' OOS slice is sealed per family in the ledger only: earlier families on this tape (Tracks 2B-2D, F2 variants) already looked at overlapping late windows.
+- Receipt: `data/track7-cross-lane-iv.json`; no live promotion.
