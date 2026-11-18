@@ -1,6 +1,6 @@
 # Open-Kal 24/7 report
 
-Updated 2026-11-18T03:00:11-05:00 by `scripts/daemon_247.py`.
+Updated 2026-11-18T03:37:53-05:00 by `scripts/daemon_247.py`.
 
 ## State
 
@@ -54,8 +54,6 @@ Updated 2026-11-18T03:00:11-05:00 by `scripts/daemon_247.py`.
 
 ## Events
 
-- 2026-11-18T00:40:29-05:00 **gate refused**: ['forward net $-22.61 <= 0', 'forward PF 0.642 < 1.15', 'payoff ECE 0.3820 > 0.08', '1 profitable lane(s) < 2']
-- 2026-11-18T00:40:29-05:00 **report**: gate refused at the hourly check
 - 2026-11-18T00:46:33-05:00 **report**: unarmed 15-minute reconcile
 - 2026-11-18T01:00:36-05:00 **report**: unarmed 15-minute reconcile
 - 2026-11-18T01:37:25-05:00 **gate refused**: ['forward net $-22.61 <= 0', 'forward PF 0.642 < 1.15', 'payoff ECE 0.3820 > 0.08', '1 profitable lane(s) < 2']
@@ -66,3 +64,5 @@ Updated 2026-11-18T03:00:11-05:00 by `scripts/daemon_247.py`.
 - 2026-11-18T02:38:35-05:00 **report**: gate refused at the hourly check
 - 2026-11-18T02:46:08-05:00 **report**: unarmed 15-minute reconcile
 - 2026-11-18T03:00:11-05:00 **report**: unarmed 15-minute reconcile
+- 2026-11-18T03:37:53-05:00 **gate refused**: ['forward net $-22.61 <= 0', 'forward PF 0.642 < 1.15', 'payoff ECE 0.3820 > 0.08', '1 profitable lane(s) < 2']
+- 2026-11-18T03:37:53-05:00 **report**: gate refused at the hourly check
