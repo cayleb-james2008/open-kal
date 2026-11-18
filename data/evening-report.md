@@ -1,6 +1,6 @@
 # Open-Kal 24/7 report
 
-Updated 2026-11-18T12:29:21-05:00 by `scripts/daemon_247.py`.
+Updated 2026-11-18T12:29:51-05:00 by `scripts/daemon_247.py`.
 
 ## State
 
@@ -51,7 +51,6 @@ Updated 2026-11-18T12:29:21-05:00 by `scripts/daemon_247.py`.
 
 ## Events
 
-- 2026-11-18T09:31:28-05:00 **report**: unarmed 15-minute reconcile
 - 2026-11-18T09:46:31-05:00 **report**: unarmed 15-minute reconcile
 - 2026-11-18T10:00:33-05:00 **report**: unarmed 15-minute reconcile
 - 2026-11-18T10:46:58-05:00 **gate refused**: ['forward net $-59.76 <= 0', 'forward PF 0.458 < 1.15', 'payoff ECE 0.4285 > 0.08', '1 profitable lane(s) < 2']
@@ -63,3 +62,4 @@ Updated 2026-11-18T12:29:21-05:00 by `scripts/daemon_247.py`.
 - 2026-11-18T12:28:51-05:00 **report**: unarmed 15-minute reconcile
 - 2026-11-18T12:28:51-05:00 **report**: hourly slot produced no artifact
 - 2026-11-18T12:29:21-05:00 **report**: hourly slot produced no artifact
+- 2026-11-18T12:29:51-05:00 **report**: hourly slot produced no artifact
