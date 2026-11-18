@@ -78,3 +78,7 @@ def scorecard(s: dict) -> str:
     return (f"{s['trades']} trades, win {s['win_rate']:.3f}, net ${s['net']:+.2f}, PF {pf}, "
             f"{s['profitable_lanes']} profitable lanes, ex-XRP ${s['net_ex_xrp']:+.2f}, "
             f"max entry ${s['max_entry_cost']:.2f}, {s['crossed_fills']} crossed fills")
+
+
+SHARED_TAPE_NOTE = ("- The 'sealed' OOS slice is sealed per family in the ledger only: earlier families on this tape "
+                    "(Tracks 2B-2D, F2 variants) already looked at overlapping late windows.")

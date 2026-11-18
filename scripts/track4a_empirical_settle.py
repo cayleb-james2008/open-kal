@@ -108,6 +108,17 @@ def side_label(pack: dict, side: str) -> np.ndarray:
     return pack["y"] if side == S.YES else 1.0 - pack["y"]
 
 
+def market_logloss(packs: dict) -> float:
+    """Log-loss of the side's own taker ask used as its win probability, on the model's domain rows."""
+    p, y = [], []
+    for pack in packs.values():
+        for side in (S.YES, S.NO):
+            d = in_domain(pack, side)
+            p.append((pack["ask_y"] if side == S.YES else pack["ask_n"])[d])
+            y.append(side_label(pack, side)[d])
+    return log_loss(np.concatenate(p), np.concatenate(y))
+
+
 def fold_masks(rank: np.ndarray, n_windows: int, k: int) -> tuple[np.ndarray, np.ndarray]:
     """(train, held) row masks for fold k of FOLDS time blocks; the held block's neighbours are purged."""
     block_of = np.arange(n_windows) * FOLDS // n_windows
@@ -277,6 +288,25 @@ def new_out(configs) -> dict:
 
 
 # ----------------------------------------------------------------- phases
+def score_is(packs: dict, get_lane, model: dict, oof: dict) -> tuple[dict, dict]:
+    """Price every config twice: `is` on the out-of-fold probabilities (what selection reads),
+    `is_insample` on the all-IS refit (shown for contrast). Returns (configs, out-of-fold outputs)."""
+    names = [config_name(h, s) for h in HURDLES for s in STYLES]
+    oof_out, ins_out = new_out(names), new_out(names)
+    for n, pack in packs.items():
+        pack["lane"] = get_lane(n)
+        ins = predict(model, pack)
+        for h in HURDLES:
+            for s in STYLES:
+                run_config(pack, *oof[n], h, s, oof_out)
+                run_config(pack, *ins, h, s, ins_out)
+        pack["lane"] = None
+    configs = {c: {"family": FAMILY, "hurdle": float(c[1:5]), "style": c.split("_")[1],
+                   "is": RC.summarize(oof_out[c]["rows"], dict(oof_out[c]["skips"])),
+                   "is_insample": RC.summarize(ins_out[c]["rows"], dict(ins_out[c]["skips"]))} for c in names}
+    return configs, oof_out
+
+
 def run_is() -> dict:
     pin = T.pin_tape()
     closes = T.window_closes()
@@ -292,22 +322,7 @@ def run_is() -> dict:
         packs[n]["lane"] = None                      # let the lane's arrays go; it is reloaded to price trades
         del lane, micro
     model, oof, cv = fit_model(packs, closes_is, cut)
-    names = [config_name(h, s) for h in HURDLES for s in STYLES]
-    oof_out, ins_out = new_out(names), new_out(names)
-    for n in RC.LANES:
-        lane, _ = load_lane(n)
-        pack = packs[n]
-        pack["lane"] = lane
-        ins = predict(model, pack)
-        for h in HURDLES:
-            for s in STYLES:
-                run_config(pack, *oof[n], h, s, oof_out)
-                run_config(pack, *ins, h, s, ins_out)
-        del lane
-        pack["lane"] = None
-    configs = {c: {"family": FAMILY, "hurdle": float(c[1:5]), "style": c.split("_")[1],
-                   "is": RC.summarize(oof_out[c]["rows"], dict(oof_out[c]["skips"])),
-                   "is_insample": RC.summarize(ins_out[c]["rows"], dict(ins_out[c]["skips"]))} for c in names}
+    configs, oof_out = score_is(packs, lambda n: load_lane(n)[0], model, oof)
     champion = C.pick_champion(configs)
     champion["is_insample"] = configs[champion["config"]]["is_insample"]
     C.atomic_text(IS_TRADES, "".join(json.dumps(r, default=RC._json_default) + "\n" for r in oof_out[champion["config"]]["rows"]))
@@ -315,7 +330,8 @@ def run_is() -> dict:
     obj = {"family": FAMILY, "split": "first 60% / last 40% of distinct window closes, all four lanes", "cut": cut,
            "windows": len(closes), "is_windows": len(closes_is), "oos_windows": len(closes) - len(closes_is),
            "frozen_input_sha256": pin["sha256"], "student_t_scale": fits, "model": model, "cv_logloss_by_lambda": cv,
-           "is_scoring": f"out-of-fold ({FOLDS} close-time blocks, +-1 window purge); the all-IS refit is in is_insample",
+           "market_ask_logloss": market_logloss(packs),
+           "is_scoring": f"out-of-fold ({FOLDS} close-time blocks, +-1 window purge; a block's model also trains on later IS windows, never on OOS); the all-IS refit is in is_insample",
            "microprice_finite_fraction_is": mpm,
            "sampling": {n: {"windows": p["windows"], "rows": int(len(p["t"])), "skips": dict(p["skips"])} for n, p in packs.items()},
            "configs": configs, "champion": champion, "oos_scored": None}
@@ -369,10 +385,13 @@ def hand_off(obj: dict) -> None:
     lines = [f"- {obj['windows']} windows ({obj['is_windows']} IS / {obj['oos_windows']} OOS), cut `{obj['cut']}`; ridge logistic "
              f"(lambda {m['lambda']:g}, {m['rows']} rows) on {', '.join(FEATURES)}; microprice finite on "
              f"{obj['microprice_finite_fraction_is']:.1%} of IS rows, so that feature is inert in the fit.",
+             f"- Blocked-CV log-loss {min(obj['cv_logloss_by_lambda'].values()):.4f} against {obj['market_ask_logloss']:.4f} "
+             f"for the side's own taker ask used as its probability (chance 0.6931).",
              f"- IS champion `{obj['champion']['config']}` (out-of-fold): {T.scorecard(best)}; eligible: {obj['champion']['is_eligible']}. "
              f"In-sample refit: {T.scorecard(obj['champion']['is_insample'])}."]
     lines.append(f"- One sealed OOS look: {T.scorecard(score['oos'])}; payoff-ECE {score['payoff_ece']}; "
                  f"gate pass: {score['gate']['pass']}." if score else "- IS bar missed; OOS left sealed, no ledger entry.")
+    lines.append(T.SHARED_TAPE_NOTE)
     lines.append(f"- Receipt: `{OUT.relative_to(ROOT)}`; no live promotion.")
     T.update_handoff(KEY, state, "### Track 4A — empirical settlement calibrator" if final else None, lines)
 

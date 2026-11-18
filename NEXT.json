@@ -195,6 +195,177 @@
    "payoff_ece": null,
    "gate_pass": false,
    "result_artifact": "data/track2d-layagate-l2.json"
+  },
+  "track4b_asian_final_min_maker": {
+   "status": "IS fail; OOS unspent",
+   "champion": "h0.30_maker",
+   "is": {
+    "trades": 6,
+    "wins": 1,
+    "losses": 5,
+    "win_rate": 0.1667,
+    "net": -100.5,
+    "pf": 0.196,
+    "avg_pnl": -16.75,
+    "max_entry_cost": 0.58,
+    "fees_entry": 0.0,
+    "fees_exit": 0.0,
+    "crossed_fills": 0,
+    "requotes": 0,
+    "profitable_lanes": 0,
+    "net_ex_best_lane": -78.0,
+    "net_ex_xrp": -47.5,
+    "net_ex_best_window": -125.0,
+    "windows": 6,
+    "by_lane": {
+     "KXBTC15M": {
+      "trades": 1,
+      "wins": 0,
+      "net": -25.0
+     },
+     "KXSOL15M": {
+      "trades": 1,
+      "wins": 0,
+      "net": -22.5
+     },
+     "KXXRP15M": {
+      "trades": 4,
+      "wins": 1,
+      "net": -53.0
+     }
+    },
+    "by_reason": {
+     "settle": {
+      "trades": 6,
+      "net": -100.5
+     }
+    },
+    "skips": {
+     "bid_below_floor": 37,
+     "crossed": 5,
+     "no_quote": 285,
+     "unfilled": 116
+    }
+   },
+   "is_eligible": false,
+   "oos_spent": false,
+   "oos": null,
+   "payoff_ece": null,
+   "gate": null,
+   "result_artifact": "data/track4b-asian-maker.json",
+   "note": "Research only; no live promotion or trading."
+  },
+  "track4a_empirical_settle_cal": {
+   "status": "IS fail; OOS unspent",
+   "champion": "h0.09_taker",
+   "is": {
+    "trades": 58,
+    "wins": 29,
+    "losses": 29,
+    "win_rate": 0.5,
+    "net": 50.28,
+    "pf": 1.0743248237224496,
+    "avg_pnl": 0.8668965517241379,
+    "max_entry_cost": 0.62,
+    "fees_entry": 49.22,
+    "fees_exit": 0.0,
+    "crossed_fills": 0,
+    "requotes": 0,
+    "profitable_lanes": 3,
+    "net_ex_best_lane": 4.8,
+    "net_ex_xrp": 34.39,
+    "net_ex_best_window": -50.24,
+    "windows": 33,
+    "by_lane": {
+     "KXBTC15M": {
+      "trades": 13,
+      "wins": 7,
+      "net": 28.54
+     },
+     "KXETH15M": {
+      "trades": 14,
+      "wins": 8,
+      "net": 45.48
+     },
+     "KXSOL15M": {
+      "trades": 15,
+      "wins": 6,
+      "net": -39.63
+     },
+     "KXXRP15M": {
+      "trades": 16,
+      "wins": 8,
+      "net": 15.89
+     }
+    },
+    "by_reason": {
+     "settle": {
+      "trades": 58,
+      "net": 50.28
+     }
+    },
+    "skips": {
+     "cost_band": 11
+    }
+   },
+   "is_insample": {
+    "trades": 57,
+    "wins": 25,
+    "losses": 32,
+    "win_rate": 0.4386,
+    "net": -75.24,
+    "pf": 0.8954288335116954,
+    "avg_pnl": -1.32,
+    "max_entry_cost": 0.62,
+    "fees_entry": 48.24,
+    "fees_exit": 0.0,
+    "crossed_fills": 0,
+    "requotes": 0,
+    "profitable_lanes": 3,
+    "net_ex_best_lane": -165.59,
+    "net_ex_xrp": -102.57,
+    "net_ex_best_window": -164.82,
+    "windows": 36,
+    "by_lane": {
+     "KXBTC15M": {
+      "trades": 17,
+      "wins": 10,
+      "net": 71.17
+     },
+     "KXETH15M": {
+      "trades": 9,
+      "wins": 6,
+      "net": 90.35
+     },
+     "KXSOL15M": {
+      "trades": 19,
+      "wins": 3,
+      "net": -264.09
+     },
+     "KXXRP15M": {
+      "trades": 12,
+      "wins": 6,
+      "net": 27.33
+     }
+    },
+    "by_reason": {
+     "settle": {
+      "trades": 57,
+      "net": -75.24
+     }
+    },
+    "skips": {
+     "cost_band": 11
+    }
+   },
+   "is_eligible": false,
+   "lambda": 1000.0,
+   "oos_spent": false,
+   "oos": null,
+   "payoff_ece": null,
+   "gate": null,
+   "result_artifact": "data/track4a-empirical-settle.json",
+   "note": "Research only; no live promotion or trading."
   }
  },
  "state": {

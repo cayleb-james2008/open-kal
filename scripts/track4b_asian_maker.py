@@ -195,10 +195,12 @@ def hand_off(obj: dict) -> None:
     final = score is not None or not obj["champion"]["is_eligible"]
     lines = [f"- {obj['windows']} windows ({obj['is_windows']} IS / {obj['oos_windows']} OOS), cut `{obj['cut']}`; "
              f"secs_left 25-75 with >= 15 locked fixings (so effectively <= 45s), fair p >= 0.70, "
-             f"post-only bid min(0.62, round(p - hurdle, 2)) in [0.45, 0.62], 15s patience, hold to settlement.",
+             f"post-only bid min(0.62, round(p - hurdle, 2)) in [0.45, 0.62], 15s patience, hold to settlement. Priced by "
+             f"`sim_core.run_trade(entry_limit=...)`, an additive maker-only argument added for this track.",
              f"- IS champion `{obj['champion']['config']}`: {T.scorecard(best)}; eligible: {obj['champion']['is_eligible']}."]
     lines.append(f"- One sealed OOS look: {T.scorecard(score['oos'])}; payoff-ECE {score['payoff_ece']}; "
                  f"gate pass: {score['gate']['pass']}." if score else "- IS bar missed; OOS left sealed, no ledger entry.")
+    lines.append(T.SHARED_TAPE_NOTE)
     lines.append(f"- Receipt: `{OUT.relative_to(ROOT)}`; no live promotion.")
     T.update_handoff(KEY, state, "### Track 4B — final-minute Asian maker bid" if final else None, lines)
 

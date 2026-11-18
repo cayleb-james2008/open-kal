@@ -1,0 +1,418 @@
+{
+  "family": "asian_final_min_maker",
+  "split": "first 60% / last 40% of distinct window closes, all four lanes",
+  "cut": 1794908700.0,
+  "windows": 217,
+  "is_windows": 130,
+  "oos_windows": 87,
+  "frozen_input_sha256": {
+    "markets.json": "1838ab92847e79247b72092784bfae719915f5985b219caa0fdff253972075da",
+    "book_KXBTC15M.npz": "b510e280c6a713be9ea9a8638d3a12760017fd73653e2573f6f2533b6b8fc7b4",
+    "book_KXETH15M.npz": "1d61fe463f742a78b4b40d0e0324bd643c5e2d97dc8fbb6be9c909d00f0fe839",
+    "book_KXSOL15M.npz": "49c0fe013ebc092c0d06b92fdd94ff1db05b034f2b6cc5c26534d468d0f1e2f4",
+    "book_KXXRP15M.npz": "332bb4dc7cf1aa28a1b73f306a536fae57078ae3e3270116aa0c7b4131c429c8",
+    "index_BRTI.npz": "0f6d9e245cd4f9e0fc02796a0ea3884ce707c86715eedf1759aa5ad1241f1633",
+    "index_ETHUSD_RTI.npz": "b3461253d84cdd057994f5a249b0b33f527ebee9359b8b1d7c60ff2fca31362a",
+    "index_SOLUSD_RTI.npz": "c7c96424d733f92ffe31baf8ac151936c4b30249d6916aa9215784f2e4f750aa",
+    "index_XRPUSD_RTI.npz": "524871c8df1480d66731322a480a9e24a224eaee2d6cbf0357d5a8ef01689a9e"
+  },
+  "rule": {
+    "secs_left": [
+      25.0,
+      75.0
+    ],
+    "min_locked_fixings": 15,
+    "min_fair_p": 0.7,
+    "bid": "min(0.62, round(p - hurdle, 2))",
+    "bid_band": [
+      "0.45",
+      "0.62"
+    ],
+    "patience_s": 15.0,
+    "exit": "settle",
+    "hurdles": [
+      0.06,
+      0.09,
+      0.12,
+      0.2,
+      0.3
+    ]
+  },
+  "sampling": {
+    "KXBTC15M": {
+      "windows": 130,
+      "decisions": 1912,
+      "skips": {
+        "no_fair": 1203,
+        "locked_below_15": 3491,
+        "fair_below_70": 24
+      }
+    },
+    "KXETH15M": {
+      "windows": 130,
+      "decisions": 1890,
+      "skips": {
+        "no_fair": 1203,
+        "locked_below_15": 3480,
+        "fair_below_70": 57
+      }
+    },
+    "KXSOL15M": {
+      "windows": 130,
+      "decisions": 1689,
+      "skips": {
+        "no_fair": 1458,
+        "locked_below_15": 3432,
+        "fair_below_70": 51
+      }
+    },
+    "KXXRP15M": {
+      "windows": 130,
+      "decisions": 1846,
+      "skips": {
+        "no_fair": 1258,
+        "locked_below_15": 3470,
+        "fair_below_70": 56
+      }
+    }
+  },
+  "configs": {
+    "h0.06_maker": {
+      "family": "asian_final_min_maker",
+      "hurdle": 0.06,
+      "style": "maker",
+      "is": {
+        "trades": 9,
+        "wins": 3,
+        "losses": 6,
+        "win_rate": 0.3333,
+        "net": -129.0,
+        "pf": 0.3064516129032258,
+        "avg_pnl": -14.333333333333334,
+        "max_entry_cost": 0.62,
+        "fees_entry": 0.0,
+        "fees_exit": 0.0,
+        "crossed_fills": 0,
+        "requotes": 0,
+        "profitable_lanes": 1,
+        "net_ex_best_lane": -148.0,
+        "net_ex_xrp": -74.0,
+        "net_ex_best_window": -148.0,
+        "windows": 8,
+        "by_lane": {
+          "KXBTC15M": {
+            "trades": 2,
+            "wins": 0,
+            "net": -62.0
+          },
+          "KXETH15M": {
+            "trades": 1,
+            "wins": 1,
+            "net": 19.0
+          },
+          "KXSOL15M": {
+            "trades": 1,
+            "wins": 0,
+            "net": -31.0
+          },
+          "KXXRP15M": {
+            "trades": 5,
+            "wins": 2,
+            "net": -55.0
+          }
+        },
+        "by_reason": {
+          "settle": {
+            "trades": 9,
+            "net": -129.0
+          }
+        },
+        "skips": {
+          "bid_below_floor": 0,
+          "crossed": 5,
+          "no_quote": 285,
+          "post_only": 1,
+          "unfilled": 113
+        }
+      }
+    },
+    "h0.09_maker": {
+      "family": "asian_final_min_maker",
+      "hurdle": 0.09,
+      "style": "maker",
+      "is": {
+        "trades": 9,
+        "wins": 3,
+        "losses": 6,
+        "win_rate": 0.3333,
+        "net": -128.5,
+        "pf": 0.30727762803234504,
+        "avg_pnl": -14.277777777777779,
+        "max_entry_cost": 0.62,
+        "fees_entry": 0.0,
+        "fees_exit": 0.0,
+        "crossed_fills": 0,
+        "requotes": 0,
+        "profitable_lanes": 1,
+        "net_ex_best_lane": -147.5,
+        "net_ex_xrp": -73.5,
+        "net_ex_best_window": -147.5,
+        "windows": 8,
+        "by_lane": {
+          "KXBTC15M": {
+            "trades": 2,
+            "wins": 0,
+            "net": -61.5
+          },
+          "KXETH15M": {
+            "trades": 1,
+            "wins": 1,
+            "net": 19.0
+          },
+          "KXSOL15M": {
+            "trades": 1,
+            "wins": 0,
+            "net": -31.0
+          },
+          "KXXRP15M": {
+            "trades": 5,
+            "wins": 2,
+            "net": -55.0
+          }
+        },
+        "by_reason": {
+          "settle": {
+            "trades": 9,
+            "net": -128.5
+          }
+        },
+        "skips": {
+          "bid_below_floor": 0,
+          "crossed": 5,
+          "no_quote": 285,
+          "post_only": 1,
+          "unfilled": 113
+        }
+      }
+    },
+    "h0.12_maker": {
+      "family": "asian_final_min_maker",
+      "hurdle": 0.12,
+      "style": "maker",
+      "is": {
+        "trades": 9,
+        "wins": 3,
+        "losses": 6,
+        "win_rate": 0.3333,
+        "net": -123.0,
+        "pf": 0.32231404958677684,
+        "avg_pnl": -13.666666666666666,
+        "max_entry_cost": 0.62,
+        "fees_entry": 0.0,
+        "fees_exit": 0.0,
+        "crossed_fills": 0,
+        "requotes": 0,
+        "profitable_lanes": 1,
+        "net_ex_best_lane": -142.0,
+        "net_ex_xrp": -72.0,
+        "net_ex_best_window": -143.5,
+        "windows": 8,
+        "by_lane": {
+          "KXBTC15M": {
+            "trades": 2,
+            "wins": 0,
+            "net": -60.0
+          },
+          "KXETH15M": {
+            "trades": 1,
+            "wins": 1,
+            "net": 19.0
+          },
+          "KXSOL15M": {
+            "trades": 1,
+            "wins": 0,
+            "net": -31.0
+          },
+          "KXXRP15M": {
+            "trades": 5,
+            "wins": 2,
+            "net": -51.0
+          }
+        },
+        "by_reason": {
+          "settle": {
+            "trades": 9,
+            "net": -123.0
+          }
+        },
+        "skips": {
+          "bid_below_floor": 0,
+          "crossed": 5,
+          "no_quote": 285,
+          "post_only": 1,
+          "unfilled": 113
+        }
+      }
+    },
+    "h0.20_maker": {
+      "family": "asian_final_min_maker",
+      "hurdle": 0.2,
+      "style": "maker",
+      "is": {
+        "trades": 8,
+        "wins": 2,
+        "losses": 6,
+        "win_rate": 0.25,
+        "net": -118.0,
+        "pf": 0.2693498452012384,
+        "avg_pnl": -14.75,
+        "max_entry_cost": 0.62,
+        "fees_entry": 0.0,
+        "fees_exit": 0.0,
+        "crossed_fills": 0,
+        "requotes": 0,
+        "profitable_lanes": 0,
+        "net_ex_best_lane": -91.0,
+        "net_ex_xrp": -79.0,
+        "net_ex_best_window": -142.5,
+        "windows": 7,
+        "by_lane": {
+          "KXBTC15M": {
+            "trades": 2,
+            "wins": 0,
+            "net": -52.0
+          },
+          "KXSOL15M": {
+            "trades": 1,
+            "wins": 0,
+            "net": -27.0
+          },
+          "KXXRP15M": {
+            "trades": 5,
+            "wins": 2,
+            "net": -39.0
+          }
+        },
+        "by_reason": {
+          "settle": {
+            "trades": 8,
+            "net": -118.0
+          }
+        },
+        "skips": {
+          "bid_below_floor": 0,
+          "crossed": 5,
+          "no_quote": 285,
+          "post_only": 1,
+          "unfilled": 114
+        }
+      }
+    },
+    "h0.30_maker": {
+      "family": "asian_final_min_maker",
+      "hurdle": 0.3,
+      "style": "maker",
+      "is": {
+        "trades": 6,
+        "wins": 1,
+        "losses": 5,
+        "win_rate": 0.1667,
+        "net": -100.5,
+        "pf": 0.196,
+        "avg_pnl": -16.75,
+        "max_entry_cost": 0.58,
+        "fees_entry": 0.0,
+        "fees_exit": 0.0,
+        "crossed_fills": 0,
+        "requotes": 0,
+        "profitable_lanes": 0,
+        "net_ex_best_lane": -78.0,
+        "net_ex_xrp": -47.5,
+        "net_ex_best_window": -125.0,
+        "windows": 6,
+        "by_lane": {
+          "KXBTC15M": {
+            "trades": 1,
+            "wins": 0,
+            "net": -25.0
+          },
+          "KXSOL15M": {
+            "trades": 1,
+            "wins": 0,
+            "net": -22.5
+          },
+          "KXXRP15M": {
+            "trades": 4,
+            "wins": 1,
+            "net": -53.0
+          }
+        },
+        "by_reason": {
+          "settle": {
+            "trades": 6,
+            "net": -100.5
+          }
+        },
+        "skips": {
+          "bid_below_floor": 37,
+          "crossed": 5,
+          "no_quote": 285,
+          "unfilled": 116
+        }
+      }
+    }
+  },
+  "champion": {
+    "config": "h0.30_maker",
+    "is_eligible": false,
+    "is": {
+      "trades": 6,
+      "wins": 1,
+      "losses": 5,
+      "win_rate": 0.1667,
+      "net": -100.5,
+      "pf": 0.196,
+      "avg_pnl": -16.75,
+      "max_entry_cost": 0.58,
+      "fees_entry": 0.0,
+      "fees_exit": 0.0,
+      "crossed_fills": 0,
+      "requotes": 0,
+      "profitable_lanes": 0,
+      "net_ex_best_lane": -78.0,
+      "net_ex_xrp": -47.5,
+      "net_ex_best_window": -125.0,
+      "windows": 6,
+      "by_lane": {
+        "KXBTC15M": {
+          "trades": 1,
+          "wins": 0,
+          "net": -25.0
+        },
+        "KXSOL15M": {
+          "trades": 1,
+          "wins": 0,
+          "net": -22.5
+        },
+        "KXXRP15M": {
+          "trades": 4,
+          "wins": 1,
+          "net": -53.0
+        }
+      },
+      "by_reason": {
+        "settle": {
+          "trades": 6,
+          "net": -100.5
+        }
+      },
+      "skips": {
+        "bid_below_floor": 37,
+        "crossed": 5,
+        "no_quote": 285,
+        "unfilled": 116
+      }
+    }
+  },
+  "oos_scored": null
+}

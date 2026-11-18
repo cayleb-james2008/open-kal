@@ -513,3 +513,18 @@ OOS, the four champions made 0–3 trades each, net −$14.29 to $0.00 (ledger a
 - IS: 0 trades, net $+0.00, PF n/a, 0 profitable lanes; 0/19932 available decision snapshots passed LayaGate before the OBI/FV filter.
 - IS fail; OOS unspent. No new OOS ledger entry.
 - Receipt: `data/track2d-layagate-l2.json`; no live promotion.
+
+### Track 4B — final-minute Asian maker bid
+- 217 windows (130 IS / 87 OOS), cut `1794908700.0`; secs_left 25-75 with >= 15 locked fixings (so effectively <= 45s), fair p >= 0.70, post-only bid min(0.62, round(p - hurdle, 2)) in [0.45, 0.62], 15s patience, hold to settlement. Priced by `sim_core.run_trade(entry_limit=...)`, an additive maker-only argument added for this track.
+- IS champion `h0.30_maker`: 6 trades, win 0.167, net $-100.50, PF 0.196, 0 profitable lanes, ex-XRP $-47.50, max entry $0.58, 0 crossed fills; eligible: False.
+- IS bar missed; OOS left sealed, no ledger entry.
+- The 'sealed' OOS slice is sealed per family in the ledger only: earlier families on this tape (Tracks 2B-2D, F2 variants) already looked at overlapping late windows.
+- Receipt: `data/track4b-asian-maker.json`; no live promotion.
+
+### Track 4A — empirical settlement calibrator
+- 217 windows (130 IS / 87 OOS), cut `1794908700.0`; ridge logistic (lambda 1000, 61934 rows) on z_student_t, tau_eff, spread, microprice_minus_mid, flow_5s, flow_15s, entry_ask; microprice finite on 0.0% of IS rows, so that feature is inert in the fit.
+- Blocked-CV log-loss 0.6820 against 0.6812 for the side's own taker ask used as its probability (chance 0.6931).
+- IS champion `h0.09_taker` (out-of-fold): 58 trades, win 0.500, net $+50.28, PF 1.074, 3 profitable lanes, ex-XRP $+34.39, max entry $0.62, 0 crossed fills; eligible: False. In-sample refit: 57 trades, win 0.439, net $-75.24, PF 0.895, 3 profitable lanes, ex-XRP $-102.57, max entry $0.62, 0 crossed fills.
+- IS bar missed; OOS left sealed, no ledger entry.
+- The 'sealed' OOS slice is sealed per family in the ledger only: earlier families on this tape (Tracks 2B-2D, F2 variants) already looked at overlapping late windows.
+- Receipt: `data/track4a-empirical-settle.json`; no live promotion.

@@ -69,6 +69,15 @@ class Fit(unittest.TestCase):
         np.testing.assert_allclose(no, [-1.0, 100.0, 0.03, 0.0, -0.4, 0.2, 0.45])
 
 
+class Baseline(unittest.TestCase):
+    def test_market_logloss_scores_the_asks_of_in_domain_rows_only(self):
+        pack = {"z": np.zeros(2), "tau": np.ones(2), "spread": np.zeros(2), "mpm": np.zeros(2), "f5": np.zeros(2),
+                "f15": np.zeros(2), "ask_y": np.array([0.40, 0.90]), "ask_n": np.array([0.55, 0.10]),
+                "y": np.array([1.0, 0.0])}
+        want = A.log_loss(np.array([0.40, 0.55]), np.array([1.0, 0.0]))     # the 0.90 / 0.10 rows are out of band
+        self.assertAlmostEqual(A.market_logloss({"x": pack}), want)
+
+
 class Folds(unittest.TestCase):
     def test_every_window_is_held_once_and_neighbours_are_purged(self):
         rank = np.arange(130)
@@ -145,6 +154,20 @@ class Trades(unittest.TestCase):
         d["bid"][:] = 0.66
         pack = pack_of(d)
         self.assertFalse(A.in_domain(pack, S.YES).any())
+
+
+class IsScoring(unittest.TestCase):
+    def test_selection_reads_out_of_fold_probabilities_and_the_refit_is_only_shown(self):
+        d = base_arrays()
+        pack = pack_of(d)
+        n = len(pack["t"])
+        zero = {"w": [0.0] * 8, "norm": [0.0] * 7 + [1.0] * 7}             # the refit says p = 0.5 everywhere: no edge
+        oof = {"KXBTC15M": [np.full(n, 0.95), np.full(n, np.nan)]}         # the out-of-fold model sees a 0.95 YES
+        configs, oof_out = A.score_is({"KXBTC15M": pack}, lambda name: lane_of(d)[0], zero, oof)
+        cfg = configs["h0.06_taker"]
+        self.assertGreater(cfg["is"]["trades"], 0)
+        self.assertEqual(cfg["is_insample"]["trades"], 0)
+        self.assertEqual(len(oof_out["h0.06_taker"]["rows"]), cfg["is"]["trades"])
 
 
 class Sealed(unittest.TestCase):
