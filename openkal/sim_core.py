@@ -439,6 +439,111 @@ def _forced_quote(tape: Tape, ts: float, until: float):
         return nxt[0], nxt[1], True
 
 
+SPOT_STALE_S = 5.0          # a spot reference older than this cannot arm the adverse-move exit
+
+
+def _adverse_spot(spot, side: str, t0: float, t1: float, bps: float) -> float | None:
+    """First spot print in (t0, t1] at least `bps` against a held YES (down) or NO (up), else None.
+
+    The reference is the last print at or before `t0`. Without a recent reference there is no
+    adverse-move exit; the timeout still applies.
+    """
+    if spot is None:
+        return None
+    ts, value = spot
+    j = int(np.searchsorted(ts, t0, "right")) - 1
+    if j < 0 or t0 - float(ts[j]) > SPOT_STALE_S:
+        return None
+    hi = int(np.searchsorted(ts, t1, "right"))
+    move = np.asarray(value[j + 1:hi], dtype=np.float64) / float(value[j]) - 1.0
+    bad = move <= -bps * 1e-4 + 1e-12 if side == YES else move >= bps * 1e-4 - 1e-12
+    return float(ts[j + 1 + int(np.argmax(bad))]) if bad.any() else None
+
+
+def run_two_sided_mm(tape: Tape, *, trigger_ts: float, qty: int, hedge_timeout_s: float,
+                     min_spread: Decimal = Decimal("0.03"), spot=None, adverse_bps: float = 6.0,
+                     lag_s: float = LAG_S, patience_s: float = 15.0, max_cost: Decimal = CAP,
+                     max_pair_cost: Decimal = Decimal("0.97"), min_print: float = MIN_PRINT) -> Trade | Skip:
+    """Quote both sides of one window: a YES bid at the YES bid and a NO bid at 1 - the YES ask.
+
+    Both $0-fee post-only legs arrive `lag_s` after the trigger on the book they meet, each at the
+    price the side's own bid already has, so neither can cross. Each fills on its own >= 50-contract
+    print-through (`min_print`); the first fill must come within `patience_s`, else nothing trades.
+      * both fill: the pair is locked, holds to settlement and pays the spread (pair cost <= `max_pair_cost`);
+      * one fills: the other leg gets `hedge_timeout_s` from that fill, or until `spot` (an index
+        tape `(ts, value)`) has moved `adverse_bps` against the filled leg, whichever comes first. One
+        `lag_s` later the second leg is cancelled and the lone leg crosses out as a taker (exact
+        Decimal fee); the second leg can still fill until that cancel arrives, which locks the pair.
+    A lone leg is never left to settle unless no exit can be placed before the last order second
+    (reason "carried"). `Trade.entry` is the dearer leg: the $0.62 cap bounds each contract held.
+    """
+    if lag_s < LAG_S - EPS:
+        raise ValueError(f"arrival lag {lag_s}s is below the {LAG_S:g}s floor")
+    if min_print < MIN_PRINT:
+        raise ValueError(f"print-through {min_print} is below {MIN_PRINT:g}")
+    if max_cost > CAP:
+        raise ValueError(f"cost ceiling {max_cost} is above {CAP}")
+    if hedge_timeout_s <= 0:
+        raise ValueError("hedge_timeout_s must be positive")
+    qty = min(int(qty), MAX_QTY)
+    if qty <= 0:
+        return Skip("qty")
+    order_ts = trigger_ts + lag_s
+    last_ts = tape.close_ts - EXIT_BUFFER_S
+    if order_ts >= last_ts:
+        return Skip("too_late")
+    try:
+        b, a = tape.quote(order_ts)
+    except CrossedBook:
+        return Skip("crossed")
+    except NoQuote:
+        return Skip("no_quote")
+    cost = {YES: entry_price(YES, MAKER, b, a), NO: entry_price(NO, MAKER, b, a)}
+    if px(a) - px(b) < min_spread:
+        return Skip("spread")
+    if max(cost.values()) > max_cost:
+        return Skip("cost_band")
+    if sum(cost.values()) > max_pair_cost:
+        return Skip("pair_cost")
+    if not all(post_only_ok(s, BUY, cost[s], b, a) for s in (YES, NO)):
+        return Skip("post_only")
+
+    first_by = min(order_ts + patience_s, last_ts)
+    fills = {s: tape.print_fill(order_ts, first_by, s, BUY, cost[s], need=min_print) for s in (YES, NO)}
+    found = {s: t for s, t in fills.items() if t is not None}
+    if not found:
+        return Skip("unfilled")
+    first = min(found, key=lambda s: (found[s], s != YES))
+    other, t1 = opposite(first), found[first]
+    timeout_ts = t1 + hedge_timeout_s
+    breach_ts = _adverse_spot(spot, first, t1, timeout_ts, adverse_bps)
+    event_ts = timeout_ts if breach_ts is None else breach_ts
+    reason = "hedge_timeout" if breach_ts is None else "spot_breach"
+    arrive = event_ts + lag_s                       # the cancel and the exit order both land one lag later
+    t2 = tape.print_fill(order_ts, min(arrive, last_ts), other, BUY, cost[other], need=min_print)
+    legs = [Leg("entry", first, BUY, MAKER, cost[first], qty, t1, ZERO)]
+    entry = max(cost.values())
+    if t2 is not None:
+        legs.append(Leg("entry", other, BUY, MAKER, cost[other], qty, t2, ZERO))
+        yes_wins = tape.side_won(YES)
+        legs += [Leg("settle", YES, SELL, "settle", ONE if yes_wins else ZERO, qty, tape.close_ts, ZERO),
+                 Leg("settle", NO, SELL, "settle", ZERO if yes_wins else ONE, qty, tape.close_ts, ZERO)]
+        pnl = (ONE - cost[YES] - cost[NO]) * qty
+        return Trade(first, MAKER, qty, trigger_ts, order_ts, entry, "pair", pnl, ZERO, tape.close_ts, ONE, legs)
+    q = _forced_quote(tape, arrive, last_ts) if arrive < last_ts else None
+    if q is None:                                    # no exit can be placed: the lone leg settles
+        value = ONE if tape.side_won(first) else ZERO
+        legs.append(Leg("settle", first, SELL, "settle", value, qty, tape.close_ts, ZERO))
+        return Trade(first, MAKER, qty, trigger_ts, order_ts, cost[first], "carried", (value - cost[first]) * qty,
+                     ZERO, tape.close_ts, value, legs)
+    t_x, (qb, qa), waited = q
+    value = exit_price(first, TAKER, qb, qa)
+    fee_out = taker_fee(value, qty)
+    legs.append(Leg("hedge", first, SELL, TAKER, value, qty, t_x, fee_out))
+    return Trade(first, MAKER, qty, trigger_ts, order_ts, cost[first], reason, (value - cost[first]) * qty - fee_out,
+                 fee_out, t_x, value, legs, requotes=int(waited))
+
+
 def stake_qty(cost: Decimal, stake: Decimal) -> int:
     """Contracts a dollar stake buys at `cost`, capped at MAX_QTY."""
     if cost <= 0:

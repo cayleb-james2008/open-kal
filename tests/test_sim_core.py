@@ -213,6 +213,99 @@ class EntryLimit(unittest.TestCase):
                         entry_limit=D("0.55"))
 
 
+class TwoSidedMM(unittest.TestCase):
+    """Rest a YES bid at the YES bid and a NO bid at 1 - the YES ask; a lone fill never rides to expiry."""
+
+    BOOK = [(T0 - 10.0, 0.48, 0.53)]            # YES bid 0.48, NO bid 1 - 0.53 = 0.47: pair cost 0.95
+    YES_FILL = (T0 + 2.0, 0.48, 50, 0)          # YES sellers at or through the YES bid
+    NO_FILL = (T0 + 4.0, 0.53, 50, 1)           # YES buyers at or above the YES ask lift the NO bid
+
+    def _run(self, prints, book=BOOK, result_yes=1, spot=None, **kw):
+        args = dict(trigger_ts=T0, qty=10, hedge_timeout_s=15.0)
+        args.update(kw)
+        return S.run_two_sided_mm(tape(book, prints, result_yes=result_yes), spot=spot, **args)
+
+    def test_both_legs_fill_and_the_locked_pair_pays_the_spread_whoever_wins(self):
+        for result in (1, 0):
+            tr = self._run([self.YES_FILL, self.NO_FILL], result_yes=result)
+            self.assertEqual((tr.reason, tr.fees, tr.pnl), ("pair", D("0"), (D("1") - D("0.95")) * 10))
+            self.assertEqual(tr.exit_ts, CLOSE)
+        yes_leg, no_leg = [leg for leg in tr.legs if leg.role == "entry"]
+        self.assertEqual((yes_leg.side, yes_leg.price), (S.YES, D("0.48")))
+        self.assertEqual((no_leg.side, no_leg.price), (S.NO, D("0.47")))      # 1 - the YES ask, never the YES bid
+        self.assertTrue(all(leg.fee == 0 for leg in tr.legs))
+        self.assertEqual((tr.entry, tr.order_ts), (D("0.48"), T0 + S.LAG_S))
+
+    def test_each_leg_needs_its_own_fifty_contracts(self):
+        tr = self._run([(T0 + 2.0, 0.48, 49, 0), self.NO_FILL])               # YES leg is one contract short
+        self.assertEqual((tr.side, tr.reason), (S.NO, "hedge_timeout"))
+        self.assertEqual(self._run([(T0 + 2.0, 0.48, 49, 0), (T0 + 3.0, 0.53, 49, 1)]), S.Skip("unfilled"))
+        self.assertEqual(self._run([(T0 + 0.5, 0.48, 500, 0)]), S.Skip("unfilled"))   # before arrival
+
+    def test_a_lone_leg_is_crossed_out_at_the_timeout_with_the_exact_taker_fee(self):
+        book = self.BOOK + [(T0 + 10.0, 0.45, 0.50)]
+        tr = self._run([self.YES_FILL], book=book)
+        self.assertEqual((tr.side, tr.reason, tr.exit_ts), (S.YES, "hedge_timeout", T0 + 2.0 + 15.0 + S.LAG_S))
+        self.assertEqual(tr.exit_value, D("0.45"))                            # the YES bid it can hit
+        self.assertEqual(tr.fees, taker_fee(D("0.45"), 10))
+        self.assertEqual(tr.pnl, (D("0.45") - D("0.48")) * 10 - taker_fee(D("0.45"), 10))
+
+    def test_a_lone_no_leg_exits_at_one_minus_the_yes_ask(self):
+        book = self.BOOK + [(T0 + 10.0, 0.45, 0.50)]
+        tr = self._run([self.NO_FILL], book=book, result_yes=0)               # NO would have won: still exits
+        self.assertEqual((tr.side, tr.exit_value, tr.reason), (S.NO, D("0.50"), "hedge_timeout"))
+        self.assertEqual(tr.pnl, (D("0.50") - D("0.47")) * 10 - taker_fee(D("0.50"), 10))
+
+    def test_a_spot_move_of_six_bps_against_the_leg_exits_early(self):
+        spot = (np.array([T0, T0 + 1, T0 + 3, T0 + 5, T0 + 8]), np.array([10000.0, 10000.0, 10005.9, 10006.0, 10011.0]))
+        tr = self._run([self.NO_FILL], spot=spot)                             # NO filled at T0+4: the reference is 10005.9
+        self.assertEqual(tr.reason, "hedge_timeout")                          # +5.1 bps from there (11 bps from the start)
+        up = (np.array([T0, T0 + 3, T0 + 6]), np.array([10000.0, 10000.0, 10006.0]))
+        tr = self._run([(T0 + 2.0, 0.53, 50, 1)], spot=up)                    # filled at T0+2, ref 10000
+        self.assertEqual((tr.reason, tr.exit_ts), ("spot_breach", T0 + 6.0 + S.LAG_S))
+        short = (np.array([T0, T0 + 3, T0 + 6]), np.array([10000.0, 10000.0, 10005.9]))
+        self.assertEqual(self._run([(T0 + 2.0, 0.53, 50, 1)], spot=short).reason, "hedge_timeout")
+        down = (np.array([T0, T0 + 3]), np.array([10000.0, 9000.0]))
+        self.assertEqual(self._run([(T0 + 2.0, 0.53, 50, 1)], spot=down).reason, "hedge_timeout")  # helps a NO leg
+
+    def test_a_falling_spot_hurts_a_yes_leg(self):
+        down = (np.array([T0, T0 + 3]), np.array([10000.0, 9994.0]))
+        tr = self._run([self.YES_FILL], spot=down)
+        self.assertEqual((tr.side, tr.reason), (S.YES, "spot_breach"))
+
+    def test_the_second_leg_can_still_fill_until_the_cancel_arrives(self):
+        late = (T0 + 2.0 + 15.0 + S.LAG_S - 0.5, 0.53, 50, 1)                # before the cancel lands
+        self.assertEqual(self._run([self.YES_FILL, late]).reason, "pair")
+        later = (T0 + 2.0 + 15.0 + S.LAG_S + 0.5, 0.53, 50, 1)               # after: the lone leg already left
+        self.assertEqual(self._run([self.YES_FILL, later]).reason, "hedge_timeout")
+
+    def test_the_first_fill_must_come_inside_the_patience_window(self):
+        self.assertEqual(self._run([(T0 + 17.0, 0.48, 50, 0)]), S.Skip("unfilled"))
+        self.assertEqual(self._run([(T0 + 17.0, 0.48, 50, 0)], patience_s=20.0).side, S.YES)
+
+    def test_skips(self):
+        self.assertEqual(self._run([], book=[(T0 - 10.0, 0.50, 0.52)]), S.Skip("spread"))
+        self.assertEqual(self._run([], book=[(T0 - 10.0, 0.50, 0.52)], min_spread=D("0")), S.Skip("pair_cost"))
+        self.assertEqual(self._run([], book=[(T0 - 10.0, 0.65, 0.70)]), S.Skip("cost_band"))
+        self.assertEqual(self._run([], book=[(T0 - 10.0, 0.55, 0.50)]), S.Skip("crossed"))
+        self.assertEqual(self._run([], book=[(T0 + 5.0, 0.48, 0.53)]), S.Skip("no_quote"))
+        self.assertEqual(self._run([], qty=0), S.Skip("qty"))
+        self.assertEqual(S.run_two_sided_mm(tape(self.BOOK, close=T0 + 15.0), trigger_ts=T0, qty=10,
+                                            hedge_timeout_s=15.0), S.Skip("too_late"))
+
+    def test_floors_cannot_be_loosened(self):
+        for kw in ({"lag_s": 0.5}, {"min_print": 49.0}, {"max_cost": D("0.63")}, {"hedge_timeout_s": 0.0}):
+            with self.assertRaises(ValueError):
+                self._run([], **kw)
+
+    def test_a_lone_leg_with_no_time_to_exit_is_reported_as_carried(self):
+        close = T0 + 25.0                                                      # last order second is close - 20 = T0 + 5
+        tr = S.run_two_sided_mm(tape(self.BOOK, [(T0 + 2.0, 0.48, 50, 0)], close=close), trigger_ts=T0, qty=10,
+                                hedge_timeout_s=15.0)
+        self.assertEqual((tr.reason, tr.exit_ts), ("carried", close))
+        self.assertEqual(tr.pnl, (D("1") - D("0.48")) * 10)
+
+
 class PairLock(unittest.TestCase):
     """A NO bid at 1 - c - L is the same resting order as a YES offer at c + L."""
 
