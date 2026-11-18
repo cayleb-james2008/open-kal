@@ -46,6 +46,9 @@ class KalshiClient:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self._key = self._load_key(settings.key_path)
+        # The key is on Kalshi's Advanced tier (300 tokens/s, 900 burst; verified
+        # 2026-11-18).  These request-count buckets stay deliberately below it:
+        # venue costs are 1-30 tokens per request, so one request is not one token.
         self._read = TokenBucket(rate=40.0, capacity=80.0)
         self._write = TokenBucket(rate=15.0, capacity=30.0)
         self._client = httpx.AsyncClient(

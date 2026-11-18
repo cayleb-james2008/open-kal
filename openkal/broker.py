@@ -95,7 +95,8 @@ class Broker:
         )
 
     async def place_no_entry(self, ticker: str, no_price: Decimal, contracts: int,
-                             tif: str = "immediate_or_cancel") -> VenueOrder | None:
+                             tif: str = "immediate_or_cancel",
+                             post_only: bool = False) -> VenueOrder | None:
         """Buy NO at `no_price` (a NO-denominated price).
 
         Kalshi V2 quotes every order on the YES leg: `side="ask"` sells YES, and
@@ -115,7 +116,7 @@ class Broker:
             "count": str(int(contracts)),
             "price": _cents(yes_price),
             "time_in_force": tif,
-            "post_only": False,
+            "post_only": bool(post_only),
             "self_trade_prevention_type": "taker_at_cross",
             "cancel_order_on_pause": True,
         }
@@ -128,6 +129,47 @@ class Broker:
             order_id=order.get("order_id", ""),
             client_order_id=body["client_order_id"], ticker=ticker, side="NO",
             action="entry", price=Decimal(no_price), contracts=contracts,
+            status=order.get("status", "resting"),
+            filled=_count(order.get("fill_count")),
+        )
+
+    async def place_fav_quote(self, ticker: str, side: str, price: Decimal,
+                              contracts: int, order_group_id: str,
+                              post_only: bool = True) -> VenueOrder | None:
+        """Rest a favourite-side maker bid inside an order group.
+
+        `price` is in the side's own terms.  Kalshi wires every order on YES: a
+        NO bid at 0.97 is `side="ask"` at 0.03.  Requiring a group id here is
+        deliberate -- a maker quote with no kill switch is not a lane quote.
+        """
+        side = side.upper()
+        if side not in {"YES", "NO"} or contracts <= 0 or not order_group_id:
+            return None
+        if not (Decimal("0.01") <= Decimal(price) <= Decimal("0.99")):
+            return None
+        wire_side = "bid" if side == "YES" else "ask"
+        wire_price = Decimal(price) if side == "YES" else Decimal(1) - Decimal(price)
+        body: dict[str, Any] = {
+            "ticker": ticker,
+            "client_order_id": str(uuid.uuid4()),
+            "side": wire_side,
+            "count": str(int(contracts)),
+            "price": _cents(wire_price),
+            "time_in_force": "good_till_canceled",
+            "post_only": bool(post_only),
+            "self_trade_prevention_type": "taker_at_cross",
+            "cancel_order_on_pause": True,
+            "order_group_id": order_group_id,
+        }
+        status, payload = await self.client.post("/portfolio/events/orders", body)
+        if status not in (200, 201):
+            self.errors.append(f"{status} {str(payload)[:160]}")
+            return None
+        order = payload.get("order") or payload
+        return VenueOrder(
+            order_id=order.get("order_id", ""),
+            client_order_id=body["client_order_id"], ticker=ticker, side=side,
+            action="entry", price=Decimal(price), contracts=contracts,
             status=order.get("status", "resting"),
             filled=_count(order.get("fill_count")),
         )

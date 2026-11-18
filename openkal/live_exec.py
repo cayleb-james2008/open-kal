@@ -213,10 +213,17 @@ class LiveExecutor(Executor):
         taker = (decision.signal in ("F2_taker_1s", "student_t_l2_settle")
                  or (slot.params.entry_style == "taker" and decision.signal != "z_obi_flow"))
         tif = "immediate_or_cancel" if taker else "good_till_canceled"
-        order = await self.broker.place(
-            quote.ticker, decision.side or "YES", "entry", price, qty,
-            post_only=not taker, tif=tif,
-        )
+        # A NO entry is a YES *ask* on the wire, and its price must be
+        # `1 - no_price`.  `place()` forwards the side's own price, which inverts
+        # every NO order; `place_no_entry` performs that conversion explicitly.
+        if (decision.side or "YES") == "NO":
+            order = await self.broker.place_no_entry(
+                quote.ticker, price, qty, tif=tif, post_only=not taker)
+        else:
+            order = await self.broker.place(
+                quote.ticker, "YES", "entry", price, qty,
+                post_only=not taker, tif=tif,
+            )
         if order is None:
             self.note = self.broker.errors[-1] if self.broker.errors else "venue rejected the bid"
             return

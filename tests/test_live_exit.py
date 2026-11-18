@@ -58,6 +58,7 @@ class FakeBroker:
         self.fill_qty = fill_qty
         self.fill_price = fill_price
         self.placed: list[dict] = []
+        self.wire: list[dict] = []
         self.errors: list[str] = []
         self.cancelled: list[str] = []
         self.resting: dict[str, dict] = {}
@@ -70,6 +71,19 @@ class FakeBroker:
         if self.reject_all or (post_only and not self.post_only_ok):
             self.errors.append("400 {'error': {'details': 'post only cross'}}")
             return None
+        order_id = f"ord{len(self.placed)}"
+        if tif != "immediate_or_cancel":
+            self.resting[order_id] = {"order_id": order_id, "ticker": ticker}
+        return SimpleNamespace(order_id=order_id)
+
+    async def place_no_entry(self, ticker, no_price, contracts,
+                             tif="immediate_or_cancel", post_only=False):
+        """The venue body for a NO entry: YES ask at `1 - no_price`."""
+        self.wire.append(dict(ticker=ticker, side="ask", price=Decimal(1) - no_price,
+                              contracts=contracts, tif=tif, post_only=post_only))
+        self.placed.append(dict(ticker=ticker, side="NO", action="entry",
+                                price=no_price, contracts=contracts,
+                                post_only=post_only, tif=tif, reduce_only=False))
         order_id = f"ord{len(self.placed)}"
         if tif != "immediate_or_cancel":
             self.resting[order_id] = {"order_id": order_id, "ticker": ticker}
@@ -537,9 +551,15 @@ def control_f2_execution() -> None:
     ex = LiveExecutor(ctx(), broker)
     asyncio.run(ex._place_entry(slot, no_entry, slot.quote, NOW, 300.0))
     sent = broker.placed[-1] if broker.placed else {}
+    wire = broker.wire[-1] if broker.wire else {}
+    # The wire body is the inversion test: buying NO at 0.55 must be an ASK of
+    # YES at 0.45.  Sending 0.55 as the YES price buys NO at 0.45 -- the opposite
+    # side of the trade, which is what every pre-fix NO order did.
     check("F2: a NO entry is pinned to 1 - best bid, not to the YES ask",
-          sent.get("price") == Decimal("0.55") and sent.get("side") == "NO",
-          f"price={sent.get('price')} side={sent.get('side')}")
+          sent.get("price") == Decimal("0.55") and sent.get("side") == "NO"
+          and wire.get("side") == "ask" and wire.get("price") == Decimal("0.45")
+          and wire.get("post_only") is False,
+          f"price={sent.get('price')} side={sent.get('side')} wire={wire}")
 
     # (e) A partial IOC books the whole contracts the venue delivered, floored.
     slot, broker = f2_slot(quote("0.45", "0.47"), contracts=40), FakeBroker()

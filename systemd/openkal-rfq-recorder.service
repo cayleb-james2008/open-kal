@@ -1,0 +1,22 @@
+[Unit]
+Description=Open-Kal RFQ communications recorder (factory data)
+Documentation=file:///home/cayleb/open-kal/README.md
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+WorkingDirectory=/home/cayleb/open-kal
+ExecStart=/home/cayleb/open-kal/.venv/bin/python -u -m openkal.maker.rfq_recorder record
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=append:/home/cayleb/open-kal/data/rfq-recorder.log
+StandardError=append:/home/cayleb/open-kal/data/rfq-recorder.log
+
+[Install]
+WantedBy=default.target
