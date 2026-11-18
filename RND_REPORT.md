@@ -2,7 +2,48 @@
 
 Worktree `/home/cayleb/open-kal-rnd`, branch `rnd/alpha-evolve`, based on origin/master `d9fd4ec`. Data: the frozen, hard-linked snapshot `data/frozen-cache/` (books from the 14:07 vintage; `SHA256SUMS.txt`), plus a copy of the live `ticks.npz` (16:20 vintage, hash appended). Nothing under `/home/cayleb/open-kal` was written, signalled or restarted. No `.env`, `keys/`, `canary.py --live` or `restart_flat.sh` was touched, and the prod DB was never opened.
 
-## Charter 2 — zero taker fees, hold to settlement (latest)
+## Charter 3 — Track 1 `final_120s_asian_pin` (latest)
+
+**Verdict: IS fail on every hurdle. The sealed OOS look was not spent** (`data/oos-ledger.jsonl` still ends at the 28 prior lines). Track 2 stays blocked (owner-exclusive recorder decision). Track 3 is blocked with new hard evidence below. Nothing is promoted or traded.
+
+### The model (`scripts/asian_rti.py`, `e7ff400`)
+
+The venue locks one fixing per second over the final 60s and streams the locked part: `k` = fixings locked (ramps 1→60), `accum` = their running mean; before the window the venue streams the *open* average with `k` pinned at 60, which every guard refuses. At a decision time with `secs_left = s`: mean `(accum·k + spot·(60−k))/60`; variance `σ²·s³/10800` inside the final 60s (the T^1.5 law `scripts/verify_settlement.py` measures) and `σ²·(s−40)` beyond it, where nothing is locked (discrete Σ over the 60 future fixings conditioned on the current print gives s−39.5, the continuous path s−40). `σ` is the trailing-150s realised volatility of the index tape in price units per √s, unfloored, gaps never bridged. Locked sums use exact `math.fsum`. Quote refused, never approximated, on stale spot (>1.5s), accumulator guards (reset/conflict/first-seen slot/count-vs-clock), missing pairs (<5), or a window outside the averaging period.
+
+`tests/test_asian_rti.py` was written first and the model was rebuilt to it: **9/9 pass** (with `tests/test_sim_core.py` 33/33; 42/42 re-run after every change this session).
+
+### Validation on the frozen tape (`scripts/asian_validate.py`, whole tape, all four lanes)
+
+- Priced 84.4–87.0% of 17,172 samples/lane; refusals: guard 10–12.6%, `stale_spot` 2.8%, `no_venue_rows` 37/lane (outage windows, unpriceable by design), σ-pairs 1.
+- **First-seen lag of the locked count validates `KSEQ_TOL_S=0.5`:** p50 0.055–0.057s, p90 0.083s, **p99 0.36–0.41s** on every lane; 0.97% of slots exceed 0.5s; 151/9,449 k-slots never appear (restart-poisoned windows, refused).
+- **y-convention audit:** the tape average over [close−60, close] reproduces the settled outcome for 92/94 IS windows per lane (matches the known 99.2% tape-vs-venue agreement).
+
+### Model honesty (`scripts/asian_diag.py`, IS only; z = (model mean − realised tape average)/model sd at each sample)
+
+| lane | z all samples (n) | z in-band, either side costable (n) | realised-future-vol ÷ trailing σ (p50, in-window) |
+|---|---|---|---|
+| BTC | −0.19 / 1.59 (4,451) | **−1.03 / 2.64** (283) | 1.08, in 1.31 |
+| ETH | −0.08 / 1.00 (4,734) | −0.21 / 0.99 (410) | 1.05, in 1.07 |
+| SOL | −0.01 / 0.74 (4,915) | −0.01 / **0.70** (321) | 0.93, in 0.82 |
+| XRP | −0.06 / 1.22 (4,884) | +0.08 / 0.90 (332) | 0.83, in 0.77 |
+
+Reading: **the variance laws and mean construction are correct** — ETH's z is (−0.2, 1.0) everywhere, the full-population z is near-honest on all four lanes. Two per-lane effects sit exactly where a trigger can fire: BTC's in-band subset (both sides mid-band ⇒ spread ≥ $0.20 — stressed books) is adverse to a zero-drift model, realised landing 1σ below the mean with 2.6× the modelled spread; SOL and XRP's trailing σ **overstates** the realised end-of-window vol (0.82/0.77), which flattens the model to coin-flip pricing exactly where the market prices 0.35–0.41. Spot staleness is excluded as a cause (100% of in-band samples had a print ≤0.5s old). No code defect was found; the honest conclusion is the model is right on average and wrong in the tradeable microstates.
+
+### IS sweep (`scripts/asian_pin.py`, cut 1794881700, hurdles 0.06/0.09/0.12, cost [0.35,0.60], 50 contracts, settle-only exit)
+
+| config | trades | net | PF | win | lanes+ | max cost |
+|---|---|---|---|---|---|---|
+| h0.06 | 44 | −286.86 | 0.58 | 0.36 | 1 (ETH) | 0.60 |
+| h0.09 | 30 | −99.24 | 0.76 | 0.40 | 1 (ETH) | 0.58 |
+| h0.12 | 15 | −235.71 | 0.20 | 0.13 | 1 (ETH) | 0.58 |
+
+Champion-by-net `h0.09` is not eligible (bar: ≥30 trades, PF ≥ 1.25, ≥2 lanes; 0 crossed fills). Only ETH is profitable at every hurdle — matching the diagnostics above. Model-vs-market on IS cost-band pairs: p 0.474 vs realised 0.455 (ECE 0.037). **No IS-eligible champion → no OOS look.**
+
+### Track 3 — LayaGate shadow-score filter: **blocked**
+
+The prod DB `ticks.gate` column (index `ticks_series_ts`; queries `series=? AND ts BETWEEN ?`, read-only) has **zero gate rows for every series across the frozen tape** 1794787359..1794943521 (KXSOL15M 501,172 ticks / 0 with gate; BTC 504,015 / 0; ETH 503,783 / 0; XRP 504,812 / 0). The first KXSOL15M gate row is ts 1794952390 — **2.46 h after the tape ends**. Coverage for per-trigger filtering is 0%, so staleness tuning is moot. No fine-tuned checkpoint or LayaGate ONNX exists in this worktree and the live endpoint is off-limits, so offline scoring is also unavailable. Blocked the same way Track 2 is.
+
+## Charter 2 — zero taker fees, hold to settlement (previous)
 
 **Neither architecture passes. Nothing should be promoted or traded.** Each family champion was scored once on OOS (`data/oos-ledger.jsonl`), and both champions met the IS bar first.
 
@@ -105,8 +146,9 @@ Every leg in both tracks is maker or settlement: $0 entry and exit fees in every
 | `85cc73e` | sim_core: $0.62 cap on lock legs; $0-fee maker scratch exit (+7 tests) | **yes**, with `0a26266` and `104b04e` |
 | `88a4d6a` | Charter 2 scripts (`passive_mm_fade`, `student_t_settle_v2`), IS champions frozen | no (research) |
 | `d8e92f8` | Charter 2 OOS ledger entries | no (research) |
+| `e7ff400` | Charter 3 Track 1: Asian pin model + tests (written first), validation and honesty instruments, IS sweep (fails the bar; OOS not spent) | **yes** (`asian_rti.py` + its tests); sweep scripts research-only |
 
-This revision of the report is in the commit after `d8e92f8`.
+This revision of the report is in the commit after `e7ff400`.
 
 ```bash
 git -C /home/cayleb/open-kal cherry-pick 8a5c9b6 0a26266 104b04e 85cc73e
@@ -353,6 +395,8 @@ OOS, the four champions made 0–3 trades each, net −$14.29 to $0.00 (ledger a
 2. **`MIN_PASSIVE_QTY = 20`** in production `openkal/execution.py` and in `scripts/alpha_discover.py`, against the 50-contract research floor. Left unchanged.
 3. **Look-ahead in legacy studies.** The legacy `obi_pool` look-ahead (nearest spot, up to +1.5s) affects every earlier study built on it, including the sweep that produced the live F2 rule. Re-validating F2 on causal pools is the natural next step; Track 2's settle-only row is that test, and it decays to +$4.00 OOS.
 4. **Exit lag in the legacy simulator.** `alpha_search._sim_event` also places take-profit legs at the fill instant, and earlier studies used it. sim_core no longer does.
+5. **Track 2 recorder.** L2 sizes are needed on the live tape before the Student-t settlement family can be tested as specified; that is a recorder upgrade (owner decision).
+6. **Track 3 gate logging.** The engine only began writing `ticks.gate` 2.46 h after the frozen tape ends; historical per-trigger verdicts do not exist. Either backfill offline scoring (checkpoint into the worktree) or accept that gate-filtered families cannot be tested on this tape.
 
 ## Earlier work on this branch (from the previous report, commit `9e39dee`)
 
