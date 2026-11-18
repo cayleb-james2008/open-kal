@@ -315,6 +315,11 @@ class Signal:
     regime: str = "micro"
     arb_profit: Decimal = Decimal("0")
     impulse_bps: float = 0.0   # signed size of the spot move that triggered it
+    # The settlement program's own evidence, carried with the thesis so the
+    # strategy can apply its own filters without re-reading the tape.
+    l2_obi: float = 0.0        # true-L2 book imbalance in [-1, 1]
+    flow_fast: float = 0.0     # signed aggressor print flow, fast window
+    flow_slow: float = 0.0     # signed aggressor print flow, slow window
 
 
 def spot_impulse_bps(points: list[tuple[float, float]], lookback_s: float = 10.0) -> float:
@@ -735,3 +740,163 @@ def f2_taker_1s(*, spot: float, strike: float, seconds_left: float, sigma: float
                   f"z {z:+.2f}, flow {flow:+.2f}, rev {revision:+.2f} agree, "
                   f"{delta_bps:.1f}bp from strike, payoff p {p_payoff:.3f}",
                   regime="momentum")
+
+
+# ---------------------------------------------------------------------------
+# student_t_l2_settle: Student-t settlement value + true-L2 imbalance
+#
+# A 15-minute crypto binary settles on a 60-second average of the index, so the
+# quantity to price is the average, not the last print. Two things follow. The
+# variance of the time left to average is smaller than the variance of the whole
+# window -- hence `tau_eff = seconds_left - 40` -- and the index's own
+# standardised returns are fat-tailed, so the settlement value is read off a
+# Student-t rather than a normal.
+#
+# The per-lane degrees of freedom and scale are the frozen Track 2B in-sample
+# fit, copied here rather than refitted at runtime: refitting against a slice
+# that has been read is how a calibration becomes a backtest. The fit is of the
+# *index*'s standardised returns, so the sigma fed in must be the index's own.
+# ---------------------------------------------------------------------------
+
+# (nu, s) per lane: the frozen Student-t fit of the index's standardised returns.
+STUDENT_T_FIT: dict[str, tuple[float, float]] = {
+    "KXBTC15M": (8.0, 1.13),
+    "KXETH15M": (6.0, 0.78),
+    "KXSOL15M": (10.0, 0.68),
+    "KXXRP15M": (10.0, 1.06),
+}
+# The settlement reference is a 60s average, so the variance of the time that is
+# left to average is the window minus its own fixings.
+STUDENT_T_TAU_OFFSET_S = 40.0
+
+
+def _betacf(a: float, b: float, x: float) -> float:
+    """The continued fraction of the incomplete beta function (Lentz's method)."""
+    tiny = 1e-300
+    qab, qap, qam = a + b, a + 1.0, a - 1.0
+    c = 1.0
+    d = 1.0 - qab * x / qap
+    if abs(d) < tiny:
+        d = tiny
+    d = 1.0 / d
+    h = d
+    for m in range(1, 300):
+        m2 = 2 * m
+        aa = m * (b - m) * x / ((qam + m2) * (a + m2))
+        d = 1.0 + aa * d
+        if abs(d) < tiny:
+            d = tiny
+        c = 1.0 + aa / c
+        if abs(c) < tiny:
+            c = tiny
+        d = 1.0 / d
+        h *= d * c
+        aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2))
+        d = 1.0 + aa * d
+        if abs(d) < tiny:
+            d = tiny
+        c = 1.0 + aa / c
+        if abs(c) < tiny:
+            c = tiny
+        d = 1.0 / d
+        delta = d * c
+        h *= delta
+        if abs(delta - 1.0) < 3.0e-16:
+            break
+    return h
+
+
+def regularized_incomplete_beta(a: float, b: float, x: float) -> float:
+    """`I_x(a, b)`: the regularized incomplete beta function."""
+    if x <= 0.0:
+        return 0.0
+    if x >= 1.0:
+        return 1.0
+    front = math.exp(math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b)
+                     + a * math.log(x) + b * math.log1p(-x))
+    if x < (a + 1.0) / (a + b + 2.0):
+        return front * _betacf(a, b, x) / a
+    back = math.exp(math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b)
+                    + b * math.log1p(-x) + a * math.log(x))
+    return 1.0 - back * _betacf(b, a, 1.0 - x) / b
+
+
+def student_t_cdf(x: float, nu: float) -> float:
+    """`P(T <= x)` for a standard Student-t with `nu` degrees of freedom.
+
+    Exact, not a table: the live path prices a binary on this number, and a
+    lookup table with a step would put a bias between the live fair value and the
+    scored one.
+    """
+    if nu <= 0:
+        raise ValueError("nu must be positive")
+    if x == 0.0:
+        return 0.5
+    tail = regularized_incomplete_beta(nu / 2.0, 0.5, nu / (nu + x * x))
+    return 1.0 - 0.5 * tail if x > 0 else 0.5 * tail
+
+
+def student_t_settlement_p_up(*, spot: float, strike: float, seconds_left: float,
+                              sigma: float, nu: float, s: float) -> float:
+    """`P(the contract settles YES)` under the lane's Student-t settlement model.
+
+    `x = log(strike / spot) / (sigma * sqrt(tau_eff))` is the standardised distance
+    to the strike over the time that is left to average, and the settlement
+    probability is `1 - T_nu(x / s)`.
+    """
+    if strike <= 0 or spot <= 0 or sigma <= 0:
+        return 0.5
+    tau_eff = max(seconds_left - STUDENT_T_TAU_OFFSET_S, 1.0)
+    vol = sigma * math.sqrt(tau_eff)
+    if vol <= 0:
+        return 0.5
+    x = math.log(strike / spot) / vol
+    return min(1.0, max(0.0, 1.0 - student_t_cdf(x / s, nu)))
+
+
+def l2_imbalance(yes_bid_sz: float | None, yes_ask_sz: float | None) -> float | None:
+    """True L2 order-book imbalance in [-1, 1].
+
+    `(yes_bid_sz - yes_ask_sz) / (yes_bid_sz + yes_ask_sz)`: the resting size on
+    the bid against the resting size on the ask, at the touch. `None` when either
+    side's size is unknown or empty -- an unknown depth is not a neutral book, it
+    is no book, and a filter that reads it as neutral would fire on a ladder the
+    bot cannot actually see.
+    """
+    if yes_bid_sz is None or yes_ask_sz is None:
+        return None
+    bid, ask = float(yes_bid_sz), float(yes_ask_sz)
+    if bid <= 0 or ask <= 0:
+        return None
+    return (bid - ask) / (bid + ask)
+
+
+def student_t_l2_settle(*, spot: float, strike: float, seconds_left: float, sigma: float,
+                         nu: float, s: float, l2_obi: float | None,
+                         flow_fast: float, flow_slow: float,
+                         min_seconds_left: float = 60.0,
+                         max_seconds_left: float = 780.0) -> Signal | None:
+    """The settlement thesis: a Student-t fair value, a true-L2 imbalance, signed flow.
+
+    This prices the contract and reports the book; it does not choose the side.
+    Which side is even tradeable inside the cost band depends on the ladder, so
+    that is the strategy's business (`strategy._student_t_l2_entry`).
+
+    `None` means "no thesis": the window is closed, the index is unusable, or the
+    tape carries no resting size to read an imbalance from.
+    """
+    if strike <= 0 or spot <= 0 or sigma <= 0:
+        return None
+    if not (min_seconds_left <= seconds_left <= max_seconds_left):
+        return None
+    if l2_obi is None:
+        return None
+    p_up = student_t_settlement_p_up(spot=spot, strike=strike, seconds_left=seconds_left,
+                                     sigma=sigma, nu=nu, s=s)
+    tau_eff = max(seconds_left - STUDENT_T_TAU_OFFSET_S, 1.0)
+    x = math.log(strike / spot) / (sigma * math.sqrt(tau_eff))
+    return Signal("student_t_l2_settle", p_up,
+                  f"t{nu:.0f} x {x:+.2f} p {p_up:.3f}, obi {l2_obi:+.2f}, "
+                  f"flow {flow_fast:+.2f}/{flow_slow:+.2f}",
+                  regime="settlement", l2_obi=l2_obi,
+                  flow_fast=flow_fast, flow_slow=flow_slow)

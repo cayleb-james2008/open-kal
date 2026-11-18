@@ -10,7 +10,7 @@ from dataclasses import asdict, dataclass, replace
 from decimal import ROUND_DOWN, Decimal
 from typing import Any
 
-from .config import MAX_CONTRACTS, MAX_TRADE_RISK_USD
+from .config import HARD_MAX_ENTRY_PRICE, MAX_CONTRACTS, MAX_TRADE_RISK_USD
 
 
 # EVOLVE-BLOCK-START
@@ -175,6 +175,52 @@ class Params:
     # that rule belongs to the older flow program -- because the study's OOS profit
     # factor was measured with the stop, not a window halt, bounding the losses.
     f2_max_window_trades: int = 3
+    # --- the program this lane runs -----------------------------------------
+    # `F2_taker_1s` is the default and it stays the default until an R&D champion
+    # passes every promotion gate: a passing verdict for a program the hot path
+    # does not implement must not arm (see `readiness.ENGINE_PROGRAMS`). The
+    # switch exists so a promoted program is selected by configuration, not by a
+    # code edit.
+    strategy_mode: str = "F2_taker_1s"
+    # --- LayaGate live filtering ---------------------------------------------
+    # The gate's opinion is cached per ticker and read on the entry path in 0ms,
+    # so enforcing it costs no latency. `require_layagate_allow` turns that
+    # cached opinion into a hard filter: an entry is refused when the gate is
+    # available and says skip. It is off by default because the shipped build
+    # has no fine-tuned ONNX model, so the gate is still a shadow here; a
+    # strategy promoted against the gate's own forward evidence turns it on
+    # without touching a line of code.
+    require_layagate_allow: bool = False
+    # A floor on the confidence of the gate's "enter" vote. 0.0 accepts any allow.
+    layagate_min_confidence: float = 0.0
+    # --- student_t_l2_settle: Student-t settlement + true-L2 imbalance ---------
+    # The entry band is on the cost of the side held: 35c to 60c. The 62c hard
+    # cap is the venue's own ceiling (`config.HARD_MAX_ENTRY_PRICE`) and is
+    # enforced on top of the band, never instead of it. A hold-to-settlement
+    # binary loses its whole premium, so the entry cost IS the tail bound.
+    sl2_min_price: Decimal = Decimal("0.35")
+    sl2_max_price: Decimal = Decimal("0.60")
+    # True L2 order-book imbalance, (yes_bid_sz - yes_ask_sz) / (yes_bid_sz +
+    # yes_ask_sz), in [-1, 1]. The side taken must be the side the book leans
+    # to: a YES entry needs a positive imbalance, a NO entry a negative one.
+    sl2_min_obi: float = 0.15
+    # Signed aggressor print flow, on both a fast and a slow window, must lean
+    # the way the side does. Both windows have to agree: one window is a wick.
+    sl2_min_flow: float = 0.30
+    sl2_flow_fast_s: float = 5.0
+    sl2_flow_slow_s: float = 15.0
+    # The settlement program's own window: 780s to 60s before the close.
+    sl2_min_seconds_left: float = 60.0
+    sl2_max_seconds_left: float = 780.0
+    # The book's own spread cap, tighter than the generic one: a 4c spread on a
+    # 35c-60c contract is already a tenth of the premium at risk.
+    sl2_max_spread: Decimal = Decimal("0.04")
+    # Net edge after the entry's taker fee, in dollars per contract. The exit is
+    # settlement, so there is no exit cost to charge.
+    sl2_min_edge: Decimal = Decimal("0.05")
+    # At most two entries in one 15-minute window, at least a minute apart.
+    sl2_max_window_trades: int = 2
+    sl2_cooldown_s: float = 60.0
 
     def to_json(self) -> dict[str, str]:
         return {k: str(v) for k, v in asdict(self).items()}
@@ -580,10 +626,88 @@ def _f2_exit(quote: Quote, position: Position, params: Params, p_up: float,
                     confidence=confidence, regime="hold")
 
 
+def _student_t_l2_entry(quote: Quote, params: Params, p_yes: float, seconds_left: float,
+                        edge_hurdle: Decimal, l2_obi: float, flow_fast: float,
+                        flow_slow: float) -> Decision:
+    """The settlement program's entry: the band, the book, the flow, then the edge.
+
+    The side is not chosen before the book is read. A YES entry needs the resting
+    size to lean to the bid (`l2_obi >= min_obi`) and the aggressor flow to lean
+    the same way on *both* windows; a NO entry needs the mirror image. A side
+    that fails any of those tests is not a trade at any price, and the side with
+    the better net edge wins.
+
+    The exit is settlement: $1 or $0 a contract, no exit fee. The entry crosses,
+    so it pays the taker fee and nothing else, and that fee is charged here
+    because the premium a hold-to-settlement binary risks is the whole entry cost.
+    """
+    if not (params.sl2_min_seconds_left <= seconds_left <= params.sl2_max_seconds_left):
+        return Decision("abstain", "outside the settlement window", p_model=p_yes)
+    if quote.spread > params.sl2_max_spread:
+        return Decision("abstain", f"spread {quote.spread:.3f} wide for the settlement program",
+                        p_model=p_yes)
+    hurdle = max(params.sl2_min_edge, edge_hurdle, Decimal(str(params.min_net_edge)))
+    best: Decision | None = None
+    misses: list[str] = []
+    for side in ("YES", "NO"):
+        price = quote.yes_ask if side == "YES" else (Decimal(1) - quote.yes_bid)
+        # The band's ceiling and the venue's hard cap are both enforced: the band
+        # is the rule's own, the cap is the desk's, and the tighter of the two wins.
+        if price > HARD_MAX_ENTRY_PRICE:
+            misses.append(f"{side} cost {price:.2f} over the {HARD_MAX_ENTRY_PRICE} cap")
+            continue
+        if not (params.sl2_min_price <= price <= params.sl2_max_price):
+            misses.append(f"{side} cost {price:.2f} outside "
+                          f"{params.sl2_min_price}-{params.sl2_max_price}")
+            continue
+        obi = l2_obi if side == "YES" else -l2_obi
+        if obi < params.sl2_min_obi:
+            misses.append(f"{side} imbalance {obi:+.2f} under {params.sl2_min_obi:+.2f}")
+            continue
+        fast = flow_fast if side == "YES" else -flow_fast
+        slow = flow_slow if side == "YES" else -flow_slow
+        if fast < params.sl2_min_flow or slow < params.sl2_min_flow:
+            misses.append(f"{side} flow {fast:+.2f}/{slow:+.2f} under {params.sl2_min_flow:+.2f}")
+            continue
+        p_side = Decimal(str(p_yes if side == "YES" else 1.0 - p_yes))
+        net = p_side - price - taker_fee_per_contract(price)
+        if net < hurdle:
+            misses.append(f"{side} net {net * 100:.2f}c under {hurdle * 100:.2f}c")
+            continue
+        cand = Decision("entry",
+                        f"settlement {side} at {price:.2f}, p {p_side:.3f}, "
+                        f"net {net * 100:.2f}c, obi {obi:+.2f}, flow {fast:+.2f}/{slow:+.2f}",
+                        side=side, price=price, p_model=p_yes, edge=net,
+                        confidence=max(float(p_side), 1.0 - float(p_side)),
+                        regime="settlement", signal="student_t_l2_settle")
+        if best is None or cand.edge > best.edge:
+            best = cand
+    if best is not None:
+        return best
+    return Decision("abstain", "; ".join(misses[:2]) or "no side inside the settlement band",
+                    p_model=p_yes)
+
+
+def _student_t_l2_exit(quote: Quote, position: Position, params: Params, p_up: float,
+                       now: float) -> Decision:
+    """The settlement program's exit: there is none before the close.
+
+    The thesis *is* the settlement: the contract is carried to expiry and pays $1
+    or $0. There is no take-profit, no stop and no time barrier, because an early
+    exit would pay the taker fee the edge was never budgeted for and would turn a
+    priced settlement into a directional bet on the last minute.
+    """
+    bid = position.side_bid(quote)
+    confidence = max(p_up, 1 - p_up)
+    return Decision("hold", "settlement: holding to expiry", side=position.side, price=bid,
+                    p_model=p_up, confidence=confidence, regime="settle")
+
+
 def decide(*, quote: Quote, p_up: float, seconds_left: float, spot_age: float,
            params: Params, position: Position | None, edge_hurdle: Decimal,
            can_open: bool, signal: str = "", now: float = 0.0, spot: float = 0.0,
-           impulse_bps: float = 0.0) -> Decision:
+           impulse_bps: float = 0.0, l2_obi: float = 0.0, flow_fast: float = 0.0,
+           flow_slow: float = 0.0) -> Decision:
     """The whole hot path, deterministic and side-effect free."""
     # A crossed book means one side is stale. The venue would not fill the stale side,
     # so opening on it books a fantasy spread. Applies to every caller, including replay.
@@ -601,6 +725,8 @@ def decide(*, quote: Quote, p_up: float, seconds_left: float, spot_age: float,
                             regime="settle")
         if position.signal == "F2_taker_1s":
             return _f2_exit(quote, position, params, p_up, now)
+        if position.signal == "student_t_l2_settle":
+            return _student_t_l2_exit(quote, position, params, p_up, now)
         if position.signal == "z_obi_flow":
             return _zobi_exit(quote, position, params, p_up, now)
         if position.signal == "impulse_snipe":
@@ -632,11 +758,23 @@ def decide(*, quote: Quote, p_up: float, seconds_left: float, spot_age: float,
         return Decision("abstain", f"spread {quote.spread:.3f} wide", p_model=p_up)
     lock_in = signal == "final_minute"
     impulse = signal == "impulse_snipe"
-    floor = params.lock_in_min_seconds if lock_in else params.min_seconds_left
+    settlement = signal == "student_t_l2_settle"
+    # Each program owns the part of the window it can actually manage. The
+    # settlement program is priced off the average that is left to print, so its
+    # floor is its own and not the generic 90s cut.
+    if lock_in:
+        floor = params.lock_in_min_seconds
+    elif settlement:
+        floor = params.sl2_min_seconds_left
+    else:
+        floor = params.min_seconds_left
     if seconds_left < floor:
         return Decision("abstain", "too late in the window", p_model=p_up)
     if signal == "F2_taker_1s":
         return _f2_entry(quote, params, p_up, seconds_left, edge_hurdle, spot)
+    if signal == "student_t_l2_settle":
+        return _student_t_l2_entry(quote, params, p_up, seconds_left, edge_hurdle,
+                                   l2_obi, flow_fast, flow_slow)
     if signal == "z_obi_flow":
         return _zobi_entry(quote, params, p_up, seconds_left)
 

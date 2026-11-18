@@ -331,7 +331,7 @@ class Executor:
                 signal=decision.signal, entry_fee=fee,
                 entry_spot=slot.spot, impulse_bps=decision.impulse_bps,
             )
-            if decision.signal == "F2_taker_1s":
+            if decision.signal in ("F2_taker_1s", "student_t_l2_settle"):
                 slot.window_entries = int(getattr(slot, "window_entries", 0)) + 1
             self.record(slot, "entry", side, price, qty, fee,
                         "live fill" if self.venue_anchored else "taker cross")

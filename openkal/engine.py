@@ -39,6 +39,19 @@ def parse_ts(value: str | None) -> float:
         return 0.0
 
 
+def _last_point(points: list[tuple[float, float]], now: float,
+                max_age_s: float) -> float | None:
+    """The last point on a tape at or before `now`, if it is fresh enough.
+
+    None rather than a stale value: a settlement price read off a tape that has
+    stopped moving is not a price, it is a guess.
+    """
+    for ts, value in reversed(points):
+        if ts <= now:
+            return float(value) if (now - ts) <= max_age_s else None
+    return None
+
+
 @dataclass
 class SlotRuntime:
     cfg: SeriesConfig
@@ -249,6 +262,11 @@ class Engine:
         index_id = INDEX_BY_SERIES.get(slot.cfg.series)
         prints = self.index_tape.get(index_id) or []
         params = slot.params
+        # The settlement program is a different thesis on a different tape, not a
+        # variation on the momentum one: it is selected by configuration and it
+        # reads the settlement index, the resting size and the aggressor tape.
+        if params.strategy_mode == "student_t_l2_settle":
+            return self._settlement_signal(slot, quote, seconds_left)
         # 0. The promoted program: the strike z and the venue's own prints agree, and
         #    the touch has been re-pricing the same way. This is the only thesis with
         #    a passing frozen-OOS verdict, so it is checked first.
@@ -313,6 +331,39 @@ class Engine:
             lookback_s=params.impulse_lookback_s,
             min_bps=params.impulse_min_bps, max_bps=params.impulse_max_bps,
             stale_share=params.impulse_stale_share)
+
+    def _settlement_signal(self, slot: SlotRuntime, quote: Quote, seconds_left: float):
+        """The settlement program: Student-t fair value, true-L2 imbalance, signed flow.
+
+        The fair value is priced off the *settlement index* -- the tape the contract
+        actually settles on -- and not off the Coinbase spot, because the frozen
+        Student-t fit is of the index's own standardised returns. The imbalance is
+        the resting size on the two sides of the touch, and the flow is the signed
+        aggressor print tape on a fast and a slow window.
+        """
+        fit = features.STUDENT_T_FIT.get(slot.cfg.series)
+        if fit is None:
+            return None
+        index_id = INDEX_BY_SERIES.get(slot.cfg.series)
+        pts = self.index_tape.get(index_id) or []
+        now = time.time()
+        spot = _last_point(pts, now, slot.params.max_spot_age_s)
+        if spot is None:
+            return None
+        index_sigma = features.realized_sigma(pts)
+        if index_sigma <= 0:
+            return None
+        obi = features.l2_imbalance(quote.yes_bid_sz, quote.yes_ask_sz)
+        if obi is None:
+            return None
+        prints = self.trade_hist.get(quote.ticker) or []
+        return features.student_t_l2_settle(
+            spot=spot, strike=quote.strike, seconds_left=seconds_left, sigma=index_sigma,
+            nu=fit[0], s=fit[1], l2_obi=obi,
+            flow_fast=features.print_flow(prints, now, slot.params.sl2_flow_fast_s),
+            flow_slow=features.print_flow(prints, now, slot.params.sl2_flow_slow_s),
+            min_seconds_left=slot.params.sl2_min_seconds_left,
+            max_seconds_left=slot.params.sl2_max_seconds_left)
 
     # ---------- lifecycle ----------
     async def run(self) -> None:
@@ -740,6 +791,7 @@ class Engine:
             # `/portfolio/fills`. `z_obi_flow` carries by design when its scratch
             # misses, so it settles like the lock-in thesis.
             if settle_ok and (pos.hold_to_settle or pos.signal == "z_obi_flow"
+                              or pos.signal == "student_t_l2_settle"
                               or (pos.signal == "final_minute"
                                   and slot.params.settle_lock_in)):
                 # The contract settles on the 60-second BRTI average. We have its last
@@ -828,38 +880,56 @@ class Engine:
                 self.supervisor.fault = None
 
     # ---------- per-slot decision ----------
-    async def _gate_entry(self, slot: SlotRuntime, quote: Quote, seconds_left: float,
-                          decision: Decision) -> Decision:
-        """Laya reviews every entry. A veto is an abstention, never a silent downgrade.
+    def _gate_recorder(self, slot: SlotRuntime) -> Any:
+        """The callback that files Laya's opinion when the background review lands.
 
-        The gate can only veto: the kernel's numeric abstention still stands when Laya
-        votes enter. It never creates a trade the model did not ask for.
+        The verdict is persisted on the trigger it judged: an offline ablation needs
+        the opinion the live lane actually saw, not a re-run with hindsight.
         """
-        now = time.time()
-
         def record(verdict: Any) -> None:
             slot.gate = verdict_payload(verdict)
             slot.gate_ts = time.time()
-            # Persist the shadow verdict on the trigger it judged: an offline ablation
-            # needs the opinion the live lane actually saw, not a re-run with hindsight.
             try:
                 self.store.set_tick_gate(series=slot.cfg.series, gate=json.dumps(slot.gate))
             except Exception:  # noqa: BLE001 - a logging failure is not a trading event
                 pass
 
-        if self.gate.mode == "shadow":
-            # Fine-tuned model not ready: log Laya's opinion, let the kernel decide.
-            self.gate.shadow(slot, quote, seconds_left, decision, on_done=record)
+        return record
+
+    def _gate_refresh(self, slot: SlotRuntime, quote: Quote, seconds_left: float,
+                      decision: Decision) -> None:
+        """Ask Laya for a fresh opinion without waiting for it.
+
+        The review runs in a background task and its verdict is cached per ticker.
+        The entry path below reads that cache, so a 610-650ms forward pass never
+        stalls the tick loop.
+        """
+        self.gate.schedule(slot, quote, seconds_left, decision,
+                           on_done=self._gate_recorder(slot))
+
+    def _gate_veto(self, slot: SlotRuntime, quote: Quote, decision: Decision) -> Decision:
+        """Apply the cached Laya verdict to an entry. A cache read: 0ms.
+
+        The gate can only veto: the kernel's numeric abstention still stands when Laya
+        votes enter. It never creates a trade the model did not ask for, and a gate
+        that is offline never blocks -- the kernel's numeric edge decides.
+
+        `Params.require_layagate_allow` turns the cached opinion into a hard filter
+        for a promoted strategy, with no code edit. The fine-tuned ONNX build has
+        always had veto power; the switch exists so a strategy that was promoted
+        against the gate's own forward evidence can enforce it too.
+        """
+        params = slot.params
+        if not (params.require_layagate_allow or self.gate.mode == "onnx"):
             return decision
-        if slot.gate is None or now - slot.gate_ts > 30:
-            verdict = await self.gate.review(slot, quote, seconds_left, decision)
-            record(verdict)
-        gate = slot.gate or {}
-        if gate.get("available") and not gate.get("allow"):
-            return Decision("abstain", f"laya gate: {gate.get('note') or 'skip'}",
-                            side=decision.side, price=decision.price, p_model=decision.p_model,
-                            confidence=decision.confidence, edge=decision.edge, regime="gate")
-        return decision
+        verdict = self.gate.cached(quote.ticker)
+        if verdict is None or not verdict.available:
+            return decision
+        if verdict.allow and verdict.confidence >= params.layagate_min_confidence:
+            return decision
+        return Decision("abstain", f"laya gate: {verdict.note or 'skip'}",
+                        side=decision.side, price=decision.price, p_model=decision.p_model,
+                        confidence=decision.confidence, edge=decision.edge, regime="gate")
 
     async def _venue_snapshot(self) -> dict[str, Any]:
         """One read of the venue's resting book and fills tape, shared by every lane."""
@@ -1017,16 +1087,19 @@ class Engine:
             params=slot.params, position=slot.position, edge_hurdle=hurdle,
             can_open=can_open, signal=slot.signal, now=now, spot=slot.spot,
             impulse_bps=impulse_bps,
+            l2_obi=signal.l2_obi if signal is not None else 0.0,
+            flow_fast=signal.flow_fast if signal is not None else 0.0,
+            flow_slow=signal.flow_slow if signal is not None else 0.0,
         )
         slot.edge_streak, decision = with_persistence(slot.edge_streak, decision, slot.params)
-        # Laya reviews every lane once per contract, not just the lanes the kernel wants
-        # to trade. That is what makes its opinion visible on the board, and it costs one
-        # forward pass per lane per window instead of one per second.
-        if slot.gate_ticker != quote.ticker and seconds_left > 120:
-            await self._gate_entry(slot, quote, seconds_left, decision)
-            slot.gate_ticker = quote.ticker
+        # Laya reviews every lane it is asked about, but never on the caller's
+        # clock: the review is scheduled in the background and its verdict is
+        # cached per ticker. The entry path below reads that cache, so the tick
+        # loop never waits on a forward pass.
+        self._gate_refresh(slot, quote, seconds_left, decision)
+        slot.gate_ticker = quote.ticker
         if decision.action == "entry":
-            decision = await self._gate_entry(slot, quote, seconds_left, decision)
+            decision = self._gate_veto(slot, quote, decision)
         slot.decision = decision
         slot.state = "halted" if slot.halted else decision.regime
         slot.reason = decision.reason
@@ -1081,6 +1154,8 @@ class Engine:
         name = getattr(signal, "name", "") if signal is not None else ""
         if name == "F2_taker_1s":
             return slot.window_entries < slot.params.f2_max_window_trades
+        if name == "student_t_l2_settle":
+            return slot.window_entries < slot.params.sl2_max_window_trades
         if signal is None or name != "z_obi_flow":
             return True
         return (slot.window_entries < slot.params.max_window_trades
@@ -1137,6 +1212,11 @@ class Engine:
         except (OSError, ValueError, TypeError):
             return None
 
+    @property
+    def running_program(self) -> str:
+        """The program the lanes are actually running right now."""
+        return self.slots[0].params.strategy_mode if self.slots else "F2_taker_1s"
+
     def snapshot(self) -> dict[str, Any]:
         now = time.time()
         open_positions = sum(1 for s in self.slots if s.position is not None)
@@ -1145,7 +1225,9 @@ class Engine:
             # Execution is paper until a venue broker is mounted in this plane. The
             # dashboard must never imply real orders are going out when they are not.
             "mode": "live" if self.live_armed else "paper",
-            "strategy": "F2_taker_1s",
+            # The program this process actually ran, not a hardcoded name: the board
+            # must not claim F2 while the lane is running the settlement program.
+            "strategy": self.running_program,
             "env": self.settings.env_name,
             "live_armed": self.live_armed,
             "armed_at": self.arm_ts,

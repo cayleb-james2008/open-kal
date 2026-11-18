@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections import Counter
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -43,7 +44,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from openkal import features, sim_core  # noqa: E402
-from openkal.strategy import Params, exit_cost, taker_fee_per_contract  # noqa: E402
+from openkal.strategy import (Params, Quote, decide, exit_cost,  # noqa: E402
+                              taker_fee_per_contract)
+from scripts import alpha_discover as AD  # noqa: E402
 from scripts import alpha_search as A  # noqa: E402
 from scripts.alpha_discover import Lane  # noqa: E402
 from scripts.bounded_sweep import obi_pool, pick, summarize  # noqa: E402
@@ -51,6 +54,7 @@ from scripts.bounded_sweep import obi_pool, pick, summarize  # noqa: E402
 LANES = ("KXBTC15M", "KXETH15M", "KXSOL15M", "KXXRP15M")
 FORWARD_OOS_START_TS = 1794909600          # 2026-11-17 05:00:00 EST
 OUT = ROOT / "data" / "forward-oos.json"
+OUT_STUDENT_T = ROOT / "data" / "forward-oos-student-t-l2.json"
 
 # --- the frozen rule (scripts/f2_structural.py, unchanged) ------------------
 Z_MIN = features.F2_Z_MIN
@@ -143,6 +147,24 @@ def feature_row(pool: dict, i: int) -> list[float]:
     return features.f2_features(z=z, flow=float(pool["flow"][i]) * d,
                                 revision=float(pool["rev"][i]) * d,
                                 delta_bps=delta_bps)
+
+
+def _with_true_side_costs(summary: dict, rows: list[dict]) -> dict:
+    """Correct the side-cost statistics for the forward tape's row convention.
+
+    `bounded_sweep.summarize` reads `entry` as the YES-side price, which is what
+    the research sweeps write. The forward tape writes the cost of the side
+    actually held -- the premium at risk -- and `scripts/kelly_compound_sim.py`
+    reads it that way. The two readings differ for a NO trade, and the cost
+    ceiling is a check on the premium, so it has to be measured on the premium:
+    a NO bought for 36c is a 36c premium, not a 64c one.
+    """
+    if not rows:
+        return summary
+    costs = [float(r["entry"]) for r in rows]
+    summary["avg_entry"] = round(float(np.mean(costs)), 4)
+    summary["max_side_cost"] = round(max(costs), 4)
+    return summary
 
 
 def gate_from_summary(summary: dict, payoff_ece: float,
@@ -259,6 +281,7 @@ def score(since: float, until: float | None = None) -> dict:
 
     hours = ((max(windows) - min(windows)) / 3600.0) if len(windows) > 1 else 0.0
     summary = summarize(kept, hours) if kept else summarize([], 0.0)
+    summary = _with_true_side_costs(summary, kept)
     # A crossed arrival is a counted skip in sim_core, not a fill, so the gate's
     # crossed-fill condition stays a real check on the model's output.
     summary["crossed_fills"] = sum(int(r["crossed"]) for r in kept)
@@ -297,6 +320,267 @@ def score(since: float, until: float | None = None) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# student_t_l2_settle: the settlement program, scored on the same slice
+#
+# The rule is the production one. `openkal/strategy.py` decides whether a row is
+# an entry -- the cost band, the true-L2 imbalance, the signed aggressor flow
+# and the net edge -- and `openkal/sim_core.py` prices the fill: a taker entry
+# that arrives a full second after its trigger and a contract carried to
+# settlement for a $0 exit fee. Nothing here re-implements either: a scorer that
+# carried its own copy of the rule would score a program the engine does not run.
+# ---------------------------------------------------------------------------
+
+SL2_COST_LO, SL2_COST_HI = 0.35, 0.60
+SL2_CAP = 0.62
+SL2_COOLDOWN, SL2_PER_WINDOW = 60.0, 2
+SL2_SECS_LO, SL2_SECS_HI = 60.0, 780.0
+# The settlement program is sampled on a 2-second grid: the thesis is priced off
+# an average that is left to print, not off a single book row, and a grid keeps
+# the number of Student-t evaluations on the whole slice in the tens of thousands.
+SL2_GRID_S = 2.0
+# The resting size must be this fresh: an imbalance read off a ladder that has
+# already moved is not the book the decision was made against.
+SL2_MAX_L2_AGE_S = 2.0
+
+
+def _lane_depth(name: str) -> tuple[np.ndarray, np.ndarray]:
+    """The true L2 resting sizes, aligned with the lane's book rows."""
+    with np.load(AD.CACHE / f"book_{name}.npz", allow_pickle=False) as data:
+        return (data["yes_bid_sz"].astype(np.float64),
+                data["yes_ask_sz"].astype(np.float64))
+
+
+def _flow_at(trade_ts: np.ndarray, cum_signed: np.ndarray, cum_size: np.ndarray,
+             t: float, window_s: float) -> float:
+    """Signed aggressor print flow over the trailing `window_s`.
+
+    The same quantity as `features.print_flow`, computed on the whole tape at
+    once: signed printed size over total printed size, on prints at or before
+    `t` and no earlier than `t - window_s`.
+    """
+    lo = int(np.searchsorted(trade_ts, t - window_s, "left"))
+    hi = int(np.searchsorted(trade_ts, t, "right"))
+    if hi <= lo:
+        return 0.0
+    den = float(cum_size[hi] - cum_size[lo])
+    if den <= 0:
+        return 0.0
+    return float((cum_signed[hi] - cum_signed[lo]) / den)
+
+
+def _settlement_triggers(lane: Lane, name: str, closes: set[float], sig: dict,
+                          params: Params) -> tuple[list[dict], Counter]:
+    """The settlement program's own entries on one lane.
+
+    Every row is put to `strategy.decide`, so what is scored here is the program
+    the engine runs, not a research copy of it.
+    """
+    nu, s = features.STUDENT_T_FIT[name]
+    depth_bid, depth_ask = _lane_depth(name)
+    skips: Counter = Counter()
+    triggers: list[dict] = []
+    grid = np.arange(SL2_SECS_HI, SL2_SECS_LO - 1e-9, -SL2_GRID_S)
+    for tid, ticker, meta, a, b in A._segments(lane):
+        close = float(meta["close"])
+        if close not in closes:
+            continue
+        strike = float(meta["strike"])
+        ts = lane.ts[a:b]
+        bid = lane.bid[a:b]
+        ask = lane.ask[a:b]
+        sigma_row = sig[tid]
+        spots = A.index_at_past(lane, close - grid)
+        lo_tr, hi_tr = int(lane.trade_bounds[tid]), int(lane.trade_bounds[tid + 1])
+        trade_ts = lane.trade_ts[lo_tr:hi_tr]
+        sizes = np.where(lane.trade_sz[lo_tr:hi_tr] > 0, lane.trade_sz[lo_tr:hi_tr], 0.0)
+        signed = np.where(lane.trade_ty[lo_tr:hi_tr] == 1, sizes, -sizes)
+        cum_signed = np.concatenate(([0.0], np.cumsum(signed)))
+        cum_size = np.concatenate(([0.0], np.cumsum(sizes)))
+        for k, secs in enumerate(grid):
+            t = close - float(secs)
+            j = int(np.searchsorted(ts, t, "right")) - 1
+            if j < 0:
+                skips["no_book"] += 1
+                continue
+            if t - float(ts[j]) > SL2_MAX_L2_AGE_S:
+                skips["stale_l2"] += 1
+                continue
+            spot = float(spots[k])
+            if not (spot > 0):
+                skips["no_spot"] += 1
+                continue
+            try:
+                sim_core.check_book(float(bid[j]), float(ask[j]))
+            except sim_core.CrossedBook:
+                skips["quote_crossed"] += 1
+                continue
+            except sim_core.NoQuote:
+                skips["quote_no_quote"] += 1
+                continue
+            bid_sz, ask_sz = float(depth_bid[a + j]), float(depth_ask[a + j])
+            if not (bid_sz > 0 and ask_sz > 0):
+                skips["no_l2"] += 1
+                continue
+            obi = (bid_sz - ask_sz) / (bid_sz + ask_sz)
+            flow_fast = _flow_at(trade_ts, cum_signed, cum_size, t, params.sl2_flow_fast_s)
+            flow_slow = _flow_at(trade_ts, cum_signed, cum_size, t, params.sl2_flow_slow_s)
+            p_up = features.student_t_settlement_p_up(
+                spot=spot, strike=strike, seconds_left=float(secs),
+                sigma=float(sigma_row[j]), nu=nu, s=s)
+            quote = Quote(
+                ticker=ticker, series=name, strike=strike, close_ts=close,
+                yes_bid=sim_core.px(bid[j]), yes_ask=sim_core.px(ask[j]),
+                last=sim_core.px((float(bid[j]) + float(ask[j])) / 2.0),
+                updated_ts=t, received_ts=t,
+                yes_bid_sz=Decimal(str(int(bid_sz))), yes_ask_sz=Decimal(str(int(ask_sz))))
+            decision = decide(
+                quote=quote, p_up=p_up, seconds_left=float(secs), spot_age=0.0,
+                params=params, position=None, edge_hurdle=params.edge_hurdle,
+                can_open=True, signal="student_t_l2_settle", now=t, spot=spot,
+                l2_obi=obi, flow_fast=flow_fast, flow_slow=flow_slow)
+            if decision.action != "entry":
+                skips["no_entry"] += 1
+                continue
+            triggers.append({
+                "lane": name, "ticker": ticker, "tid": tid, "ts": t, "close": close,
+                "y": int(meta["y"]), "side": decision.side, "price": decision.price,
+                "edge": float(decision.edge),
+                "p_yes": p_up,
+                "p_side": p_up if decision.side == "YES" else 1.0 - p_up,
+                "obi": obi, "flow_fast": flow_fast,
+                "flow_slow": flow_slow, "secs_left": float(secs),
+            })
+    # One entry per contract per minute, at most two in a window: the same
+    # per-window cap the R&D study scored.
+    kept: list[dict] = []
+    for row in triggers:
+        same = [k for k in kept if k["tid"] == row["tid"]]
+        if len(same) >= SL2_PER_WINDOW:
+            continue
+        if same and row["ts"] - same[-1]["ts"] < SL2_COOLDOWN:
+            continue
+        kept.append(row)
+    return kept, skips
+
+
+def score_student_t_l2(since: float, until: float | None = None) -> dict:
+    """Score the settlement program on windows closing in `[since, until)`.
+
+    The probability this program carries is a *settlement* probability, so the
+    calibration error is measured against the contract's own settlement outcome,
+    not against a round trip: the contract is carried to expiry and pays $1 or
+    $0.
+    """
+    params = Params()
+    lanes = {name: Lane(name) for name in LANES}
+    rows: list[dict] = []
+    skips: Counter = Counter()
+    windows: set[float] = set()
+    pools_ok: dict[str, int] = {}
+    events = 0
+    for name, lane in lanes.items():
+        closes = {float(m["close"]) for m in lane.meta.values()
+                  if float(m["close"]) >= since
+                  and (until is None or float(m["close"]) < until)}
+        pools_ok[name] = len(closes)
+        if not closes:
+            continue
+        sig = A.trailing_sigma(lane)
+        triggers, lane_skips = _settlement_triggers(lane, name, closes, sig, params)
+        events += len(triggers)
+        for key, value in lane_skips.items():
+            skips[key] += value
+        for trig in triggers:
+            res = sim_core.run_trade(
+                sim_core.Tape.from_lane(lane, int(trig["tid"]), float(trig["close"]),
+                                        int(trig["y"])),
+                side=trig["side"],
+                trigger_ts=float(trig["ts"]),
+                entry_style=sim_core.TAKER,
+                qty=MAX_QTY,
+                lag_s=LAG_S,
+                max_cost=Decimal(str(SL2_CAP)),
+                cost_lo=Decimal(str(SL2_COST_LO)),
+                cost_hi=Decimal(str(SL2_COST_HI)),
+                barrier_exit="settle",
+                min_print=MIN_FILL,
+            )
+            if isinstance(res, sim_core.Skip):
+                skips[res.reason] += 1
+                continue
+            windows.add(float(trig["close"]))
+            rows.append({
+                "lane": name, "ticker": trig["ticker"], "tid": trig["tid"],
+                "ts": float(res.order_ts), "fill_ts": float(res.legs[0].ts),
+                "exit_ts": float(res.exit_ts), "slice": "oos", "side": res.side,
+                "entry_style": res.entry_style, "entry": str(res.entry),
+                "exit": str(res.exit_value), "qty": res.qty, "pnl": str(res.pnl),
+                "fee": str(res.fees), "reason": res.reason, "crossed": res.crossed,
+                "requotes": res.requotes, "close": trig["close"], "y": trig["y"],
+                "p_side_raw": trig["p_side"], "p_side": trig["p_side"],
+                "p_yes": trig["p_yes"],
+                "edge_c": trig["edge"], "obi": trig["obi"],
+                "flow_fast": trig["flow_fast"], "flow_slow": trig["flow_slow"],
+                "secs_left": trig["secs_left"],
+            })
+
+    hours = ((max(windows) - min(windows)) / 3600.0) if len(windows) > 1 else 0.0
+    summary = summarize(rows, hours) if rows else summarize([], 0.0)
+    summary = _with_true_side_costs(summary, rows)
+    summary["crossed_fills"] = sum(int(r["crossed"]) for r in rows)
+    # This program's probability describes the contract's own settlement, so the
+    # calibration error is measured against the settlement outcome -- which is
+    # what `summarize`'s own settlement ECE does.
+    settlement_ece = float(summary.get("ece") or 1.0) if rows else 1.0
+    lanes_pos = sum(1 for v in (summary.get("by_lane") or {}).values()
+                    if float(v.get("net") or 0) > 0)
+    gate = gate_from_summary(summary, settlement_ece, lanes_pos)
+    return {
+        "generated": datetime.now(timezone.utc).isoformat(),
+        "score_model": "openkal.sim_core",
+        "strategy": "student_t_l2_settle",
+        "program": {
+            "settlement_model": "Student-t per lane (nu, s)",
+            "student_t_fit": {k: list(v) for k, v in features.STUDENT_T_FIT.items()},
+            "tau_offset_s": features.STUDENT_T_TAU_OFFSET_S,
+            "l2_imbalance": "(yes_bid_sz - yes_ask_sz) / (yes_bid_sz + yes_ask_sz)",
+            "flow_windows_s": [params.sl2_flow_fast_s, params.sl2_flow_slow_s],
+            "min_flow": params.sl2_min_flow,
+            "min_obi": params.sl2_min_obi,
+            "cost_band": [SL2_COST_LO, SL2_COST_HI],
+            "hard_cap": SL2_CAP,
+            "entry_lag_s": LAG_S,
+            "exit": "settlement ($0 exit fee)",
+            "grid_s": SL2_GRID_S,
+            "cooldown_s": SL2_COOLDOWN,
+            "per_window": SL2_PER_WINDOW,
+        },
+        "fill_rules": {
+            "entry_lag_s": LAG_S,
+            "exit_placement_lag_s": sim_core.LAG_S,
+            "min_print_contracts": MIN_FILL,
+            "no_ask": "1 - yes_bid",
+            "spot_lookahead_s": 0.0,
+        },
+        "since_ts": since,
+        "since_local": datetime.fromtimestamp(since).astimezone().isoformat() if since else "all",
+        "until_ts": until,
+        "until_local": (datetime.fromtimestamp(until).astimezone().isoformat()
+                        if until else None),
+        "windows_per_lane": pools_ok,
+        "windows_scored": len(windows),
+        "events": events,
+        "skips": dict(sorted(skips.items())),
+        "hurdle_c": float(params.sl2_min_edge),
+        "trades": summary,
+        "settlement_ece": settlement_ece,
+        "lanes_profitable": lanes_pos,
+        "gate": gate,
+        "rows": rows,
+    }
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--since", type=float, default=float(FORWARD_OOS_START_TS))
@@ -304,9 +588,18 @@ def main() -> int:
     # never passes it, so its slice is unchanged.
     ap.add_argument("--until", type=float, default=None)
     ap.add_argument("--out", default=str(OUT))
+    # Which program to score. The default is the frozen F2 rule; the settlement
+    # program is scored by the same canonical simulator on the same slice.
+    ap.add_argument("--strategy", choices=("f2", "student_t_l2_settle"),
+                    default="f2")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
-    report = score(args.since, args.until)
+    if args.strategy == "student_t_l2_settle":
+        if args.out == str(OUT):
+            args.out = str(OUT_STUDENT_T)
+        report = score_student_t_l2(args.since, args.until)
+    else:
+        report = score(args.since, args.until)
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=1, default=str))

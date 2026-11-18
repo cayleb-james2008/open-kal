@@ -30,6 +30,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from openkal.config import (COMPOUND_STAGES, HARD_MAX_ENTRY_PRICE,  # noqa: E402
                             peak_drawdown_tripped, stage_for, staged_risk_cap)
+from openkal import decision_gate, features  # noqa: E402
+from openkal.decision_gate import LayaGate, Verdict  # noqa: E402
 from openkal.engine import Engine  # noqa: E402
 from openkal.execution import Executor, RestingExit, RestingOrder  # noqa: E402
 from openkal.live_exec import (DEPTH_CLIP_FRACTION, LiveExecutor,  # noqa: E402
@@ -1048,7 +1050,244 @@ def main() -> int:
           slot.exit is None and bool(ex.note) and "post only" in ex.note,
           f"exit={slot.exit} note={ex.note!r}")
 
-    control_multi_fill()
+# --------------------------------------------------------------------------
+# 10. The LayaGate: a cached verdict read in 0ms, and a filter a promoted
+#     strategy can turn on without a code edit.
+# --------------------------------------------------------------------------
+def gate_engine(gate: LayaGate) -> Engine:
+    engine = Engine.__new__(Engine)
+    engine.gate = gate
+    return engine
+
+
+def control_layagate_cache() -> None:
+    """The entry path reads the gate's opinion from memory, never from the wire.
+
+    A 610-650ms forward pass used to sit on the entry hot path, so every tick
+    that wanted a second opinion paid for it in latency. The verdict is now
+    cached per ticker and the decision reads that cache.
+    """
+    gate = LayaGate("http://127.0.0.1:1", mode="shadow")
+    verdict = Verdict(True, False, 0.31, "skip: the edge looks like noise", "laya", 640.0)
+    verdict.ticker = TICKER
+    verdict.ts = time.time()
+    gate.cache[TICKER] = verdict
+    gate.mid_ref[TICKER] = 0.46
+
+    started = time.perf_counter()
+    got = gate.cached(TICKER)
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    check("gate: the cached verdict is a dictionary read, not a forward pass",
+          got is verdict and elapsed_ms < 1.0,
+          f"elapsed={elapsed_ms:.4f}ms")
+
+    # The whole entry path, with the HTTP client booby-trapped: a connection
+    # attempt here would raise, so a clean return proves nothing was opened.
+    class Boom:
+        def __init__(self, *a, **kw):
+            raise AssertionError("the entry path opened a connection")
+
+    original = decision_gate.httpx.AsyncClient
+    decision_gate.httpx.AsyncClient = Boom
+    try:
+        engine = gate_engine(gate)
+        slot = SimpleNamespace(params=Params(require_layagate_allow=True))
+        entry = Decision("entry", "kernel entry", side="YES", price=Decimal("0.47"),
+                         p_model=0.62, edge=Decimal("0.06"))
+        started = time.perf_counter()
+        out = engine._gate_veto(slot, quote("0.45", "0.47"), entry)
+        elapsed_ms = (time.perf_counter() - started) * 1000
+    finally:
+        decision_gate.httpx.AsyncClient = original
+    check("gate: the entry path reads the cache in 0ms and opens no connection",
+          out.action == "abstain" and elapsed_ms < 1.0 and "laya gate" in out.reason,
+          f"action={out.action} elapsed={elapsed_ms:.4f}ms reason={out.reason!r}")
+
+    # Staleness: the cache is refreshed on a timer, and sooner when the book moves.
+    check("gate: a fresh verdict for this ticker is not stale",
+          not gate.stale(TICKER, mid=0.46), f"stale={gate.stale(TICKER, mid=0.46)}")
+    check("gate: a 2c mid move makes the cached verdict stale",
+          gate.stale(TICKER, mid=0.48), f"stale={gate.stale(TICKER, mid=0.48)}")
+    check("gate: a ticker with no verdict is stale",
+          gate.stale("KXSOL15M-26NOV161315-00", mid=0.46), "no verdict for that ticker")
+    verdict.ts = time.time() - 30.0
+    check("gate: a verdict older than the refresh window is stale",
+          gate.stale(TICKER, mid=0.46), f"stale={gate.stale(TICKER, mid=0.46)}")
+
+
+def control_layagate_filter() -> None:
+    """`require_layagate_allow` is the switch that makes the gate binding."""
+    gate = LayaGate("http://127.0.0.1:1", mode="shadow")
+    engine = gate_engine(gate)
+    entry = Decision("entry", "kernel entry", side="YES", price=Decimal("0.47"),
+                     p_model=0.62, edge=Decimal("0.06"))
+
+    def cached(allow: bool, confidence: float, available: bool = True) -> None:
+        verdict = Verdict(available, allow, confidence, "note", "laya", 640.0)
+        verdict.ticker = TICKER
+        verdict.ts = time.time()
+        gate.cache[TICKER] = verdict
+
+    # Off by default: the shipped build has no fine-tuned model, so the gate is a
+    # shadow and the kernel's numeric edge decides.
+    cached(allow=False, confidence=0.2)
+    off = engine._gate_veto(SimpleNamespace(params=Params()), quote("0.45", "0.47"), entry)
+    check("gate: with the filter off the kernel's entry stands",
+          off.action == "entry", f"action={off.action}")
+
+    # On: the cached opinion is binding, with no code edit anywhere else.
+    on = engine._gate_veto(SimpleNamespace(params=Params(require_layagate_allow=True)),
+                           quote("0.45", "0.47"), entry)
+    check("gate: with the filter on an allow=False verdict refuses the entry",
+          on.action == "abstain" and on.regime == "gate" and "laya gate" in on.reason,
+          f"action={on.action} reason={on.reason!r}")
+
+    # An allow verdict does not block, and a minimum confidence is honoured.
+    cached(allow=True, confidence=0.9)
+    allowed = engine._gate_veto(SimpleNamespace(params=Params(require_layagate_allow=True)),
+                                quote("0.45", "0.47"), entry)
+    check("gate: an allow=True verdict lets the entry through",
+          allowed.action == "entry", f"action={allowed.action}")
+    cached(allow=True, confidence=0.40)
+    weak = engine._gate_veto(SimpleNamespace(
+        params=Params(require_layagate_allow=True, layagate_min_confidence=0.50)),
+        quote("0.45", "0.47"), entry)
+    check("gate: a minimum confidence refuses a weak allow",
+          weak.action == "abstain", f"action={weak.action} reason={weak.reason!r}")
+
+    # A gate that is offline never blocks: the kernel's edge decides.
+    cached(allow=False, confidence=0.1, available=False)
+    offline = engine._gate_veto(SimpleNamespace(params=Params(require_layagate_allow=True)),
+                                quote("0.45", "0.47"), entry)
+    check("gate: an offline gate never blocks the kernel",
+          offline.action == "entry", f"action={offline.action}")
+
+
+# --------------------------------------------------------------------------
+# 11. The settlement program: Student-t value, true-L2 imbalance, signed flow,
+#     and the cost ceiling that bounds a carry.
+# --------------------------------------------------------------------------
+def settlement_quote(bid: str, ask: str) -> Quote:
+    return Quote(ticker=TICKER, series="KXSOL15M", strike=70.0, close_ts=NOW + 300,
+                 yes_bid=Decimal(bid), yes_ask=Decimal(ask), last=Decimal(bid),
+                 updated_ts=NOW, received_ts=NOW,
+                 yes_bid_sz=Decimal("500"), yes_ask_sz=Decimal("200"))
+
+
+def control_settlement_program() -> None:
+    params = Params()
+
+    # The Student-t CDF is exact, not a table: it has to reproduce the published
+    # 0.975 quantiles or the settlement probability is a lookup error.
+    worst = max(abs(features.student_t_cdf(q, nu) - 0.975)
+                for nu, q in ((1.0, 12.7062), (2.0, 4.3027), (5.0, 2.5706),
+                              (8.0, 2.3060), (10.0, 2.2281), (100.0, 1.9840)))
+    check("settlement: the Student-t CDF reproduces the published quantiles",
+          worst < 5e-6, f"worst_error={worst:.2e}")
+    check("settlement: the Student-t CDF is symmetric about zero",
+          abs(features.student_t_cdf(1.3, 8.0)
+              + features.student_t_cdf(-1.3, 8.0) - 1.0) < 1e-12,
+          f"sum={features.student_t_cdf(1.3, 8.0) + features.student_t_cdf(-1.3, 8.0)}")
+
+    # The imbalance needs real depth: an unknown size is no book, not a neutral one.
+    check("settlement: an unknown resting size yields no imbalance, not a neutral one",
+          features.l2_imbalance(None, 100) is None
+          and features.l2_imbalance(100, None) is None
+          and features.l2_imbalance(0, 100) is None,
+          "None for unknown or empty depth")
+    check("settlement: the imbalance is (bid - ask) / (bid + ask)",
+          abs(features.l2_imbalance(500, 200) - 0.6) < 1e-12,
+          f"obi={features.l2_imbalance(500, 200)}")
+
+    # The signal: no depth, no thesis; outside the window, no thesis.
+    sig = features.student_t_l2_settle(
+        spot=70.0, strike=70.0, seconds_left=300.0, sigma=2.0e-4, nu=8.0, s=1.13,
+        l2_obi=0.6, flow_fast=0.5, flow_slow=0.4)
+    check("settlement: the signal carries the Student-t probability and the book",
+          sig is not None and sig.name == "student_t_l2_settle"
+          and abs(sig.l2_obi - 0.6) < 1e-12 and abs(sig.flow_fast - 0.5) < 1e-12
+          and 0.0 <= sig.p_up <= 1.0,
+          f"sig={sig}")
+    check("settlement: a spot above the strike prices above a half",
+          sig is not None and features.student_t_settlement_p_up(
+              spot=71.0, strike=70.0, seconds_left=300.0, sigma=2.0e-4,
+              nu=8.0, s=1.13) > 0.5,
+          "a spot above the strike settles YES more often than not")
+    check("settlement: no depth means no signal",
+          features.student_t_l2_settle(
+              spot=70.0, strike=70.0, seconds_left=300.0, sigma=2.0e-4, nu=8.0, s=1.13,
+              l2_obi=None, flow_fast=0.5, flow_slow=0.4) is None,
+          "no resting size to read an imbalance from")
+    check("settlement: outside the program's window there is no signal",
+          features.student_t_l2_settle(
+              spot=70.0, strike=70.0, seconds_left=30.0, sigma=2.0e-4, nu=8.0, s=1.13,
+              l2_obi=0.6, flow_fast=0.5, flow_slow=0.4) is None,
+          "the window is 780s to 60s before the close")
+
+    def entry(q: Quote, *, p_up: float = 0.70, obi: float = 0.6,
+              flow_fast: float = 0.5, flow_slow: float = 0.4,
+              seconds_left: float = 300.0) -> Decision:
+        return decide(quote=q, p_up=p_up, seconds_left=seconds_left, spot_age=0.1,
+                      params=params, position=None, edge_hurdle=Decimal("0.015"),
+                      can_open=True, signal="student_t_l2_settle", now=NOW, spot=70.0,
+                      l2_obi=obi, flow_fast=flow_fast, flow_slow=flow_slow)
+
+    # The happy path: inside the band, the book leans to the bid, the aggressors
+    # lean the same way, and the edge is real.
+    good = entry(settlement_quote("0.46", "0.48"))
+    check("settlement: a YES entry inside the band with the book and flow agreeing is taken",
+          good.action == "entry" and good.side == "YES" and good.price == Decimal("0.48"),
+          f"action={good.action} side={good.side} price={good.price} reason={good.reason!r}")
+
+    # The band is 35c-60c, and the 62c ceiling is on top of it.
+    over_band = entry(settlement_quote("0.59", "0.61"))
+    check("settlement: a 61c cost is outside the 60c band",
+          over_band.action == "abstain" and "outside" in over_band.reason,
+          f"action={over_band.action} reason={over_band.reason!r}")
+    under_band = entry(settlement_quote("0.32", "0.34"))
+    check("settlement: a 34c cost is below the 35c band floor",
+          under_band.action == "abstain" and "outside" in under_band.reason,
+          f"action={under_band.action} reason={under_band.reason!r}")
+    over_cap = entry(settlement_quote("0.36", "0.40"), obi=-0.6, flow_fast=-0.5,
+                      flow_slow=-0.4)
+    check("settlement: a side whose cost is over the 0.62 cap is refused",
+          over_cap.action == "abstain" and f"over the {HARD_MAX_ENTRY_PRICE} cap"
+          in over_cap.reason,
+          f"action={over_cap.action} reason={over_cap.reason!r}")
+
+    # The book and the flow have to lean the way the side does.
+    wrong_book = entry(settlement_quote("0.46", "0.48"), obi=0.05)
+    check("settlement: a book that does not lean to the side refuses the entry",
+          wrong_book.action == "abstain" and "imbalance" in wrong_book.reason,
+          f"action={wrong_book.action} reason={wrong_book.reason!r}")
+    wrong_flow = entry(settlement_quote("0.46", "0.48"), flow_fast=0.10)
+    check("settlement: an aggressor flow that does not lean to the side refuses the entry",
+          wrong_flow.action == "abstain" and "flow" in wrong_flow.reason,
+          f"action={wrong_flow.action} reason={wrong_flow.reason!r}")
+    half_flow = entry(settlement_quote("0.46", "0.48"), flow_fast=0.5, flow_slow=0.10)
+    check("settlement: both flow windows have to agree",
+          half_flow.action == "abstain" and "flow" in half_flow.reason,
+          f"action={half_flow.action} reason={half_flow.reason!r}")
+
+    # The edge is the settlement probability over the premium plus the entry fee.
+    thin = entry(settlement_quote("0.46", "0.48"), p_up=0.50)
+    check("settlement: a trade with no edge over its premium is refused",
+          thin.action == "abstain" and "under" in thin.reason,
+          f"action={thin.action} reason={thin.reason!r}")
+
+    # The exit is the settlement: there is no take-profit and no stop.
+    pos = Position(ticker=TICKER, side="YES", entry=Decimal("0.48"), contracts=10,
+                   opened_ts=NOW - 300, p_entry=0.70, stake=Decimal("4.80"),
+                   tp=Decimal("0.53"), sl=Decimal("0.41"), signal="student_t_l2_settle")
+    held = decide(quote=settlement_quote("0.46", "0.48"), p_up=0.70, seconds_left=120.0,
+                  spot_age=0.1, params=params, position=pos, edge_hurdle=Decimal("0.015"),
+                  can_open=True, signal="student_t_l2_settle", now=NOW, spot=70.0)
+    check("settlement: the position is held to expiry, never taken off early",
+          held.action == "hold" and held.regime == "settle",
+          f"action={held.action} regime={held.regime} reason={held.reason!r}")
+
+
+
     control_partial_fills()
     control_tp_scratch_settle()
     control_fail_safe()
@@ -1057,6 +1296,9 @@ def main() -> int:
     control_sizing()
     control_compounding()
     control_depth_clipping()
+    control_layagate_cache()
+    control_layagate_filter()
+    control_settlement_program()
 
     width = max(len(n) for n, _, _ in RESULTS)
     failed = 0

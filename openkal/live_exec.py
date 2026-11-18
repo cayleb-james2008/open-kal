@@ -160,6 +160,22 @@ class LiveExecutor(Executor):
             if not (slot.params.f2_min_price <= price <= slot.params.f2_max_price):
                 self.note = f"F2 entry refused: pinned cost {price} outside the band"
                 return
+        if decision.signal == "student_t_l2_settle":
+            # The settlement program is a taker rule on the same terms: the order is
+            # an IOC at the ask of the side held, the band is its own, and the cost
+            # ceiling below still refuses a pin that has walked out of the band.
+            pin = (quote.yes_ask if decision.side == "YES"
+                   else (Decimal(1) - quote.yes_bid))
+            if price > pin:
+                self.note = (f"settlement entry refused: ask moved down {price} -> {pin}; "
+                             "no upward price walk")
+                self.record(slot, "cancel", decision.side or "YES", price, 0,
+                            Decimal("0"), "settlement pin: ask moved down")
+                return
+            price = pin
+            if not (slot.params.sl2_min_price <= price <= slot.params.sl2_max_price):
+                self.note = f"settlement entry refused: pinned cost {price} outside the band"
+                return
         # Two invariants outrank every stage: no entry above the $0.62 cost
         # ceiling, and no new risk once the account is 20% below its high-water
         # mark. Both are checked after the F2 re-pin, so a price that moved up into
@@ -314,7 +330,7 @@ class LiveExecutor(Executor):
                 signal=sig, entry_fee=filled_fee,
                 entry_spot=slot.spot,
             )
-            if sig in ("z_obi_flow", "F2_taker_1s"):
+            if sig in ("z_obi_flow", "F2_taker_1s", "student_t_l2_settle"):
                 slot.window_entries = int(getattr(slot, "window_entries", 0)) + 1
             self.record(slot, "entry", side, price, qty, filled_fee, "live fill")
             slot.order = None

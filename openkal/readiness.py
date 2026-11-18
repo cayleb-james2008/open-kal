@@ -52,7 +52,8 @@ PARITY_DB = ROOT / "data" / "openkal-parity.db"
 # is not wired into the hot path must not arm: the engine would trade something else.
 # `z_obi_flow` is the promoted program: strike z, printed-flow imbalance and touch
 # revisions agree, entered post-only with a per-window cap and a halt after one loss.
-ENGINE_PROGRAMS = {"impulse_snipe", "final_minute", "z_obi_flow", "F2_taker_1s"}
+ENGINE_PROGRAMS = {"impulse_snipe", "final_minute", "z_obi_flow", "F2_taker_1s",
+                   "student_t_l2_settle"}
 REQUIRED_PF = 1.15
 REQUIRED_ECE = 0.08
 MIN_OOS_TRADES = 20
@@ -83,7 +84,7 @@ class Check:
 def evaluate(engine: Any) -> dict[str, Any]:
     started = time.time()
     checks: list[Check] = []
-    checks.append(_strategy())
+    checks.append(_strategy(getattr(engine, "running_program", "") or ""))
     checks.append(_controls(engine))
     checks.append(_ws(engine))
     checks.append(_canary())
@@ -228,7 +229,7 @@ def strategy_ece(verdict: dict) -> tuple[float, str]:
     return (float(value) if value is not None else 1.0), "settlement"
 
 
-def _strategy() -> Check:
+def _strategy(running: str = "") -> Check:
     verdict = _verdict_payload()
     if verdict is None:
         return Check("strategy", "OOS-verified positive-EV strategy is loaded", False,
@@ -246,6 +247,11 @@ def _strategy() -> Check:
         problems.append("not promoted")
     if program not in ENGINE_PROGRAMS:
         problems.append(f"program {program or 'none'} is not wired into strategy.decide")
+    # A verdict may only arm the program the engine is actually running. The two
+    # disagreeing is the failure this whole gate exists to prevent: the engine
+    # would trade something nobody verified.
+    if running and program and program != running:
+        problems.append(f"verdict names {program} but the engine runs {running}")
     if net <= 0:
         problems.append(f"OOS net {net} USD")
     if pf < REQUIRED_PF:
