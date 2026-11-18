@@ -74,6 +74,25 @@ def now() -> datetime:
     return datetime.now(timezone.utc).astimezone()
 
 
+def parse_until(raw: str | None) -> datetime | None:
+    """`--until` as an aware local deadline; a bare `08:00` means this box's 08:00.
+
+    `datetime.fromisoformat` returns a naive datetime when the operator leaves the
+    UTC offset off, and comparing that with `now()` raised `TypeError: can't
+    compare offset-naive and offset-aware datetimes` before the loop ever started.
+    `naive.astimezone()` reads a naive datetime as local time, which is what a bare
+    wall-clock argument means here.
+    """
+    if not raw:
+        return None
+    until = datetime.fromisoformat(raw)
+    if until.tzinfo is None:
+        until = until.astimezone()
+    if until < now():
+        until = until + timedelta(days=1)
+    return until
+
+
 def log(msg: str) -> None:
     print(f"{now().isoformat(timespec='seconds')} {msg}", flush=True)
 
@@ -541,9 +560,7 @@ def main() -> int:
         log(f"cache-only run finished rc={scratch.get('cache', {}).get('rc')}")
         return 0 if scratch.get("cache", {}).get("rc") == 0 else 1
 
-    until = datetime.fromisoformat(args.until) if args.until else None
-    if until is not None and until < now():
-        until = until + timedelta(days=1)
+    until = parse_until(args.until)
 
     prior: dict = {}
     try:
