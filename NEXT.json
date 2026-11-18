@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-18T04:46:21-05:00",
+ "updated": "2026-11-18T05:00:24-05:00",
  "goal": "24/7 forward-OOS gate, live compounding, trailing drawdown breaker.",
  "state": {
   "decision": "waiting",
@@ -68,7 +68,7 @@
   }
  },
  "supervision": {
-  "checks": 31,
+  "checks": 32,
   "breaker_trips": 1,
   "breaker_restarts": 1,
   "log": "data/daemon-247.log",
