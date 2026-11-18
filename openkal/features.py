@@ -903,6 +903,119 @@ def student_t_settlement_p_up(*, spot: float, strike: float, seconds_left: float
     return min(1.0, max(0.0, 1.0 - student_t_cdf(x / s, nu)))
 
 
+# ---------------------------------------------------------------------------
+# cross_lane_iv_arb: implied vol, and the dispersion between lanes
+#
+# The Student-t model above answers "what should this binary be worth given the
+# index's own realized movement?". Inverting it answers the other question: "what
+# movement is the book charging for?". When an alt's implied vol runs far above
+# its own realized sigma -- and far above BTC's ratio at the same instant -- the
+# alt's ladder is pricing dispersion the tape has not shown, which pushes both
+# quotes toward 0.50 and leaves the side the index already favours cheap. That
+# gap is the trade, and it is measured entirely on data at or before the tick.
+# ---------------------------------------------------------------------------
+
+IV_FLOOR = 1e-8          # per sqrt(second), far below any live tape's sigma
+IV_CEILING = 5e-2        # per sqrt(second), above the floor of a 15m index print
+
+
+@dataclass(frozen=True)
+class ImpliedVol:
+    """The vol a book's mid implies, and how far it sits above realized movement."""
+
+    iv: float
+    iv_ratio: float
+    mid: float
+    p_model: float
+
+
+def implied_vol_from_mid(mid: float, spot: float, strike: float, seconds_left: float,
+                         nu: float, s: float, realized_sigma: float = 0.0) -> ImpliedVol | None:
+    """Invert `student_t_settlement_p_up` for the sigma that reprices `mid`.
+
+    Bisection in log-sigma, deterministic and bounded: the settlement probability
+    is monotone in sigma (rising when the strike is above spot, falling when it is
+    below), so the bracket is tested for direction rather than assumed. `None`
+    means the mid is outside the range the ladder can express -- exactly 0.50 is
+    an infinite vol, and a mid beyond the bracket's endpoints has no finite one --
+    and callers treat that as "no reading", not as a neutral one.
+
+    `iv_ratio = iv / realized_sigma` is the quantity worth comparing across lanes:
+    raw IV is in index points per sqrt(second) and the four underlyings differ by
+    orders of magnitude, so only the ratio to each lane's own tape is comparable.
+    """
+    try:
+        mid = float(mid)
+        spot = float(spot)
+        strike = float(strike)
+        seconds_left = float(seconds_left)
+        nu = float(nu)
+        s = float(s)
+        realized_sigma = float(realized_sigma or 0.0)
+    except (TypeError, ValueError):
+        return None
+    if not (0.0 < mid < 1.0):
+        return None
+    if not all(math.isfinite(x) and x > 0 for x in (spot, strike, seconds_left, nu, s)):
+        return None
+
+    def p_at(sigma: float) -> float:
+        return student_t_settlement_p_up(spot=spot, strike=strike,
+                                         seconds_left=seconds_left,
+                                         sigma=sigma, nu=nu, s=s)
+
+    lo, hi = IV_FLOOR, IV_CEILING
+    p_lo, p_hi = p_at(lo), p_at(hi)
+    if not (min(p_lo, p_hi) < mid < max(p_lo, p_hi)):
+        return None
+    rising = p_hi > p_lo
+    for _ in range(80):
+        trial = math.sqrt(lo * hi)
+        p = p_at(trial)
+        if (p < mid) == rising:
+            lo = trial
+        else:
+            hi = trial
+        if hi - lo <= 1e-15 * hi:
+            break
+    iv = math.sqrt(lo * hi)
+    if not (math.isfinite(iv) and iv > 0):
+        return None
+    return ImpliedVol(iv=iv,
+                      iv_ratio=(iv / realized_sigma) if realized_sigma > 0 else 0.0,
+                      mid=mid, p_model=p_at(iv))
+
+
+def cross_lane_iv_arb(*, alt_iv: ImpliedVol, btc_iv: ImpliedVol, spot: float, strike: float,
+                      seconds_left: float, sigma: float, nu: float, s: float,
+                      iv_spike_mult: float = 1.35,
+                      min_seconds_left: float = 120.0,
+                      max_seconds_left: float = 720.0) -> Signal | None:
+    """An alt lane is charging far more dispersion than BTC is, right now.
+
+    Both readings must be for the *same window and the same tick*: the caller
+    looks up BTC's ratio at the last sample at or before this trigger, so nothing
+    here can see a later BTC quote. `p_up` is the honest Student-t settlement
+    value at the lane's own realized sigma -- the model's view of the contract, not
+    the book's -- and `strategy.decide` buys whichever side that value says is
+    underpriced inside the cost band.
+    """
+    if not (min_seconds_left <= seconds_left <= max_seconds_left):
+        return None
+    if btc_iv.iv_ratio <= 0 or alt_iv.iv_ratio <= 0:
+        return None
+    if alt_iv.iv_ratio < iv_spike_mult * btc_iv.iv_ratio:
+        return None
+    if sigma <= 0 or not all(math.isfinite(x) and x > 0 for x in (spot, strike, nu, s)):
+        return None
+    p_up = student_t_settlement_p_up(spot=spot, strike=strike, seconds_left=seconds_left,
+                                     sigma=sigma, nu=nu, s=s)
+    return Signal("cross_lane_iv_arb", p_up,
+                  f"alt IV x{alt_iv.iv_ratio:.2f} realized vs BTC x{btc_iv.iv_ratio:.2f} "
+                  f"at {seconds_left:.0f}s left, p {p_up:.3f}",
+                  regime="iv_dispersion")
+
+
 def l2_imbalance(yes_bid_sz: float | None, yes_ask_sz: float | None) -> float | None:
     """True L2 order-book imbalance in [-1, 1].
 

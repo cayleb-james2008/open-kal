@@ -224,6 +224,29 @@ class Params:
     # before the next entry is possible. The cap is the scored rule, and the live
     # path sits inside it.
     sl2_max_window_trades: int = 2
+    # --- cross_lane_iv_arb: alt implied vol dispersion against BTC -------------
+    # The thesis is relative, not absolute: an alt's mid implies more movement than
+    # its own realized sigma, by a wider multiple than BTC's mid does at the same
+    # tick. Raw IV is quoted per index point and the four underlyings differ by
+    # orders of magnitude, so the comparable quantity is the ratio to each lane's
+    # own trailing sigma, and the entry is a dispersion reading rather than a
+    # directional one. 1.35x is the threshold; nothing here is fitted on the slice
+    # it is scored on, because the slice has not been read yet.
+    #
+    # The side held is whichever side the honest (realized-sigma) settlement value
+    # puts above its ask. At a 120-720s horizon on a 15-minute binary there is no
+    # early exit worth paying a second taker fee for: the contract is held to $1.00
+    # or $0.00 settlement, so the entry cost is the whole tail.
+    xiv_iv_spike_mult: float = 1.35
+    xiv_min_seconds_left: float = 120.0
+    xiv_max_seconds_left: float = 720.0
+    xiv_min_price: Decimal = Decimal("0.35")
+    xiv_max_price: Decimal = Decimal("0.60")
+    xiv_max_spread: Decimal = Decimal("0.04")
+    xiv_min_edge: Decimal = Decimal("0.05")
+    # One settlement position per window: it is carried to expiry, so the window is
+    # over before a second entry can be managed. The cap documents the constraint.
+    xiv_max_window_trades: int = 1
 
     def to_json(self) -> dict[str, str]:
         return {k: str(v) for k, v in asdict(self).items()}
@@ -714,6 +737,82 @@ def _student_t_l2_entry(quote: Quote, params: Params, p_yes: float, seconds_left
                      p_model=p_yes)
 
 
+def _cross_lane_iv_exit(quote: Quote, position: Position, params: Params, p_up: float,
+                        now: float) -> Decision:
+    """The dispersion program's exit: settlement, for the same reason as the other one.
+
+    The trade is a mispricing of the contract's own settlement distribution, not a
+    momentum burst with a repriceable edge. Leaving early would pay a second taker
+    fee the entry never budgeted for and would hand back the dispersion gap at
+    whatever the book happened to be bidding.
+    """
+    bid = position.side_bid(quote)
+    confidence = max(p_up, 1 - p_up)
+    return Decision("hold", "dispersion: holding to settlement", side=position.side,
+                    price=bid, p_model=p_up, confidence=confidence, regime="settle")
+
+
+def _cross_lane_iv_entry(quote: Quote, params: Params, p_yes: float, seconds_left: float,
+                         edge_hurdle: Decimal, alt_iv_ratio: float,
+                         btc_iv_ratio: float) -> Decision:
+    """Entry for `cross_lane_iv_arb`: the dispersion ratio, then the cheap side.
+
+    The ratio is re-checked here even though `features.cross_lane_iv_arb` already
+    refused a flat one. `decide` is the hot path and must be able to refuse on its
+    own: a caller that hands it the signal's name and probability without the two
+    ratios gets an abstention, not a trade on an unverified thesis.
+
+    `p_yes` is the honest Student-t value at the lane's own realized sigma, so the
+    side with positive net edge is the side the inflated book has left cheap. The
+    band is on the cost of the side held and the venue's $0.62 ceiling is enforced
+    on top of it, never instead of it; with a hold-to-settlement exit the entry
+    cost is the entire amount at risk.
+    """
+    if not (0.0 <= p_yes <= 1.0):
+        return Decision("abstain", "invalid settlement probability")
+    if not (params.xiv_min_seconds_left <= seconds_left <= params.xiv_max_seconds_left):
+        return Decision("abstain", "outside the dispersion window", p_model=p_yes)
+    if btc_iv_ratio <= 0 or alt_iv_ratio <= 0:
+        return Decision("abstain", "no implied-vol reading for the pair", p_model=p_yes)
+    if alt_iv_ratio < params.xiv_iv_spike_mult * btc_iv_ratio:
+        return Decision("abstain",
+                        f"alt IV x{alt_iv_ratio:.2f} under {params.xiv_iv_spike_mult:.2f}x "
+                        f"BTC x{btc_iv_ratio:.2f}", p_model=p_yes)
+    if quote.spread > params.xiv_max_spread:
+        return Decision("abstain", f"spread {quote.spread:.3f} wide for dispersion",
+                        p_model=p_yes)
+    hurdle = max(params.xiv_min_edge, edge_hurdle, Decimal(str(params.min_net_edge)))
+    best: Decision | None = None
+    misses: list[str] = []
+    for side in ("YES", "NO"):
+        price = quote.yes_ask if side == "YES" else (Decimal(1) - quote.yes_bid)
+        if price > HARD_MAX_ENTRY_PRICE:
+            misses.append(f"{side} cost {price:.2f} over the {HARD_MAX_ENTRY_PRICE} cap")
+            continue
+        if not (params.xiv_min_price <= price <= params.xiv_max_price):
+            misses.append(f"{side} cost {price:.2f} outside "
+                          f"{params.xiv_min_price}-{params.xiv_max_price}")
+            continue
+        p_side = Decimal(str(p_yes if side == "YES" else 1.0 - p_yes))
+        net = p_side - price - taker_fee_per_contract(price)
+        if net < hurdle:
+            misses.append(f"{side} net {net * 100:.2f}c under {hurdle * 100:.2f}c")
+            continue
+        cand = Decision("entry",
+                        f"dispersion {side} at {price:.2f}, alt IV x{alt_iv_ratio:.2f} "
+                        f"vs BTC x{btc_iv_ratio:.2f}, p {p_side:.3f}, "
+                        f"net {net * 100:.2f}c, hold to settlement",
+                        side=side, price=price, p_model=p_yes, edge=net,
+                        confidence=max(float(p_side), 1.0 - float(p_side)),
+                        regime="iv_dispersion", signal="cross_lane_iv_arb")
+        if best is None or cand.edge > best.edge:
+            best = cand
+    if best is not None:
+        return best
+    return Decision("abstain", "; ".join(misses[:2]) or "no side inside the dispersion band",
+                    p_model=p_yes)
+
+
 def settlement_cost_ok(price: Decimal, params: Params) -> bool:
     return max(Decimal("0.35"), params.sl2_min_price) <= price <= min(
         Decimal("0.60"), HARD_MAX_ENTRY_PRICE, params.sl2_max_price)
@@ -738,7 +837,8 @@ def decide(*, quote: Quote, p_up: float, seconds_left: float, spot_age: float,
            params: Params, position: Position | None, edge_hurdle: Decimal,
            can_open: bool, signal: str = "", now: float = 0.0, spot: float = 0.0,
            impulse_bps: float = 0.0, l2_obi: float = 0.0, flow_fast: float = 0.0,
-           flow_slow: float = 0.0) -> Decision:
+           flow_slow: float = 0.0, iv_alt_ratio: float = 0.0,
+           iv_btc_ratio: float = 0.0) -> Decision:
     """The whole hot path, deterministic and side-effect free."""
     # A crossed book means one side is stale. The venue would not fill the stale side,
     # so opening on it books a fantasy spread. Applies to every caller, including replay.
@@ -758,6 +858,8 @@ def decide(*, quote: Quote, p_up: float, seconds_left: float, spot_age: float,
             return _f2_exit(quote, position, params, p_up, now)
         if position.signal == "student_t_l2_settle":
             return _student_t_l2_exit(quote, position, params, p_up, now)
+        if position.signal == "cross_lane_iv_arb":
+            return _cross_lane_iv_exit(quote, position, params, p_up, now)
         if position.signal == "z_obi_flow":
             return _zobi_exit(quote, position, params, p_up, now)
         if position.signal == "impulse_snipe":
@@ -790,6 +892,7 @@ def decide(*, quote: Quote, p_up: float, seconds_left: float, spot_age: float,
     lock_in = signal == "final_minute"
     impulse = signal == "impulse_snipe"
     settlement = signal == "student_t_l2_settle"
+    cross_lane = signal == "cross_lane_iv_arb"
     # Each program owns the part of the window it can actually manage. The
     # settlement program is priced off the average that is left to print, so its
     # floor is its own and not the generic 90s cut.
@@ -797,6 +900,8 @@ def decide(*, quote: Quote, p_up: float, seconds_left: float, spot_age: float,
         floor = params.lock_in_min_seconds
     elif settlement:
         floor = params.sl2_min_seconds_left
+    elif cross_lane:
+        floor = params.xiv_min_seconds_left
     else:
         floor = params.min_seconds_left
     if seconds_left < floor:
@@ -808,6 +913,9 @@ def decide(*, quote: Quote, p_up: float, seconds_left: float, spot_age: float,
                                    l2_obi, flow_fast, flow_slow)
     if signal == "z_obi_flow":
         return _zobi_entry(quote, params, p_up, seconds_left)
+    if signal == "cross_lane_iv_arb":
+        return _cross_lane_iv_entry(quote, params, p_up, seconds_left, edge_hurdle,
+                                    iv_alt_ratio, iv_btc_ratio)
 
     confidence = max(p_up, 1 - p_up)
     side = "YES" if p_up >= quote.mid else "NO"

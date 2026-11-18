@@ -69,6 +69,17 @@ CREATE TABLE IF NOT EXISTS ws_trade (
 CREATE INDEX IF NOT EXISTS ws_trade_ts ON ws_trade(ticker, ts);
 
 CREATE TABLE IF NOT EXISTS ws_misc (ts REAL, kind TEXT, payload TEXT);
+
+-- Per-venue spot prints. BRTI is an average of Coinbase and Kraken, so the venue
+-- name and the two touches are part of the tick, not decoration: a future study of
+-- cross-exchange basis or CF Benchmarks lead-lag needs to know which venue printed
+-- a price and what that venue's book looked like when it did. `price` is the last
+-- trade; `bid`/`ask` are NULL when the source only publishes a trade price.
+CREATE TABLE IF NOT EXISTS spot_ticks (
+    ts REAL NOT NULL, symbol TEXT NOT NULL, source TEXT NOT NULL,
+    price REAL, bid REAL, ask REAL
+);
+CREATE INDEX IF NOT EXISTS spot_ticks_symbol_ts ON spot_ticks(symbol, ts);
 """
 
 
@@ -295,6 +306,42 @@ class Store:
         row = self._db.execute(sql, args).fetchone()
         return {"trades": int(row["trades"]), "pnl": row["pnl"]}
 
+    def spot_batch(self, rows: list[tuple]) -> None:
+        """Per-venue spot prints, written in batches outside the socket receive loop.
+
+        `rows` are `(ts, symbol, source, price, bid, ask)`. The spot sockets print
+        several times a second per venue, so one commit per print would put SQLite
+        on the tick path; the engine buffers and hands over a batch instead.
+        """
+        if not rows:
+            return
+        with self._lock:
+            self._db.executemany(
+                "INSERT INTO spot_ticks(ts,symbol,source,price,bid,ask) VALUES(?,?,?,?,?,?)",
+                rows)
+            self._db.commit()
+
+    def spot_ticks(self, symbol: str, since_ts: float = 0.0,
+                   limit: int = 5000) -> list[dict[str, Any]]:
+        """Recorded spot prints for one symbol, oldest first."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT ts,symbol,source,price,bid,ask FROM spot_ticks"
+                " WHERE symbol=? AND ts>=? ORDER BY ts ASC LIMIT ?",
+                (symbol, since_ts, limit)).fetchall()
+        return [dict(r) for r in rows]
+
+    def spot_venues(self, since_ts: float = 0.0) -> dict[str, dict[str, int]]:
+        """Rows per symbol per venue in the epoch, so a dead socket is visible."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT symbol, source, COUNT(*) n FROM spot_ticks WHERE ts>=?"
+                " GROUP BY symbol, source ORDER BY symbol, source", (since_ts,)).fetchall()
+        out: dict[str, dict[str, int]] = {}
+        for r in rows:
+            out.setdefault(r["symbol"], {})[r["source"]] = int(r["n"])
+        return out
+
     def ws_batch(self, rows: list[tuple]) -> None:
         """Batched persistence for the websocket plane, outside its receive loop."""
         books, indices, trades, misc = [], [], [], []
@@ -410,3 +457,6 @@ class Store:
     def prune(self, keep_s: float = 86400 * 3) -> None:
         cutoff = time.time() - keep_s
         self._exec("DELETE FROM ticks WHERE ts<?", (cutoff,))
+        # The spot tape is a diagnostics/research input, not the ledger: it is
+        # pruned on the same window so a 5Hz feed cannot grow the file forever.
+        self._exec("DELETE FROM spot_ticks WHERE ts<?", (cutoff,))

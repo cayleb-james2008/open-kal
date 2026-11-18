@@ -1721,6 +1721,169 @@ def control_decay_breaker() -> None:
           rolling_decay_breaker(["x"] * 10, 100) is None, "bad rows ignored")
 
 
+def control_implied_vol() -> None:
+    """The Student-t inversion, round-tripped in both directions."""
+    for lane, (nu, s) in features.STUDENT_T_FIT.items():
+        for spot, strike in ((70_000.0, 69_800.0), (70_000.0, 70_250.0)):
+            secs = 420.0
+            for sigma in (2e-4, 5e-4, 1.1e-3):
+                mid = features.student_t_settlement_p_up(
+                    spot=spot, strike=strike, seconds_left=secs, sigma=sigma, nu=nu, s=s)
+                iv = features.implied_vol_from_mid(mid, spot, strike, secs, nu, s, sigma)
+                ok = (iv is not None and abs(iv.p_model - mid) < 1e-4
+                      and abs(iv.iv - sigma) / sigma < 0.02
+                      and abs(iv.iv_ratio - iv.iv / sigma) < 1e-9)
+                check(f"iv: {lane} round-trips mid {mid:.4f} at sigma {sigma:.1e}", ok,
+                      "no inversion" if iv is None else
+                      f"iv={iv.iv:.6e} p={iv.p_model:.6f} mid={mid:.6f}")
+
+    check("iv: a mid of exactly 0.50 has no finite implied vol",
+          features.implied_vol_from_mid(0.5, 70_000.0, 69_800.0, 420.0, 8.0, 1.13) is None,
+          "unbounded sigma")
+    check("iv: an out-of-range mid is refused rather than clamped",
+          features.implied_vol_from_mid(0.0, 70_000.0, 69_800.0, 420.0, 8.0, 1.13) is None
+          and features.implied_vol_from_mid(1.0, 70_000.0, 69_800.0, 420.0, 8.0, 1.13) is None,
+          "mid must be inside (0, 1)")
+    flat = features.implied_vol_from_mid(0.62, 70_000.0, 69_800.0, 420.0, 8.0, 1.13, 0.0)
+    check("iv: without a realized sigma the ratio is 0.0, never a fabricated one",
+          flat is not None and flat.iv_ratio == 0.0, str(flat))
+    # A strike above spot makes the settlement probability *rise* with sigma; below
+    # spot it falls. The inversion has to bracket the right way round in both cases.
+    below = features.student_t_settlement_p_up(spot=70_000.0, strike=69_800.0,
+                                               seconds_left=420.0, sigma=2e-4, nu=8.0, s=1.13)
+    above = features.student_t_settlement_p_up(spot=70_000.0, strike=70_250.0,
+                                               seconds_left=420.0, sigma=2e-4, nu=8.0, s=1.13)
+    check("iv: the settlement value leans the way the strike says",
+          below > 0.5 > above, f"strike below spot {below:.3f}, above {above:.3f}")
+
+
+def control_cross_lane_iv() -> None:
+    """`cross_lane_iv_arb`: the ratio gate, the cheap side, and the $0.62 cap."""
+    p = Params()
+
+    def call(bid: str, ask: str, p_yes: float, alt: float, btc: float,
+             secs: float = 300.0):
+        q = quote(bid, ask)
+        return decide(quote=q, p_up=p_yes, seconds_left=secs, spot_age=0.0, params=p,
+                      position=None, edge_hurdle=p.edge_hurdle, can_open=True,
+                      signal="cross_lane_iv_arb", now=NOW, spot=q.strike,
+                      iv_alt_ratio=alt, iv_btc_ratio=btc)
+
+    flat = call("0.52", "0.54", 0.62, alt=1.0, btc=0.95)
+    check("cross-lane IV: a flat ratio is refused even with a large edge",
+          flat.action == "abstain" and "under 1.35x" in flat.reason, flat.reason)
+    missing = call("0.52", "0.54", 0.62, alt=0.0, btc=0.0)
+    check("cross-lane IV: no reading on either lane is an abstention, not a trade",
+          missing.action == "abstain" and "no implied-vol reading" in missing.reason,
+          missing.reason)
+
+    yes = call("0.52", "0.54", 0.62, alt=2.0, btc=1.0)
+    check("cross-lane IV: the underpriced YES is bought at its ask",
+          yes.action == "entry" and yes.side == "YES" and yes.price == Decimal("0.54")
+          and yes.signal == "cross_lane_iv_arb" and yes.regime == "iv_dispersion",
+          f"{yes.action} {yes.side} @ {yes.price} edge={yes.edge}")
+
+    # YES at 0.64 is over the cap, so the cheap side is the NO at 1 - 0.62 = 0.38.
+    over = call("0.62", "0.64", 0.53, alt=2.0, btc=1.0)
+    check("cross-lane IV: a side over $0.62 is refused and the cheap opposite is taken",
+          over.action == "entry" and over.side == "NO" and over.price == Decimal("0.38"),
+          f"{over.action} {over.side} @ {over.price} {over.reason}")
+
+    # The band ends at $0.60, which is the tighter of the two limits: a 0.62 side
+    # is inside the venue cap but outside the rule's own cost band.
+    top = call("0.58", "0.60", 0.72, alt=2.0, btc=1.0)
+    check("cross-lane IV: the $0.60 band top is inclusive",
+          top.action == "entry" and top.side == "YES" and top.price == Decimal("0.60"),
+          f"{top.action} {top.side} @ {top.price}")
+    over_band = call("0.60", "0.62", 0.72, alt=2.0, btc=1.0)
+    check("cross-lane IV: a side at the $0.62 cap is still refused by the $0.60 band",
+          over_band.action == "abstain" and "0.62 outside" in over_band.reason,
+          over_band.reason)
+
+    band = call("0.30", "0.32", 0.10, alt=2.0, btc=1.0)
+    check("cross-lane IV: both sides outside the $0.35-$0.60 band abstains",
+          band.action == "abstain", band.reason)
+    early = call("0.52", "0.54", 0.62, alt=2.0, btc=1.0, secs=100.0)
+    check("cross-lane IV: 100s left is outside the 120-720s window",
+          early.action == "abstain", early.reason)
+    wide = call("0.50", "0.545", 0.62, alt=2.0, btc=1.0)
+    check("cross-lane IV: a 4.5c book is too wide for a dispersion entry",
+          wide.action == "abstain" and "dispersion" in wide.reason, wide.reason)
+
+    pos = Position(ticker=TICKER, side="YES", entry=Decimal("0.51"), contracts=10,
+                   opened_ts=NOW - 30, p_entry=0.6, stake=Decimal("5.10"),
+                   tp=Decimal("0.56"), sl=Decimal("0.26"), signal="cross_lane_iv_arb")
+    held = decide(quote=quote("0.60", "0.62"), p_up=0.66, seconds_left=300.0, spot_age=0.0,
+                  params=p, position=pos, edge_hurdle=p.edge_hurdle, can_open=True,
+                  signal="cross_lane_iv_arb", now=NOW)
+    check("cross-lane IV: a carried contract holds to settlement, never takes 5c early",
+          held.action == "hold" and held.regime == "settle", f"{held.action} {held.reason}")
+
+    worst = Decimal("0")
+    for i in range(1, 40):
+        bid = Decimal("0.20") + Decimal(i) * Decimal("0.015")
+        ask = bid + Decimal("0.02")
+        d = call(str(bid), str(ask), 0.55, alt=2.0, btc=1.0)
+        if d.action == "entry" and d.price > worst:
+            worst = d.price
+    check("cross-lane IV: no entry in a bid sweep ever costs more than $0.62",
+          worst <= HARD_MAX_ENTRY_PRICE, f"worst entry {worst}")
+
+
+def control_spot_ticks() -> None:
+    """Per-venue spot prints: the table, the venue, the touch, and the feed."""
+    import tempfile
+
+    from openkal.feeds import SpotFeed
+    from openkal.store import Store
+
+    with tempfile.TemporaryDirectory() as tmp:
+        store = Store(Path(tmp) / "spot.db")
+        store.spot_batch([
+            (100.0, "BTC-USD", "coinbase", 101.0, 100.9, 101.1),
+            (100.1, "BTC-USD", "kraken", 100.8, 100.7, 100.9),
+            (100.2, "BTC-USD", "coinbase", 101.2, 101.1, 101.3),
+            (100.3, "ETH-USD", "coinbase", 3.0, 2.99, 3.01),
+        ])
+        read = store.spot_ticks("BTC-USD", 0.0)
+        check("spot_ticks: both venues read back in time order with their own prices",
+              [r["source"] for r in read] == ["coinbase", "kraken", "coinbase"]
+              and [r["price"] for r in read] == [101.0, 100.8, 101.2],
+              str([(r["source"], r["price"]) for r in read]))
+        check("spot_ticks: the venue's touch is persisted with the print",
+              read[0]["bid"] == 100.9 and read[0]["ask"] == 101.1
+              and read[1]["bid"] == 100.7 and read[1]["ask"] == 100.9,
+              f"{read[0]['bid']}/{read[0]['ask']} {read[1]['bid']}/{read[1]['ask']}")
+        check("spot_ticks: the symbol filter does not mix lanes",
+              len(store.spot_ticks("ETH-USD", 0.0)) == 1, str(len(store.spot_ticks("ETH-USD"))),
+              )
+        idx = {r[1] for r in store._db.execute("PRAGMA index_list(spot_ticks)")}
+        check("spot_ticks: indexed on (symbol, ts)",
+              "spot_ticks_symbol_ts" in idx, str(sorted(idx)))
+        check("spot_ticks: per-venue counts are visible for a dead-socket check",
+              store.spot_venues(0.0).get("BTC-USD") == {"coinbase": 2, "kraken": 1},
+              str(store.spot_venues(0.0)))
+        store.prune(keep_s=0.0)
+        check("spot_ticks: prune ages the spot tape out with the tick tape",
+              store.spot_ticks("BTC-USD", 0.0) == [], "not pruned")
+        store._db.close()
+
+    wide: list[tuple] = []
+    feed = SpotFeed(["BTC-USD"],
+                    lambda sym, price, src, bid, ask: wide.append((sym, price, src, bid, ask)))
+    feed._set("BTC-USD", 101.5, "kraken", 101.4, 101.6)
+    check("feeds: a five-argument consumer receives the venue touch",
+          wide == [("BTC-USD", 101.5, "kraken", 101.4, 101.6)], str(wide))
+    check("feeds: the touch is readable per venue",
+          feed.touch("BTC-USD", "kraken")[1:] == (101.4, 101.6),
+          str(feed.touch("BTC-USD", "kraken")))
+    narrow: list[tuple] = []
+    legacy = SpotFeed(["BTC-USD"], lambda sym, price, src: narrow.append((sym, price, src)))
+    legacy._set("BTC-USD", 101.5, "coinbase")
+    check("feeds: a three-argument consumer still works unchanged",
+          narrow == [("BTC-USD", 101.5, "coinbase")], str(narrow))
+
+
 def main() -> int:
     tp = Decision("exit_tp", "take-profit reached", side="NO", price=Decimal("0.88"))
 
@@ -1873,6 +2036,9 @@ def main() -> int:
     control_until_parse()
     control_regime_gate()
     control_decay_breaker()
+    control_implied_vol()
+    control_cross_lane_iv()
+    control_spot_ticks()
 
     width = max(len(n) for n, _, _ in RESULTS)
     failed = 0

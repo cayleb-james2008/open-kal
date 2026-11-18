@@ -193,14 +193,37 @@ class Engine:
         self.trade_hist: dict[str, list[tuple[float, float, int]]] = {}
         self.touch_hist: dict[str, list[tuple[float, Decimal, Decimal]]] = {}
         self.lag_ms: float = 0.0
+        # Per-venue spot prints waiting to be persisted. Coinbase and Kraken are
+        # both BRTI constituents, and the basis between them is a lead-lag input
+        # no within-book feature can see, so the print is kept with its venue and
+        # touch. Buffered: one SQLite commit per print would sit on the socket path.
+        self._spot_rows: list[tuple] = []
+        self._last_spot_flush = time.time()
 
     # ---------- feed callbacks ----------
-    def _on_price(self, symbol: str, price: float, source: str) -> None:
+    def _on_price(self, symbol: str, price: float, source: str,
+                  bid: float | None = None, ask: float | None = None) -> None:
         now = time.time()
         self.tape.add(symbol, now, price)
+        self._spot_rows.append((now, symbol, source, float(price),
+                                None if bid is None else float(bid),
+                                None if ask is None else float(ask)))
+        if len(self._spot_rows) >= 50 or now - self._last_spot_flush >= 2.0:
+            self._flush_spot()
         for slot in self.slots:
             if slot.cfg.feed_symbol == symbol:
                 slot.spot = price
+
+    def _flush_spot(self) -> None:
+        """Persist the buffered spot prints; a storage error must not stop the feed."""
+        rows, self._spot_rows = self._spot_rows, []
+        self._last_spot_flush = time.time()
+        if not rows:
+            return
+        try:
+            self.store.spot_batch(rows)
+        except Exception:  # noqa: BLE001 - the tape is evidence, not the hot path
+            self.market_errors += 1
 
     def _on_ws_event(self, msg: dict[str, Any]) -> None:
         """Venue print tape, per contract, in receive order (the flow term reads it)."""
