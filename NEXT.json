@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-17T23:00:24-05:00",
+ "updated": "2026-11-17T23:36:18-05:00",
  "goal": "24/7 forward-OOS gate, live compounding, trailing drawdown breaker.",
  "state": {
   "decision": "waiting",
@@ -20,16 +20,16 @@
  },
  "forward_oos": {
   "start_ts": 1794909600,
-  "trades": 31,
-  "net": -19.18,
-  "pf": 0.6604,
-  "payoff_ece": 0.3876,
+  "trades": 32,
+  "net": -17.52,
+  "pf": 0.6898,
+  "payoff_ece": 0.3752,
   "gate": {
    "pass": false,
    "reasons": [
-    "forward net $-19.18 <= 0",
-    "forward PF 0.660 < 1.15",
-    "payoff ECE 0.3876 > 0.08",
+    "forward net $-17.52 <= 0",
+    "forward PF 0.690 < 1.15",
+    "payoff ECE 0.3752 > 0.08",
     "1 profitable lane(s) < 2"
    ],
    "lanes_profitable": 1
