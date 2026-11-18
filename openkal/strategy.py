@@ -218,9 +218,11 @@ class Params:
     # Net edge after the entry's taker fee, in dollars per contract. The exit is
     # settlement, so there is no exit cost to charge.
     sl2_min_edge: Decimal = Decimal("0.05")
-    # At most two entries in one 15-minute window, at least a minute apart.
+    # At most two entries in one 15-minute window. The live lane can in fact take
+    # only one: a settlement position is carried to expiry, so the window is over
+    # before the next entry is possible. The cap is the scored rule, and the live
+    # path sits inside it.
     sl2_max_window_trades: int = 2
-    sl2_cooldown_s: float = 60.0
 
     def to_json(self) -> dict[str, str]:
         return {k: str(v) for k, v in asdict(self).items()}
