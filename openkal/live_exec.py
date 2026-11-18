@@ -45,6 +45,39 @@ def sized_contracts(bankroll: Decimal, price: Decimal, params: Any,
     return max(0, min(contracts_for(bankroll, price), stage.max_contracts, by_risk))
 
 
+# A single order may take at most half of the size resting at the ask it pays. The
+# ladder in `data/openkal-prod.db` says how thin these books are: a 300-lot stage 3
+# order into a touch holding 40 contracts is a market impact the study never priced,
+# and on a 24c NO the rest of the book is 40c away.
+DEPTH_CLIP_FRACTION = Decimal("0.50")
+
+
+def depth_clipped(qty: int, side: str, quote: Any) -> int:
+    """Clip `qty` to half the size resting on the ask this order would pay.
+
+    A YES entry pays the YES ask, so its depth is `yes_ask_sz`; a NO entry buys NO
+    at `1 - yes_bid`, so its depth is the resting YES bid, `yes_bid_sz`. Rounded
+    down, never up: a 3-lot touch allows 1 contract, and a 1-lot touch allows none.
+
+    When the touch size is unknown -- a quote from a REST snapshot, or a moment
+    with no socket ladder -- nothing is clipped, because the alternative is
+    refusing every entry on a tape that does not record depth.
+    """
+    if qty <= 0:
+        return 0
+    size = getattr(quote, "yes_ask_sz" if side == "YES" else "yes_bid_sz", None)
+    if size is None:
+        return qty
+    try:
+        resting = Decimal(str(size))
+    except (ArithmeticError, TypeError, ValueError):
+        return qty
+    if resting <= 0:
+        return qty
+    allowed = int((resting * DEPTH_CLIP_FRACTION).to_integral_value(rounding=ROUND_DOWN))
+    return max(0, min(qty, allowed))
+
+
 def _dec(value: Any) -> Decimal:
     try:
         return Decimal(str(value or "0"))
@@ -130,7 +163,11 @@ class LiveExecutor(Executor):
                         "20% trailing peak drawdown")
             return
         qty = sized_contracts(slot.bankroll, price, slot.params, equity=equity)
+        qty = depth_clipped(qty, decision.side or "YES", quote)
         if qty <= 0:
+            self.note = "entry skipped: the resting ask is too thin to size against"
+            self.record(slot, "cancel", decision.side or "YES", price, 0, Decimal("0"),
+                        "resting depth below one contract")
             return
         reserved = price * qty
         if reserved > self.ctx.cash:

@@ -941,6 +941,11 @@ class Engine:
                 quote,
                 yes_bid=book.yes_bid if book.yes_bid is not None else Decimal("0"),
                 yes_ask=book.yes_ask if book.yes_ask is not None else Decimal("1"),
+                # Carry the ladder's touch sizes with the price: the live executor
+                # clips its order to half the resting ask it would pay, and a quote
+                # without depth cannot be sized against the book it is trading.
+                yes_bid_sz=book.yes_bid_sz,
+                yes_ask_sz=book.yes_ask_sz,
                 updated_ts=book.updated_ts,
                 received_ts=now,
             )

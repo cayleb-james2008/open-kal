@@ -244,6 +244,11 @@ class Quote:
     last: Decimal
     updated_ts: float
     received_ts: float
+    # Resting size at the touch, when the quote came off the socket ladder. A quote
+    # from a REST snapshot (or a tape recorded before the ladder was persisted)
+    # carries None, and sizing then clips nothing rather than inventing depth.
+    yes_bid_sz: Decimal | None = None
+    yes_ask_sz: Decimal | None = None
 
     @property
     def mid(self) -> Decimal:

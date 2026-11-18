@@ -32,7 +32,8 @@ from openkal.config import (HARD_MAX_ENTRY_PRICE, peak_drawdown_tripped,  # noqa
                             stage_for, staged_risk_cap)
 from openkal.engine import Engine  # noqa: E402
 from openkal.execution import Executor, RestingExit, RestingOrder  # noqa: E402
-from openkal.live_exec import LiveExecutor, sized_contracts  # noqa: E402
+from openkal.live_exec import (DEPTH_CLIP_FRACTION, LiveExecutor,  # noqa: E402
+                               depth_clipped, sized_contracts)
 from openkal.strategy import Decision, Params, Position, Quote, decide  # noqa: E402
 
 TICKER = "KXSOL15M-26NOV161300-00"
@@ -87,10 +88,13 @@ class FakeBroker:
                  "fee_cost": "0.015", "is_taker": True}]
 
 
-def quote(bid: str, ask: str) -> Quote:
+def quote(bid: str, ask: str, bid_sz: str | None = None,
+          ask_sz: str | None = None) -> Quote:
     return Quote(ticker=TICKER, series="KXSOL15M", strike=70.0, close_ts=NOW + 200,
                  yes_bid=Decimal(bid), yes_ask=Decimal(ask),
-                 last=Decimal(bid), updated_ts=NOW, received_ts=NOW)
+                 last=Decimal(bid), updated_ts=NOW, received_ts=NOW,
+                 yes_bid_sz=None if bid_sz is None else Decimal(bid_sz),
+                 yes_ask_sz=None if ask_sz is None else Decimal(ask_sz))
 
 
 def slot_for(q: Quote) -> SimpleNamespace:
@@ -670,19 +674,28 @@ def control_sizing() -> None:
 
 
 def control_compounding() -> None:
-    """Staged fractional-Kelly sizing: three tiers, one ceiling, one breaker.
+    """Staged fractional-Kelly sizing: six tiers, six ceilings, one breaker.
 
     The 16:00 trade lost $42.97 because a $41 lane bought 170 contracts; the fix was
     a flat $15 / 50-contract cap, which by design cannot compound. These checks pin
-    the stage table that replaces it: the cap still binds at stage 1, stages 2 and 3
-    lift it as the account grows, and neither the $0.62 entry ceiling nor the 20%
-    trailing-peak breaker is ever stage-dependent.
+    the stage table that replaces it: the cap still binds at stage 1, stages 2-6
+    lift both the risk fraction and the ceiling as the account grows (so a validated
+    lane can compound to $1,000, $10,000 and $300,000 rather than stalling at 250
+    contracts), and neither the $0.62 entry ceiling nor the 20% trailing-peak breaker
+    is ever stage-dependent.
     """
     tiers = ((Decimal("121.46"), "stage1", Decimal("0.125"), 50),
              (Decimal("174.99"), "stage1", Decimal("0.125"), 50),
              (Decimal("175.00"), "stage2", Decimal("0.20"), 120),
              (Decimal("349.99"), "stage2", Decimal("0.20"), 120),
-             (Decimal("350.00"), "stage3", Decimal("0.25"), 250))
+             (Decimal("350.00"), "stage3", Decimal("0.25"), 300),
+             (Decimal("999.99"), "stage3", Decimal("0.25"), 300),
+             (Decimal("1000.00"), "stage4", Decimal("0.25"), 1_000),
+             (Decimal("4999.99"), "stage4", Decimal("0.25"), 1_000),
+             (Decimal("5000.00"), "stage5", Decimal("0.20"), 2_500),
+             (Decimal("24999.99"), "stage5", Decimal("0.20"), 2_500),
+             (Decimal("25000.00"), "stage6", Decimal("0.15"), 5_000),
+             (Decimal("300000.00"), "stage6", Decimal("0.15"), 5_000))
     for equity, name, pct, ceiling in tiers:
         stage = stage_for(equity)
         check(f"compounding: ${equity} resolves to {name} ({pct * 100:g}%, {ceiling} contracts)",
@@ -707,7 +720,37 @@ def control_compounding() -> None:
     check("compounding: stage 2 caps at 120 contracts where the risk cap allows it",
           s2 == 120, f"qty={s2}")
     s3 = sized_contracts(Decimal("87.50"), Decimal("0.30"), params, equity=Decimal("350.00"))
-    check("compounding: stage 3 caps at 250 contracts", s3 == 250, f"qty={s3}")
+    check("compounding: stage 3 allows 300 contracts where the 25% budget affords it",
+          s3 == 291 and Decimal("0.30") * s3 <= Decimal("87.50"), f"qty={s3}")
+    check("compounding: stage 3 binds its 300-contract ceiling, not the old 250",
+          sized_contracts(Decimal("400"), Decimal("0.30"), params,
+                          equity=Decimal("400.00")) == 300,
+          f"qty={sized_contracts(Decimal('400'), Decimal('0.30'), params, equity=Decimal('400.00'))}")
+
+    # Stages 4-6: the ladder keeps lifting the ceiling instead of hitting a 250 wall.
+    s4 = sized_contracts(Decimal("1000"), Decimal("0.30"), params, equity=Decimal("1000.00"))
+    check("compounding: stage 4 lifts the ceiling to 1,000 contracts",
+          s4 == 833 and sized_contracts(Decimal("1500"), Decimal("0.30"), params,
+                                        equity=Decimal("1200.00")) == 1000,
+          f"qty={s4}")
+    s5 = sized_contracts(Decimal("5000"), Decimal("0.30"), params, equity=Decimal("5000.00"))
+    check("compounding: stage 5 caps at 2,500 contracts and risks 20% of equity",
+          s5 == 2500 and Decimal("0.30") * s5 <= Decimal("1000.00"), f"qty={s5}")
+    s6 = sized_contracts(Decimal("25000"), Decimal("0.30"), params, equity=Decimal("25000.00"))
+    check("compounding: stage 6 caps at 5,000 contracts and risks 15% of equity",
+          s6 == 5000 and Decimal("0.30") * s6 <= Decimal("3750.00"), f"qty={s6}")
+
+    boundaries = [
+        (Decimal("174.99"), "stage1"), (Decimal("175.00"), "stage2"),
+        (Decimal("999.99"), "stage3"), (Decimal("1000.00"), "stage4"),
+        (Decimal("4999.99"), "stage4"), (Decimal("5000.00"), "stage5"),
+        (Decimal("24999.99"), "stage5"), (Decimal("25000.00"), "stage6"),
+        (Decimal("300000.00"), "stage6"),
+    ]
+    wrong = [(str(eq), stage_for(eq).name, want) for eq, want in boundaries
+             if stage_for(eq).name != want]
+    check("compounding: the six stages break exactly at 175/350/1k/5k/25k", not wrong,
+          f"wrong={wrong}")
     sized_by_risk = sized_contracts(Decimal("100.00"), Decimal("0.47"), params,
                                     equity=Decimal("200.00"))
     check("compounding: the 20% risk cap binds before the contract ceiling",
@@ -768,6 +811,70 @@ def control_compounding() -> None:
           slot.order is not None and slot.order.contracts == 85
           and broker.placed and broker.placed[-1]["contracts"] == 85,
           f"contracts={slot.order.contracts if slot.order else None}")
+
+
+def control_depth_clipping() -> None:
+    """An order may take at most half the size resting at the ask it would pay."""
+    check("depth: the clip fraction is 50% of the resting touch",
+          DEPTH_CLIP_FRACTION == Decimal("0.50"), f"fraction={DEPTH_CLIP_FRACTION}")
+    check("depth: a YES entry clips to half the resting YES ask size",
+          depth_clipped(85, "YES", quote("0.45", "0.47", ask_sz="40")) == 20,
+          f"qty={depth_clipped(85, 'YES', quote('0.45', '0.47', ask_sz='40'))}")
+    check("depth: a NO entry clips to half the resting YES bid (its NO ask)",
+          depth_clipped(85, "NO", quote("0.45", "0.47", bid_sz="12")) == 6,
+          f"qty={depth_clipped(85, 'NO', quote('0.45', '0.47', bid_sz='12'))}")
+    check("depth: an odd touch rounds down, never up",
+          depth_clipped(85, "YES", quote("0.45", "0.47", ask_sz="7")) == 3,
+          f"qty={depth_clipped(85, 'YES', quote('0.45', '0.47', ask_sz='7'))}")
+    check("depth: a one-lot touch supports no order at all",
+          depth_clipped(85, "YES", quote("0.45", "0.47", ask_sz="1")) == 0,
+          f"qty={depth_clipped(85, 'YES', quote('0.45', '0.47', ask_sz='1'))}")
+    check("depth: an unknown touch size clips nothing",
+          depth_clipped(85, "YES", quote("0.45", "0.47")) == 85
+          and depth_clipped(85, "NO", quote("0.45", "0.47")) == 85,
+          f"qty={depth_clipped(85, 'YES', quote('0.45', '0.47'))}")
+    check("depth: a clip never grows a small order",
+          depth_clipped(4, "YES", quote("0.45", "0.47", ask_sz="400")) == 4,
+          f"qty={depth_clipped(4, 'YES', quote('0.45', '0.47', ask_sz='400'))}")
+
+    # The live entry path applies the clip, and a thin book refuses the entry
+    # instead of sending a zero-lot order.
+    thin = quote("0.45", "0.47", bid_sz="60", ask_sz="9")
+    slot, broker = f2_slot(thin), FakeBroker()
+    slot.position = None
+    slot.bankroll = Decimal("50.00")
+    ex = LiveExecutor(SimpleNamespace(cash=Decimal("50"), realized=Decimal("0"), fills=[],
+                                      store=None, supervisor=None, source="live",
+                                      equity=Decimal("350.00"),
+                                      peak_equity=Decimal("350.00")), broker)
+    entry = Decision("entry", "z+flow at 0.47", side="YES", price=Decimal("0.47"),
+                     signal="z_obi_flow")
+    asyncio.run(ex._place_entry(slot, entry, thin, NOW, 300.0))
+    check("depth: the live order is clipped to 4 of the 9 resting at the ask",
+          slot.order is not None and slot.order.contracts == 4
+          and broker.placed and broker.placed[-1]["contracts"] == 4,
+          f"contracts={slot.order.contracts if slot.order else None}")
+
+    slot, broker = f2_slot(quote("0.45", "0.47", ask_sz="1")), FakeBroker()
+    slot.position = None
+    slot.bankroll = Decimal("50.00")
+    ex = LiveExecutor(ctx(), broker)
+    asyncio.run(ex._place_entry(slot, entry, slot.quote, NOW, 300.0))
+    check("depth: a one-lot book refuses the order rather than sizing it to zero",
+          not broker.placed and slot.order is None and "too thin" in (ex.note or ""),
+          f"placed={len(broker.placed)} note={ex.note!r}")
+
+    # The clip is a size cap, not a price exception: the 0.62 ceiling and the 20%
+    # breaker still refuse a deep book that prices above them.
+    deep = quote("0.61", "0.63", ask_sz="400")
+    slot, broker = f2_slot(deep), FakeBroker()
+    slot.position = None
+    ex = LiveExecutor(ctx(), broker)
+    asyncio.run(ex._place_entry(slot, Decision("entry", "0.63 ask", side="YES",
+                                              price=Decimal("0.63"),
+                                              signal="z_obi_flow"), deep, NOW, 300.0))
+    check("depth: deep liquidity does not lift the $0.62 entry ceiling",
+          not broker.placed and slot.order is None, f"placed={len(broker.placed)}")
 
 
 def main() -> int:
@@ -910,6 +1017,7 @@ def main() -> int:
     control_paper_f2()
     control_sizing()
     control_compounding()
+    control_depth_clipping()
 
     width = max(len(n) for n, _, _ in RESULTS)
     failed = 0
