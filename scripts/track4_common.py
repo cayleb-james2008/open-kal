@@ -24,12 +24,12 @@ TAPE = ROOT / "data" / "track4-tape"
 MIN_WINDOWS = 217
 
 
-def pin_tape() -> dict:
-    """Point every reader at the pinned tape after re-hashing it against pin.json."""
-    pin = json.loads((TAPE / "pin.json").read_text())
-    if C.snapshot_digests(TAPE, list(pin["sha256"])) != pin["sha256"]:
-        raise RuntimeError("Track 4 tape digest mismatch; refusing to run on a changed tape")
-    AD.CACHE = RC.CACHE = TAPE
+def pin_tape(tape: Path = TAPE) -> dict:
+    """Point every reader at a pinned tape after re-hashing it against its pin.json."""
+    pin = json.loads((tape / "pin.json").read_text())
+    if C.snapshot_digests(tape, list(pin["sha256"])) != pin["sha256"]:
+        raise RuntimeError(f"{tape.name} digest mismatch; refusing to run on a changed tape")
+    AD.CACHE = RC.CACHE = tape
     return pin
 
 
@@ -42,12 +42,12 @@ def refuse_if_spent(family: str, out: Path) -> None:
         raise RuntimeError(f"{family} receipt already holds a scored OOS look; refusing to rewrite it")
 
 
-def window_closes() -> list[float]:
+def window_closes(tape: Path = TAPE) -> list[float]:
     """Distinct settled window closes across the four lanes, sorted."""
-    meta = json.loads((TAPE / "markets.json").read_text())
+    meta = json.loads((tape / "markets.json").read_text())
     closes = set()
     for lane in RC.LANES:
-        with np.load(TAPE / f"book_{lane}.npz", allow_pickle=False) as data:
+        with np.load(tape / f"book_{lane}.npz", allow_pickle=False) as data:
             names = [str(t) for t in data["tickers"]]
         closes |= {float(meta[n]["close"]) for n in names
                    if n in meta and meta[n].get("y") in (0, 1) and meta[n].get("strike")}
