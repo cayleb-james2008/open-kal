@@ -1,6 +1,6 @@
 # Open-Kal 24/7 report
 
-Updated 2026-11-18T16:02:36-05:00 by `scripts/daemon_247.py`.
+Updated 2026-11-18T16:50:34-05:00 by `scripts/daemon_247.py`.
 
 ## State
 
@@ -14,10 +14,10 @@ Updated 2026-11-18T16:02:36-05:00 by `scripts/daemon_247.py`.
 
 ## Forward OOS
 
-- Windows scored: 51 (events 91)
-- Post-decide trades: 77 (48W/29L)
-- Net: $-85.34  PF: 0.4954  payoff ECE: 0.3748
-- Gate: FAIL forward net $-85.34 <= 0 forward PF 0.495 < 1.15 payoff ECE 0.3748 > 0.08
+- Windows scored: 55 (events 103)
+- Post-decide trades: 88 (52W/36L)
+- Net: $-119.66  PF: 0.4304  payoff ECE: 0.4062
+- Gate: FAIL forward net $-119.66 <= 0 forward PF 0.430 < 1.15 payoff ECE 0.4062 > 0.08
 
 ## Recent 15-minute checks
 
@@ -54,8 +54,6 @@ Updated 2026-11-18T16:02:36-05:00 by `scripts/daemon_247.py`.
 
 ## Events
 
-- 2026-11-18T12:33:12-05:00 **report**: hourly slot produced no artifact
-- 2026-11-18T12:46:15-05:00 **report**: unarmed 15-minute reconcile
 - 2026-11-18T13:00:19-05:00 **report**: unarmed 15-minute reconcile
 - 2026-11-18T14:03:42-05:00 **gate refused**: ['forward net $-77.45 <= 0', 'forward PF 0.493 < 1.15', 'payoff ECE 0.3714 > 0.08']
 - 2026-11-18T14:03:42-05:00 **report**: gate refused at the hourly check
@@ -66,3 +64,5 @@ Updated 2026-11-18T16:02:36-05:00 by `scripts/daemon_247.py`.
 - 2026-11-18T16:02:04-05:00 **gate refused**: ['forward net $-85.34 <= 0', 'forward PF 0.495 < 1.15', 'payoff ECE 0.3748 > 0.08']
 - 2026-11-18T16:02:04-05:00 **report**: gate refused at the hourly check
 - 2026-11-18T16:02:36-05:00 **report**: unarmed 15-minute reconcile
+- 2026-11-18T16:50:34-05:00 **gate refused**: ['forward net $-119.66 <= 0', 'forward PF 0.430 < 1.15', 'payoff ECE 0.4062 > 0.08']
+- 2026-11-18T16:50:34-05:00 **report**: gate refused at the hourly check
