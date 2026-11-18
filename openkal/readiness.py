@@ -53,7 +53,7 @@ PARITY_DB = ROOT / "data" / "openkal-parity.db"
 # `z_obi_flow` is the promoted program: strike z, printed-flow imbalance and touch
 # revisions agree, entered post-only with a per-window cap and a halt after one loss.
 ENGINE_PROGRAMS = {"impulse_snipe", "final_minute", "z_obi_flow", "F2_taker_1s",
-                   "student_t_l2_settle"}
+                   "student_t_l2_settle", "cross_lane_iv_arb"}
 REQUIRED_PF = 1.15
 REQUIRED_ECE = 0.08
 MIN_OOS_TRADES = 20
