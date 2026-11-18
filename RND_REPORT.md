@@ -500,3 +500,16 @@ OOS, the four champions made 0–3 trades each, net −$14.29 to $0.00 (ledger a
 - Track B: the F2 NO-side convention bug. The legacy simulator charged a NO taker `yes_bid` instead of `1 − yes_bid`. Under the corrected convention every F2 variant loses on IS and OOS. sim_core makes this convention impossible to get wrong (Track 1).
 - Track C: the LayaGate ablation was blocked; there are no historical per-trigger verdicts. Oracle rows are hindsight ceilings only.
 - The live `data/evolve-cache/` was mid-rebuild during this run: at 16:36, only a partial `book_KXBTC15M.npz` was present. This study never read it.
+
+### Track 2C — overnight true-L2 result
+- 25 qualifying BTC windows; chronological split 15 IS / 10 OOS, cut `1794978000.0`.
+- IS champion `h0.05_obi0.45_w10_30_maker`: 18 trades, net $-45.50, PF 0.81, 2 profitable lanes.
+- IS eligibility missed; OOS left sealed and no OOS entry appended.
+- Receipt: `data/track2c-true-l2-settle-is.json`; no live promotion.
+
+### Track 2D — LayaGate + true-L2 settlement result
+- 25/25 distinct closes with joint coverage across lanes on the same frozen tape and cut as Track 2C: 15 IS / 10 OOS (15 / 10 jointly covered).
+- Taker, positive own-side Student-t edge at the trigger, live same-ticker verdict (`allow` or confidence ≥ 0.55), signed raw OBI ≥ 0.20 in magnitude, $0.35–$0.60, T+1s, and binary $1/$0 settlement via `sim_core.py`.
+- IS: 0 trades, net $+0.00, PF n/a, 0 profitable lanes; 0/19932 available decision snapshots passed LayaGate before the OBI/FV filter.
+- IS fail; OOS unspent. No new OOS ledger entry.
+- Receipt: `data/track2d-layagate-l2.json`; no live promotion.

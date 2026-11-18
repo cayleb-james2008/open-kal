@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-18T01:30:00-05:00",
+ "updated": "2026-11-18T11:18:24.853169+00:00",
  "goal": "24/7 forward-OOS gate, live compounding, trailing drawdown breaker.",
  "rnd_overnight_shift": {
   "lane": "rnd/alpha-evolve",
@@ -18,8 +18,23 @@
   "track2b_flow_student_t": {
    "status": "OOS calibration fail; forward loss",
    "is_champion": "h0.05_w5_15_th0.30_taker",
-   "is_metrics": {"trades": 44, "net": 333.25, "pf": 1.90, "win_rate": 0.6136, "profitable_lanes": 4},
-   "oos_metrics": {"trades": 36, "net": 229.38, "pf": 1.68, "win_rate": 0.5833, "profitable_lanes": 3, "net_ex_xrp": 131.71, "max_entry_cost": 0.57, "crossed_fills": 0},
+   "is_metrics": {
+    "trades": 44,
+    "net": 333.25,
+    "pf": 1.9,
+    "win_rate": 0.6136,
+    "profitable_lanes": 4
+   },
+   "oos_metrics": {
+    "trades": 36,
+    "net": 229.38,
+    "pf": 1.68,
+    "win_rate": 0.5833,
+    "profitable_lanes": 3,
+    "net_ex_xrp": 131.71,
+    "max_entry_cost": 0.57,
+    "crossed_fills": 0
+   },
    "oos_payoff_ece": 0.1581,
    "gate_pass": false,
    "calibration_diagnosis": {
@@ -30,23 +45,81 @@
     "platt_1p_logit_slope": 1.3399790845770405,
     "ridge_4f_oos_ece": 0.0982,
     "historical_ridge_5f_oos_ece": 0.1581,
-    "null_bootstrap": {"draws": 10000, "trades": 36, "true_win_rate": 0.5833333333333334, "flat_rate_noise_mean_ece_5f_bins": 0.1645, "model_conditional_mean_ece_5f_bins": 0.1442, "prob_model_conditional_ge_observed_5f_ece": 0.3558}
+    "null_bootstrap": {
+     "draws": 10000,
+     "trades": 36,
+     "true_win_rate": 0.5833333333333334,
+     "flat_rate_noise_mean_ece_5f_bins": 0.1645,
+     "model_conditional_mean_ece_5f_bins": 0.1442,
+     "prob_model_conditional_ge_observed_5f_ece": 0.3558
+    }
    },
    "forward_holdout_1620_present": {
     "status": "Prior sealed look audited; no replay",
     "artifact": "data/track2b-forward-holdout-audit.json",
-    "ledger_lines": [31, 32],
+    "ledger_lines": [
+     31,
+     32
+    ],
     "cutoff_close_ts": 1794943521.0,
     "cutoff_est": "2026-11-17T14:25:21-05:00",
-    "prior_horizon_est": ["2026-11-17T14:30:00-05:00", "2026-11-18T00:00:00-05:00"],
+    "prior_horizon_est": [
+     "2026-11-17T14:30:00-05:00",
+     "2026-11-18T00:00:00-05:00"
+    ],
     "settled_windows_per_lane_at_check": 42,
     "settled_windows_per_lane_through_prior_horizon": 39,
     "fills_triggered_before_cutoff_in_first_forward_window": 1,
-    "unfiltered": {"trades": 15, "net": -110.54, "pf": 0.51, "win_rate": 0.2667, "raw_p_side_ece": 0.1790, "platt_1p_ece": 0.1610, "net_ex_xrp": -107.85, "max_entry_cost": 0.52, "crossed_fills": 0,
-     "by_lane": {"KXBTC15M": {"trades": 4, "wins": 0, "net": -83.82}, "KXETH15M": {"trades": 4, "wins": 1, "net": -30.32}, "KXSOL15M": {"trades": 2, "wins": 1, "net": 6.29}, "KXXRP15M": {"trades": 5, "wins": 2, "net": -2.69}}
+    "unfiltered": {
+     "trades": 15,
+     "net": -110.54,
+     "pf": 0.51,
+     "win_rate": 0.2667,
+     "raw_p_side_ece": 0.179,
+     "platt_1p_ece": 0.161,
+     "net_ex_xrp": -107.85,
+     "max_entry_cost": 0.52,
+     "crossed_fills": 0,
+     "by_lane": {
+      "KXBTC15M": {
+       "trades": 4,
+       "wins": 0,
+       "net": -83.82
+      },
+      "KXETH15M": {
+       "trades": 4,
+       "wins": 1,
+       "net": -30.32
+      },
+      "KXSOL15M": {
+       "trades": 2,
+       "wins": 1,
+       "net": 6.29
+      },
+      "KXXRP15M": {
+       "trades": 5,
+       "wins": 2,
+       "net": -2.69
+      }
+     }
     },
-    "layagate_filtered": {"trades": 0, "net": 0.0, "win_rate": null, "pf": null, "raw_p_side_ece": null, "platt_1p_ece": null, "by_lane": {}, "net_ex_xrp": 0.0, "max_entry_cost": null, "crossed_fills": 0},
-    "gate_counts": {"allowed": 0, "denied": 12, "unlogged": 3}
+    "layagate_filtered": {
+     "trades": 0,
+     "net": 0.0,
+     "win_rate": null,
+     "pf": null,
+     "raw_p_side_ece": null,
+     "platt_1p_ece": null,
+     "by_lane": {},
+     "net_ex_xrp": 0.0,
+     "max_entry_cost": null,
+     "crossed_fills": 0
+    },
+    "gate_counts": {
+     "allowed": 0,
+     "denied": 12,
+     "unlogged": 3
+    }
    },
    "note": "Do not promote. Frozen OOS fails payoff-ECE and profitability did not replicate forward."
   },
@@ -58,26 +131,70 @@
    "note": "Twelve denied, three unlogged, zero allowed. PF and calibration lift are not measurable on an empty allowed subset."
   },
   "track2c_true_l2_loop": {
-   "status": "Watcher active; waiting for 24 settled windows",
+   "status": "IS fail; OOS unspent",
    "loop_script": "scripts/overnight_rnd_loop.py",
    "service": "openkal-rnd-overnight-20261118.service",
-   "schedule_est": ["2026-11-18T01:15:00-05:00", "2026-11-18T06:00:00-05:00"],
+   "schedule_est": [
+    "2026-11-18T01:15:00-05:00",
+    "2026-11-18T06:00:00-05:00"
+   ],
    "interval_s": 300,
-   "current_windows": 20,
+   "current_windows": 25,
    "required_windows": 24,
    "valid_l2_rows": 11666357,
    "oos_spent": false,
    "log": "data/overnight-rnd-loop.log",
-   "note": "Verified heartbeat 01:30 EST: 20/24. The timer checks the read-only cache through 06:00 EST; sweep once at 24 qualifying closes and keep OOS sealed if no IS champion qualifies."
+   "note": "Research result only; no live promotion or trading.",
+   "champion": "h0.05_obi0.45_w10_30_maker",
+   "is_net": -45.5,
+   "is_pf": 0.813141683778234,
+   "is_trades": 18,
+   "gate_pass": false,
+   "gate": null,
+   "result_artifact": "data/track2c-true-l2-settle-is.json"
   },
   "track2d_layagate_l2": {
-   "status": "Armed; awaiting the shared Track 2C snapshot",
+   "status": "IS fail; OOS unspent",
    "script": "scripts/track2d_layagate_l2.py",
    "same_tape_as_track2c": true,
    "preflight_joint_windows": 20,
    "required_joint_windows": 24,
    "oos_spent": false,
-   "note": "Runs immediately after Track 2C with the same immutable tape and cut. Requires a recorded live LayaGate verdict and covers both directions with signed raw OBI. Research only."
+   "note": "Research only; no live promotion or trading.",
+   "config": "layagate_allow_or_conf055_raw_obi020_positive_fv_taker",
+   "joint_windows": 25,
+   "joint_is_windows": 15,
+   "joint_oos_windows": 10,
+   "is": {
+    "trades": 0,
+    "wins": 0,
+    "losses": 0,
+    "win_rate": 0.0,
+    "net": 0.0,
+    "pf": 0.0,
+    "avg_pnl": 0.0,
+    "max_entry_cost": 0.0,
+    "fees_entry": 0.0,
+    "fees_exit": 0.0,
+    "crossed_fills": 0,
+    "requotes": 0,
+    "profitable_lanes": 0,
+    "net_ex_best_lane": 0.0,
+    "net_ex_xrp": 0.0,
+    "net_ex_best_window": 0.0,
+    "windows": 0,
+    "by_lane": {},
+    "by_reason": {},
+    "skips": {
+     "no_l2": 1163,
+     "quote_crossed": 558
+    }
+   },
+   "is_eligible": false,
+   "oos": null,
+   "payoff_ece": null,
+   "gate_pass": false,
+   "result_artifact": "data/track2d-layagate-l2.json"
   }
  },
  "state": {
