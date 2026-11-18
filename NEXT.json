@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-18T15:13:29-05:00",
+ "updated": "2026-11-18T15:14:02-05:00",
  "goal": "24/7 forward-OOS gate, live compounding, trailing drawdown breaker.",
  "state": {
   "decision": "waiting",
@@ -12,7 +12,7 @@
   "equity": "121.46",
   "start_equity": "163.9971",
   "realized": "-42.54",
-  "venue_balance": "119.6242",
+  "venue_balance": "120.5921",
   "peak_balance": "164.4269",
   "floor": "131.54",
   "reconcile_delta": "0.00",
@@ -72,7 +72,7 @@
   }
  },
  "supervision": {
-  "checks": 55,
+  "checks": 56,
   "breaker_trips": 1,
   "breaker_restarts": 1,
   "log": "data/daemon-247.log",
