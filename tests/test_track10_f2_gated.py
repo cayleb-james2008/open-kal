@@ -101,7 +101,11 @@ class Run(unittest.TestCase):
     def test_the_run_is_once_only(self):
         out = self.dir / "o.json"
         out.write_text("{}")
-        with self.assertRaisesRegex(RuntimeError, "made once"):
+
+        def never(*a, **k):
+            raise AssertionError("the run went past its once-only check and touched real data")
+
+        with patch.object(G.T, "pin_tape", never), patch.object(G.R, "ledger_append", never), self.assertRaisesRegex(RuntimeError, "made once"):
             G.run(out=out)
 
     def test_it_refuses_when_the_ungated_score_does_not_reproduce_the_registered_cell(self):

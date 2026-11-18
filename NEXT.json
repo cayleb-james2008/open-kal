@@ -884,7 +884,8 @@
      "5": "1 of 38"
     }
    },
-   "tests": "tests/test_track10_rescore.py 39, tests/test_track10_f2_gated.py 10"
+   "tests": "tests/test_track10_rescore.py 39, tests/test_track10_f2_gated.py 10",
+   "ledger_note": "oos-ledger.jsonl has 12 rescore10 lines and 18 rescore10x lines plus one note line; 12 of the rescore10x lines are duplicates written by mutation-test runs (explained in a note line; append-only)"
   },
   "track11_queue_short_favourite_bid": {
    "status": "pre-registered, scored in sample only: 10 fills, net -17.50, PF 0.87; bar missed; OOS sealed (oos_scored null)",
