@@ -54,6 +54,7 @@ DB = ROOT / "data" / "openkal-prod.db"
 PROGRESS = ROOT / "data" / "overnight-l2-progress.json"
 REPORT = ROOT / "data" / "evening-report.md"
 NEXT = ROOT / "NEXT.json"
+RND_LEDGER = ROOT / "data" / "overnight-rnd.json"
 STATE_URL = "http://127.0.0.1:8787/api/state"
 LAYA_HEALTH = "http://127.0.0.1:8000/health"
 RND_BRANCH = "origin/rnd/alpha-evolve"
@@ -209,7 +210,21 @@ def append_report(progress: dict, commits: list[str], sha: str) -> None:
     doc["overnight_l2"].update({"updated_at": stamp, "rnd_head": sha,
                                 "new_commits": len(commits)})
     write_json(NEXT, doc)
-    log(f"evening report + NEXT.json updated: {len(commits)} R&D commit(s) at {sha[:8]}")
+    # `daemon_247.py` regenerates the report and NEXT.json from its own state every
+    # fifteen minutes, so an append there is fleeting. The ledger is the durable
+    # record of what this loop actually saw on origin/rnd/alpha-evolve.
+    try:
+        ledger = json.loads(RND_LEDGER.read_text())
+    except (OSError, ValueError):
+        ledger = {"checks": []}
+    ledger["updated_at"] = stamp
+    ledger["head"] = sha
+    ledger["checks"] = (ledger.get("checks") or [])[-40:] + [{
+        "at": stamp, "head": sha, "new_commits": len(commits), "commits": commits,
+    }]
+    write_json(RND_LEDGER, ledger)
+    log(f"evening report + NEXT.json updated: {len(commits)} R&D commit(s) at {sha[:8]} "
+        f"(ledger {RND_LEDGER.name})")
 
 
 CACHE_LOG = ROOT / "data" / "book-cache.log"
