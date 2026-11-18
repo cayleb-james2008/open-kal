@@ -67,9 +67,9 @@ class Sampling(unittest.TestCase):
         self.assertEqual((got["spread_ge_3c"], got["spread_ge_4c"], got["spread_ge_5c"]), (3, 2, 1))
         self.assertAlmostEqual(got["median_spread"], 0.035)
         text = M.funnel_text({"sampling": {"KXBTC15M": {**got, "decision_rows": 4}},
-                              "configs": {"c": {"is": {"skips": {"spread": 7}}}}})
+                              "configs": {"s0.03_q0.60_t15": {"is": {"trades": 3, "skips": {"spread": 7, "unfilled": 1}}}}})
         self.assertIn("BTC 3/2/1 of 4", text)
-        self.assertIn("7 attempts", text)
+        self.assertIn("7 of 11 attempts", text)
 
     def test_vol_caps_are_the_is_quantiles(self):
         sigma = np.arange(1.0, 101.0)
@@ -104,6 +104,14 @@ class Triggers(unittest.TestCase):
         got = M.triggers(p, 0.04, 2.0)
         self.assertEqual(got, [1, 3])                       # row0 spread .03, row2 too volatile, row4 YES bid .65 > cap
         self.assertEqual(M.triggers(self.pack(bid=[0.2], ask=[0.25]), 0.03, 2.0), [])     # NO leg 0.75 > cap
+
+    def test_float32_prices_do_not_lose_exact_three_cent_spreads_or_the_exact_cap(self):
+        bid32, ask32 = np.float32([0.50, 0.62, 0.35]), np.float32([0.53, 0.65, 0.38])
+        self.assertLess(float(ask32[0]) - float(bid32[0]), 0.03 - 1e-9)             # the trap: 0.0299999...
+        p = self.pack(bid=bid32.astype(np.float64), ask=ask32.astype(np.float64), sigma=[1, 1, 1])
+        p["tid"] = np.array([0, 1, 2])                                              # one window each: the cap is per window
+        self.assertEqual(M.triggers(p, 0.03, 2.0), [0, 1, 2])   # 0.50/0.53, a 0.62 bid at the cap, a 0.38 ask: NO at 0.62
+        self.assertEqual(M.spread_funnel(p)["spread_ge_3c"], 3)
 
     def test_attempts_are_spaced_and_capped_per_window(self):
         p = self.pack(sigma=[1] * 6)

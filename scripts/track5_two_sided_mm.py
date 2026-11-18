@@ -93,11 +93,16 @@ def collect(lane, its: np.ndarray, v: np.ndarray, cut: float, split: str) -> dic
     return pack
 
 
+def milli(price) -> np.ndarray:
+    """Prices on `sim_core`'s $0.001 grid as integers. The tape stores float32, so 0.53 - 0.50 is 0.0299999..."""
+    return np.rint(np.asarray(price, dtype=np.float64) * 1000.0).astype(np.int64)
+
+
 def spread_funnel(pack: dict) -> dict:
     """How often the quote is wide enough at all: decision rows at each minimum spread, and the median spread."""
-    spread = pack["ask"] - pack["bid"]
-    return {**{f"spread_ge_{int(ms * 100)}c": int((spread >= ms - 1e-9).sum()) for ms in MIN_SPREADS},
-            "median_spread": float(np.median(spread)) if len(spread) else None}
+    spread = milli(pack["ask"]) - milli(pack["bid"])
+    return {**{f"spread_ge_{int(ms * 100)}c": int((spread >= round(ms * 1000)).sum()) for ms in MIN_SPREADS},
+            "median_spread": float(np.median(spread)) / 1000.0 if len(spread) else None}
 
 
 def vol_caps(sigma: np.ndarray) -> dict[str, float]:
@@ -106,8 +111,9 @@ def vol_caps(sigma: np.ndarray) -> dict[str, float]:
 
 
 def triggers(pack: dict, min_spread: float, cap: float) -> list[int]:
-    ok = ((pack["ask"] - pack["bid"] >= min_spread - 1e-9) & (pack["sigma"] <= cap)
-          & (pack["bid"] <= CAP + 1e-9) & (1.0 - pack["ask"] <= CAP + 1e-9))   # sim_core makes the final cap call
+    bid, ask = milli(pack["bid"]), milli(pack["ask"])
+    ok = ((ask - bid >= round(min_spread * 1000)) & (pack["sigma"] <= cap)
+          & (bid <= round(CAP * 1000)) & (1000 - ask <= round(CAP * 1000)))
     return BS.pick({"tid": pack["tid"], "ts": pack["t"]}, ok, cooldown=COOLDOWN, per_window=PER_WINDOW)
 
 
@@ -226,9 +232,10 @@ def funnel_text(obj: dict) -> str:
     lanes = obj["sampling"]
     rows = "; ".join(f"{n[2:5]} {c['spread_ge_3c']}/{c['spread_ge_4c']}/{c['spread_ge_5c']} of {c['decision_rows']}"
                      f" (median {c['median_spread']:.2f})" for n, c in lanes.items())
-    lost = sum(c["is"]["skips"].get("spread", 0) for c in obj["configs"].values())
-    return (f"IS decision rows with spread >= 3c/4c/5c: {rows}. "
-            f"{lost} attempts across the grid met a spread under the minimum one second later.")
+    loose = obj["configs"][config_name(min(MIN_SPREADS), max(VOL_QUANTILES), HEDGE_TIMEOUTS[0])]["is"]
+    attempts = loose["trades"] + sum(loose["skips"].values())
+    return (f"IS decision rows with spread >= 3c/4c/5c: {rows}. At 3c / quiet-60% / 15s, "
+            f"{loose['skips'].get('spread', 0)} of {attempts} attempts met a spread under 3c one second later.")
 
 
 def reasons(s: dict) -> str:

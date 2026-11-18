@@ -62,10 +62,10 @@
     "KXBTC15M": {
       "windows": 130,
       "decision_rows": 27328,
-      "spread_ge_3c": 1,
+      "spread_ge_3c": 2,
       "spread_ge_4c": 0,
       "spread_ge_5c": 0,
-      "median_spread": 0.009999990463256836,
+      "median_spread": 0.01,
       "skips": {
         "no_spot": 2735,
         "quote_crossed": 1267
@@ -74,10 +74,10 @@
     "KXETH15M": {
       "windows": 130,
       "decision_rows": 28540,
-      "spread_ge_3c": 73,
-      "spread_ge_4c": 2,
+      "spread_ge_3c": 96,
+      "spread_ge_4c": 5,
       "spread_ge_5c": 0,
-      "median_spread": 0.009999990463256836,
+      "median_spread": 0.01,
       "skips": {
         "no_spot": 2735,
         "quote_crossed": 55
@@ -86,10 +86,10 @@
     "KXSOL15M": {
       "windows": 130,
       "decision_rows": 28504,
-      "spread_ge_3c": 506,
-      "spread_ge_4c": 2,
+      "spread_ge_3c": 704,
+      "spread_ge_4c": 5,
       "spread_ge_5c": 1,
-      "median_spread": 0.009999990463256836,
+      "median_spread": 0.01,
       "skips": {
         "no_spot": 2735,
         "quote_crossed": 91
@@ -98,10 +98,10 @@
     "KXXRP15M": {
       "windows": 130,
       "decision_rows": 28573,
-      "spread_ge_3c": 353,
-      "spread_ge_4c": 8,
+      "spread_ge_3c": 500,
+      "spread_ge_4c": 9,
       "spread_ge_5c": 1,
-      "median_spread": 0.009999990463256836,
+      "median_spread": 0.01,
       "skips": {
         "no_spot": 2735,
         "quote_crossed": 22
@@ -115,29 +115,24 @@
       "vol_quantile": 0.4,
       "hedge_timeout_s": 15.0,
       "is": {
-        "trades": 9,
+        "trades": 8,
         "wins": 5,
-        "losses": 4,
-        "win_rate": 0.5556,
-        "net": -4.76,
-        "pf": 0.5817223198594025,
-        "avg_pnl": -0.5288888888888889,
-        "max_entry_cost": 0.62,
+        "losses": 3,
+        "win_rate": 0.625,
+        "net": 0.11,
+        "pf": 1.0168970814132103,
+        "avg_pnl": 0.01375,
+        "max_entry_cost": 0.59,
         "fees_entry": 0.0,
-        "fees_exit": 4.26,
+        "fees_exit": 3.39,
         "crossed_fills": 0,
         "requotes": 0,
         "profitable_lanes": 1,
-        "net_ex_best_lane": -7.4,
-        "net_ex_xrp": -2.23,
-        "net_ex_best_window": -6.26,
-        "windows": 8,
+        "net_ex_best_lane": -2.53,
+        "net_ex_xrp": 2.64,
+        "net_ex_best_window": -1.39,
+        "windows": 7,
         "by_lane": {
-          "KXETH15M": {
-            "trades": 1,
-            "wins": 0,
-            "net": -4.87
-          },
           "KXSOL15M": {
             "trades": 4,
             "wins": 3,
@@ -151,8 +146,8 @@
         },
         "by_reason": {
           "hedge_timeout": {
-            "trades": 5,
-            "net": -10.76
+            "trades": 4,
+            "net": -5.89
           },
           "pair": {
             "trades": 4,
@@ -160,7 +155,8 @@
           }
         },
         "skips": {
-          "spread": 97,
+          "cost_band": 1,
+          "spread": 121,
           "unfilled": 1
         }
       }
@@ -171,29 +167,24 @@
       "vol_quantile": 0.4,
       "hedge_timeout_s": 30.0,
       "is": {
-        "trades": 9,
+        "trades": 8,
         "wins": 6,
-        "losses": 3,
-        "win_rate": 0.6667,
-        "net": -11.9,
-        "pf": 0.430622009569378,
-        "avg_pnl": -1.3222222222222222,
-        "max_entry_cost": 0.62,
+        "losses": 2,
+        "win_rate": 0.75,
+        "net": -0.55,
+        "pf": 0.9424083769633508,
+        "avg_pnl": -0.06875,
+        "max_entry_cost": 0.59,
         "fees_entry": 0.0,
-        "fees_exit": 2.4,
+        "fees_exit": 1.55,
         "crossed_fills": 0,
         "requotes": 0,
         "profitable_lanes": 1,
-        "net_ex_best_lane": -17.9,
-        "net_ex_xrp": -5.35,
-        "net_ex_best_window": -13.4,
-        "windows": 8,
+        "net_ex_best_lane": -6.55,
+        "net_ex_xrp": 6.0,
+        "net_ex_best_window": -2.05,
+        "windows": 7,
         "by_lane": {
-          "KXETH15M": {
-            "trades": 1,
-            "wins": 0,
-            "net": -11.35
-          },
           "KXSOL15M": {
             "trades": 4,
             "wins": 4,
@@ -207,8 +198,8 @@
         },
         "by_reason": {
           "hedge_timeout": {
-            "trades": 3,
-            "net": -20.9
+            "trades": 2,
+            "net": -9.55
           },
           "pair": {
             "trades": 6,
@@ -216,7 +207,8 @@
           }
         },
         "skips": {
-          "spread": 97,
+          "cost_band": 1,
+          "spread": 121,
           "unfilled": 1
         }
       }
@@ -228,32 +220,27 @@
       "hedge_timeout_s": 15.0,
       "is": {
         "trades": 10,
-        "wins": 6,
-        "losses": 4,
-        "win_rate": 0.6,
-        "net": -3.26,
-        "pf": 0.7135325131810193,
-        "avg_pnl": -0.326,
+        "wins": 7,
+        "losses": 3,
+        "win_rate": 0.7,
+        "net": 3.11,
+        "pf": 1.477726574500768,
+        "avg_pnl": 0.311,
         "max_entry_cost": 0.62,
         "fees_entry": 0.0,
-        "fees_exit": 4.26,
+        "fees_exit": 3.39,
         "crossed_fills": 0,
         "requotes": 0,
         "profitable_lanes": 1,
-        "net_ex_best_lane": -7.4,
-        "net_ex_xrp": -0.73,
-        "net_ex_best_window": -4.76,
-        "windows": 9,
+        "net_ex_best_lane": -2.53,
+        "net_ex_xrp": 5.64,
+        "net_ex_best_window": 0.11,
+        "windows": 8,
         "by_lane": {
-          "KXETH15M": {
-            "trades": 1,
-            "wins": 0,
-            "net": -4.87
-          },
           "KXSOL15M": {
-            "trades": 5,
-            "wins": 4,
-            "net": 4.14
+            "trades": 6,
+            "wins": 5,
+            "net": 5.64
           },
           "KXXRP15M": {
             "trades": 4,
@@ -263,16 +250,17 @@
         },
         "by_reason": {
           "hedge_timeout": {
-            "trades": 5,
-            "net": -10.76
+            "trades": 4,
+            "net": -5.89
           },
           "pair": {
-            "trades": 5,
-            "net": 7.5
+            "trades": 6,
+            "net": 9.0
           }
         },
         "skips": {
-          "spread": 130,
+          "cost_band": 2,
+          "spread": 166,
           "unfilled": 1
         }
       }
@@ -284,32 +272,27 @@
       "hedge_timeout_s": 30.0,
       "is": {
         "trades": 10,
-        "wins": 7,
-        "losses": 3,
-        "win_rate": 0.7,
-        "net": -10.4,
-        "pf": 0.5023923444976076,
-        "avg_pnl": -1.04,
+        "wins": 8,
+        "losses": 2,
+        "win_rate": 0.8,
+        "net": 2.45,
+        "pf": 1.256544502617801,
+        "avg_pnl": 0.245,
         "max_entry_cost": 0.62,
         "fees_entry": 0.0,
-        "fees_exit": 2.4,
+        "fees_exit": 1.55,
         "crossed_fills": 0,
         "requotes": 0,
         "profitable_lanes": 1,
-        "net_ex_best_lane": -17.9,
-        "net_ex_xrp": -3.85,
-        "net_ex_best_window": -11.9,
-        "windows": 9,
+        "net_ex_best_lane": -6.55,
+        "net_ex_xrp": 9.0,
+        "net_ex_best_window": -0.55,
+        "windows": 8,
         "by_lane": {
-          "KXETH15M": {
-            "trades": 1,
-            "wins": 0,
-            "net": -11.35
-          },
           "KXSOL15M": {
-            "trades": 5,
-            "wins": 5,
-            "net": 7.5
+            "trades": 6,
+            "wins": 6,
+            "net": 9.0
           },
           "KXXRP15M": {
             "trades": 4,
@@ -319,16 +302,17 @@
         },
         "by_reason": {
           "hedge_timeout": {
-            "trades": 3,
-            "net": -20.9
+            "trades": 2,
+            "net": -9.55
           },
           "pair": {
-            "trades": 7,
-            "net": 10.5
+            "trades": 8,
+            "net": 12.0
           }
         },
         "skips": {
-          "spread": 130,
+          "cost_band": 2,
+          "spread": 166,
           "unfilled": 1
         }
       }
@@ -359,7 +343,7 @@
         "by_lane": {},
         "by_reason": {},
         "skips": {
-          "spread": 4
+          "spread": 7
         }
       }
     },
@@ -389,7 +373,7 @@
         "by_lane": {},
         "by_reason": {},
         "skips": {
-          "spread": 4
+          "spread": 7
         }
       }
     },
@@ -419,7 +403,7 @@
         "by_lane": {},
         "by_reason": {},
         "skips": {
-          "spread": 4
+          "spread": 8
         }
       }
     },
@@ -449,7 +433,7 @@
         "by_lane": {},
         "by_reason": {},
         "skips": {
-          "spread": 4
+          "spread": 8
         }
       }
     },
@@ -579,32 +563,27 @@
     "is_eligible": false,
     "is": {
       "trades": 10,
-      "wins": 6,
-      "losses": 4,
-      "win_rate": 0.6,
-      "net": -3.26,
-      "pf": 0.7135325131810193,
-      "avg_pnl": -0.326,
+      "wins": 7,
+      "losses": 3,
+      "win_rate": 0.7,
+      "net": 3.11,
+      "pf": 1.477726574500768,
+      "avg_pnl": 0.311,
       "max_entry_cost": 0.62,
       "fees_entry": 0.0,
-      "fees_exit": 4.26,
+      "fees_exit": 3.39,
       "crossed_fills": 0,
       "requotes": 0,
       "profitable_lanes": 1,
-      "net_ex_best_lane": -7.4,
-      "net_ex_xrp": -0.73,
-      "net_ex_best_window": -4.76,
-      "windows": 9,
+      "net_ex_best_lane": -2.53,
+      "net_ex_xrp": 5.64,
+      "net_ex_best_window": 0.11,
+      "windows": 8,
       "by_lane": {
-        "KXETH15M": {
-          "trades": 1,
-          "wins": 0,
-          "net": -4.87
-        },
         "KXSOL15M": {
-          "trades": 5,
-          "wins": 4,
-          "net": 4.14
+          "trades": 6,
+          "wins": 5,
+          "net": 5.64
         },
         "KXXRP15M": {
           "trades": 4,
@@ -614,16 +593,17 @@
       },
       "by_reason": {
         "hedge_timeout": {
-          "trades": 5,
-          "net": -10.76
+          "trades": 4,
+          "net": -5.89
         },
         "pair": {
-          "trades": 5,
-          "net": 7.5
+          "trades": 6,
+          "net": 9.0
         }
       },
       "skips": {
-        "spread": 130,
+        "cost_band": 2,
+        "spread": 166,
         "unfilled": 1
       }
     }
