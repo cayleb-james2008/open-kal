@@ -1,10 +1,11 @@
 """Compounding simulation for the staged fractional-Kelly sizing table.
 
 The live lane no longer risks a flat $15: `openkal.config.COMPOUND_STAGES` sets the
-fraction of account equity a single entry may risk (12.5% below $175, 20% to $350,
-25% through $1,000 and $5,000, 20% to $25,000, then 15%) with 50/120/300/1,000/
-2,500/5,000 contract ceilings, while the $0.62 cost ceiling and the 20%
-trailing-peak breaker hold on every stage.
+fraction of account equity a single entry may risk (10% below $175, 12% through
+$1,000, 10% to $25,000, then 8%) with 50/120/300/1,000/2,500/5,000 contract
+ceilings. An entry's premium is clipped again to half the remaining distance to the
+20% trailing-peak floor, so a total loss cannot carry equity through it; the $0.62
+cost ceiling holds on every stage.
 
 Two modes, and both answer the same question -- how many trades and how many days
 does a stage break take:
@@ -33,7 +34,7 @@ import json
 import random
 import statistics
 import sys
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -56,6 +57,19 @@ def _money(value: Decimal) -> str:
 
 def _num(value: Decimal) -> float:
     return float(Decimal(value).quantize(CENT, rounding=ROUND_HALF_UP))
+
+
+def risk_cap(equity: Decimal, peak: Decimal) -> Decimal:
+    """Premium one entry may risk: the stage cap and the drawdown buffer.
+
+    Mirrors `openkal.live_exec.sized_contracts`. A hold-to-settlement binary loses
+    its whole premium, so the stage fraction alone can put a loss through the 20%
+    trailing-peak floor; clipping to half the remaining buffer means even a total
+    loss lands at or above `0.80 * peak`.
+    """
+    buffer = (Decimal("0.50") * max(Decimal("0"), equity - peak * Decimal("0.80"))
+              ).quantize(CENT, rounding=ROUND_DOWN)
+    return min(staged_risk_cap(equity), buffer)
 
 
 # ---------------------------------------------------------------- tape replay
@@ -95,8 +109,8 @@ def simulate(rows: list[dict], start: Decimal, cycles: int) -> dict:
                 skipped += 1
                 continue
             stage = stage_for(equity)
-            risk_cap = staged_risk_cap(equity)
-            contracts = min(stage.max_contracts, int(risk_cap / row["entry"]))
+            cap = risk_cap(equity, peak)
+            contracts = min(stage.max_contracts, int(cap / row["entry"]))
             if contracts <= 0:
                 skipped += 1
                 continue
@@ -154,8 +168,8 @@ def forward_path(start: Decimal, win_rate: float, payoff_50: Decimal, *,
 
     while trades < max_trades and equity < MILESTONES[-1]:
         stage = stage_for(equity)
-        risk_cap = staged_risk_cap(equity)
-        contracts = min(stage.max_contracts, int(risk_cap / entry))
+        cap = risk_cap(equity, peak)
+        contracts = min(stage.max_contracts, int(cap / entry))
         if contracts <= 0:
             break
         if rng.random() < win_rate:
@@ -315,12 +329,9 @@ def render_forward(report: dict) -> str:
         "the breaker ends a path at the floor, so an unreached milestone is counted as",
         "not reached rather than assumed.",
         "",
-        "why a breach happens at all: a carried binary loses the whole premium, so a",
-        "stage 3-4 trade puts 25% of equity at risk against a 20% floor. The breaker is",
-        "checked after the loss, so the path ends one trade past the floor, and a trade",
-        "taken while already 10% down overshoots further. Capping the premium at the",
-        "*remaining* distance to the floor (equity - 0.8 * peak), not at a fraction of",
-        "equity, is what would make the floor hold.",
+        "why the floor holds: the premium is clipped to half the remaining distance to",
+        "0.80 * peak, so the worst case lands halfway between the current equity and the",
+        "floor -- never through it. The staged fraction is the ceiling on top of that.",
     ]
     return "\n".join(lines)
 

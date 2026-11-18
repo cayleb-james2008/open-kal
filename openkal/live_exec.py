@@ -20,7 +20,8 @@ from .strategy import Decision, Position, Quote, contracts_for
 
 
 def sized_contracts(bankroll: Decimal, price: Decimal, params: Any,
-                    equity: Decimal | None = None) -> int:
+                    equity: Decimal | None = None,
+                    peak_equity: Decimal | None = None) -> int:
     """Contracts one entry may hold: the slot, the stage's risk and its ceiling.
 
     `contracts_for` spends the whole slot, which is how a 24c NO became 170
@@ -31,17 +32,32 @@ def sized_contracts(bankroll: Decimal, price: Decimal, params: Any,
     `equity` is the *account* equity the compounding stage is read from; the lane's
     `bankroll` stays the outer bound (a lane never spends more than its own slice).
     The stage table in `openkal.config` replaces the flat MAX_CONTRACTS /
-    MAX_TRADE_RISK_USD pair: at stage 1 it reproduces them ($15.18 at $121.46) and
-    at stages 2-3 it lifts both the risk fraction and the contract ceiling as the
-    account compounds. `params` still carries the study's own ceilings for replay
-    and research; sizing here is owned by config so a mutated strategy parameter
-    cannot widen it.
+    MAX_TRADE_RISK_USD pair: at stage 1 it reproduces them ($12.14 at $121.46) and
+    at stages 2-6 it lifts the contract ceiling as the account compounds.
+    `params` still carries the study's own ceilings for replay and research; sizing
+    here is owned by config so a mutated strategy parameter cannot widen it.
+
+    `peak_equity` is the account's high-water mark. A carried binary loses its whole
+    premium, so the staged fraction alone can still put a loss through the 20%
+    trailing-peak floor: at a fresh peak a 12% stage trade would leave 88% of peak,
+    and a second one taken 10% down would leave 79%. The premium at risk is therefore
+    clipped to half the remaining distance to `0.80 * peak_equity`, so even a total
+    loss cannot carry equity through the floor from any equity the breaker allows.
+    When the peak is unknown the current equity is used as the peak, which is the
+    conservative reading: no caller may claim more than a fresh high-water buffer.
     """
     if price <= 0 or price > HARD_MAX_ENTRY_PRICE:
         return 0
     account = bankroll if equity is None else Decimal(str(equity))
     stage = stage_for(account)
-    by_risk = int(staged_risk_cap(account) / price)
+    peak = account if peak_equity is None else Decimal(str(peak_equity))
+    if peak <= 0:
+        peak = account
+    buffer_risk = (Decimal("0.50")
+                   * max(Decimal("0"), account - peak * Decimal("0.80"))
+                   ).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
+    effective_risk = min(staged_risk_cap(account), buffer_risk)
+    by_risk = int(effective_risk / price)
     return max(0, min(contracts_for(bankroll, price), stage.max_contracts, by_risk))
 
 
@@ -162,7 +178,8 @@ class LiveExecutor(Executor):
             self.record(slot, "cancel", decision.side or "YES", price, 0, Decimal("0"),
                         "20% trailing peak drawdown")
             return
-        qty = sized_contracts(slot.bankroll, price, slot.params, equity=equity)
+        qty = sized_contracts(slot.bankroll, price, slot.params, equity=equity,
+                              peak_equity=peak)
         qty = depth_clipped(qty, decision.side or "YES", quote)
         if qty <= 0:
             self.note = "entry skipped: the resting ask is too thin to size against"

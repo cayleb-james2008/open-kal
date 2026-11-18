@@ -28,13 +28,19 @@ MAX_TRADE_RISK_USD = Decimal("15.00")
 # roughly constant as the account grows, and cap each stage at the contract count
 # that fraction buys at the price ceiling.
 #
-# Stage 1 is the sizing this build already ships: 12.5% of equity ($15.18 at
-# $121.46, the $15 cap it replaces) and the 50-contract study ceiling. The five
-# stages above it lift both the risk fraction and the contract ceiling so a
-# validated lane can compound from $121.46 toward $1,000, $10,000 and $300,000
-# without stalling at a 250-contract wall, then taper the fraction as the account
-# gets large: 25% through stage 4, 20% at stage 5, 15% at stage 6. Nothing in any
-# stage may lift `HARD_MAX_ENTRY_PRICE` or suspend the `MAX_PEAK_DRAWDOWN_PCT`
+# A hold-to-settlement binary loses its whole premium, so a single entry can never
+# risk 20% of equity: that loss would itself carry the account through the
+# `MAX_PEAK_DRAWDOWN_PCT` floor. No stage here allows more than 12% of equity, and
+# `openkal.live_exec.sized_contracts` clips that again to half the remaining
+# distance to `0.80 * peak_equity`. At a fresh high-water mark the binding cap is
+# therefore 10% of equity, and under a drawdown it shrinks with the buffer.
+#
+# Stage 1 is the sizing this build already ships: 10% of equity ($12.14 at
+# $121.46) and the 50-contract study ceiling. The stages above it lift the contract
+# ceiling so a validated lane can compound from $121.46 toward $1,000, $10,000 and
+# $300,000 without stalling at a 250-contract wall, holding the risk fraction at
+# 12% through stage 4 and tapering to 10% at stage 5 and 8% at stage 6. Nothing in
+# any stage may lift `HARD_MAX_ENTRY_PRICE` or suspend the `MAX_PEAK_DRAWDOWN_PCT`
 # trailing-peak breaker.
 @dataclass(frozen=True)
 class CompoundingStage:
@@ -47,12 +53,12 @@ class CompoundingStage:
 
 
 COMPOUND_STAGES: tuple[CompoundingStage, ...] = (
-    CompoundingStage("stage1", Decimal("0.00"), Decimal("0.125"), MAX_CONTRACTS),
-    CompoundingStage("stage2", Decimal("175.00"), Decimal("0.20"), 120),
-    CompoundingStage("stage3", Decimal("350.00"), Decimal("0.25"), 300),
-    CompoundingStage("stage4", Decimal("1000.00"), Decimal("0.25"), 1_000),
-    CompoundingStage("stage5", Decimal("5000.00"), Decimal("0.20"), 2_500),
-    CompoundingStage("stage6", Decimal("25000.00"), Decimal("0.15"), 5_000),
+    CompoundingStage("stage1", Decimal("0.00"), Decimal("0.10"), MAX_CONTRACTS),
+    CompoundingStage("stage2", Decimal("175.00"), Decimal("0.12"), 120),
+    CompoundingStage("stage3", Decimal("350.00"), Decimal("0.12"), 300),
+    CompoundingStage("stage4", Decimal("1000.00"), Decimal("0.12"), 1_000),
+    CompoundingStage("stage5", Decimal("5000.00"), Decimal("0.10"), 2_500),
+    CompoundingStage("stage6", Decimal("25000.00"), Decimal("0.08"), 5_000),
 )
 
 # The two invariants that outrank every stage. $0.62 is the cost ceiling the

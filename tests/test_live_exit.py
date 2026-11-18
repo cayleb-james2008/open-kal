@@ -28,8 +28,8 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from openkal.config import (HARD_MAX_ENTRY_PRICE, peak_drawdown_tripped,  # noqa: E402
-                            stage_for, staged_risk_cap)
+from openkal.config import (COMPOUND_STAGES, HARD_MAX_ENTRY_PRICE,  # noqa: E402
+                            peak_drawdown_tripped, stage_for, staged_risk_cap)
 from openkal.engine import Engine  # noqa: E402
 from openkal.execution import Executor, RestingExit, RestingOrder  # noqa: E402
 from openkal.live_exec import (DEPTH_CLIP_FRACTION, LiveExecutor,  # noqa: E402
@@ -674,28 +674,34 @@ def control_sizing() -> None:
 
 
 def control_compounding() -> None:
-    """Staged fractional-Kelly sizing: six tiers, six ceilings, one breaker.
+    """Staged fractional-Kelly sizing: six tiers, six ceilings, two hard bounds.
 
     The 16:00 trade lost $42.97 because a $41 lane bought 170 contracts; the fix was
     a flat $15 / 50-contract cap, which by design cannot compound. These checks pin
     the stage table that replaces it: the cap still binds at stage 1, stages 2-6
-    lift both the risk fraction and the ceiling as the account grows (so a validated
-    lane can compound to $1,000, $10,000 and $300,000 rather than stalling at 250
-    contracts), and neither the $0.62 entry ceiling nor the 20% trailing-peak breaker
-    is ever stage-dependent.
+    lift the contract ceiling as the account grows (so a validated lane can compound
+    to $1,000, $10,000 and $300,000 rather than stalling at 250 contracts), and
+    neither the $0.62 entry ceiling nor the 20% trailing-peak breaker is ever
+    stage-dependent.
+
+    A hold-to-settlement binary loses its whole premium, so no stage may risk 20% of
+    equity: the fractions are 10/12/12/12/10/8%, and `sized_contracts` clips that
+    again to half the remaining distance to `0.80 * peak`. At a fresh high-water mark
+    the binding cap is therefore 10% of equity, which is what most of these numbers
+    are computed from.
     """
-    tiers = ((Decimal("121.46"), "stage1", Decimal("0.125"), 50),
-             (Decimal("174.99"), "stage1", Decimal("0.125"), 50),
-             (Decimal("175.00"), "stage2", Decimal("0.20"), 120),
-             (Decimal("349.99"), "stage2", Decimal("0.20"), 120),
-             (Decimal("350.00"), "stage3", Decimal("0.25"), 300),
-             (Decimal("999.99"), "stage3", Decimal("0.25"), 300),
-             (Decimal("1000.00"), "stage4", Decimal("0.25"), 1_000),
-             (Decimal("4999.99"), "stage4", Decimal("0.25"), 1_000),
-             (Decimal("5000.00"), "stage5", Decimal("0.20"), 2_500),
-             (Decimal("24999.99"), "stage5", Decimal("0.20"), 2_500),
-             (Decimal("25000.00"), "stage6", Decimal("0.15"), 5_000),
-             (Decimal("300000.00"), "stage6", Decimal("0.15"), 5_000))
+    tiers = ((Decimal("121.46"), "stage1", Decimal("0.10"), 50),
+             (Decimal("174.99"), "stage1", Decimal("0.10"), 50),
+             (Decimal("175.00"), "stage2", Decimal("0.12"), 120),
+             (Decimal("349.99"), "stage2", Decimal("0.12"), 120),
+             (Decimal("350.00"), "stage3", Decimal("0.12"), 300),
+             (Decimal("999.99"), "stage3", Decimal("0.12"), 300),
+             (Decimal("1000.00"), "stage4", Decimal("0.12"), 1_000),
+             (Decimal("4999.99"), "stage4", Decimal("0.12"), 1_000),
+             (Decimal("5000.00"), "stage5", Decimal("0.10"), 2_500),
+             (Decimal("24999.99"), "stage5", Decimal("0.10"), 2_500),
+             (Decimal("25000.00"), "stage6", Decimal("0.08"), 5_000),
+             (Decimal("300000.00"), "stage6", Decimal("0.08"), 5_000))
     for equity, name, pct, ceiling in tiers:
         stage = stage_for(equity)
         check(f"compounding: ${equity} resolves to {name} ({pct * 100:g}%, {ceiling} contracts)",
@@ -703,42 +709,59 @@ def control_compounding() -> None:
               and stage.max_contracts == ceiling,
               f"{stage.name} {stage.max_risk_pct} {stage.max_contracts}")
 
-    check("compounding: stage 1 at $121.46 risks $15.18, the flat cap it replaces",
-          staged_risk_cap(Decimal("121.46")) == Decimal("15.18"),
+    check("compounding: stage 1 at $121.46 risks $12.14, 10% of equity",
+          staged_risk_cap(Decimal("121.46")) == Decimal("12.14"),
           f"cap={staged_risk_cap(Decimal('121.46'))}")
-    check("compounding: stages 2 and 3 risk 20% and 25% of equity",
-          staged_risk_cap(Decimal("175.00")) == Decimal("35.00")
-          and staged_risk_cap(Decimal("350.00")) == Decimal("87.50"),
-          f"{staged_risk_cap(Decimal('175.00'))} / {staged_risk_cap(Decimal('350.00'))}")
+    check("compounding: stages 2-6 risk 12%, 12%, 12%, 10% and 8% of equity",
+          staged_risk_cap(Decimal("175.00")) == Decimal("21.00")
+          and staged_risk_cap(Decimal("350.00")) == Decimal("42.00")
+          and staged_risk_cap(Decimal("1000.00")) == Decimal("120.00")
+          and staged_risk_cap(Decimal("5000.00")) == Decimal("500.00")
+          and staged_risk_cap(Decimal("25000.00")) == Decimal("2000.00"),
+          f"{staged_risk_cap(Decimal('175.00'))} / {staged_risk_cap(Decimal('350.00'))} / "
+          f"{staged_risk_cap(Decimal('25000.00'))}")
+    check("compounding: no stage allows 20% of equity at risk",
+          all(stage.max_risk_pct < Decimal("0.20") for stage in COMPOUND_STAGES)
+          and max(stage.max_risk_pct for stage in COMPOUND_STAGES) <= Decimal("0.12"),
+          f"{[str(s.max_risk_pct) for s in COMPOUND_STAGES]}")
 
-    # The stage's contract ceiling binds at stage 1 and lifts at stage 3.
+    # The stage's contract ceiling still binds at stage 1, while the buffer clip
+    # binds before the stage fraction everywhere the account is near its peak.
     params = Params()
-    s1 = sized_contracts(Decimal("30.00"), Decimal("0.24"), params, equity=Decimal("121.46"))
+    s1 = sized_contracts(Decimal("30.00"), Decimal("0.24"), params, equity=Decimal("121.46"),
+                         peak_equity=Decimal("121.46"))
     check("compounding: a 24c entry at $121.46 is still capped at 50 contracts",
-          s1 == 50 and Decimal("0.24") * s1 <= Decimal("15.18"), f"qty={s1}")
-    s2 = sized_contracts(Decimal("50.00"), Decimal("0.30"), params, equity=Decimal("200.00"))
-    check("compounding: stage 2 caps at 120 contracts where the risk cap allows it",
-          s2 == 120, f"qty={s2}")
-    s3 = sized_contracts(Decimal("87.50"), Decimal("0.30"), params, equity=Decimal("350.00"))
-    check("compounding: stage 3 allows 300 contracts where the 25% budget affords it",
-          s3 == 291 and Decimal("0.30") * s3 <= Decimal("87.50"), f"qty={s3}")
-    check("compounding: stage 3 binds its 300-contract ceiling, not the old 250",
-          sized_contracts(Decimal("400"), Decimal("0.30"), params,
-                          equity=Decimal("400.00")) == 300,
-          f"qty={sized_contracts(Decimal('400'), Decimal('0.30'), params, equity=Decimal('400.00'))}")
+          s1 == 50 and Decimal("0.24") * s1 <= Decimal("12.14"), f"qty={s1}")
+    s2 = sized_contracts(Decimal("50.00"), Decimal("0.30"), params, equity=Decimal("200.00"),
+                         peak_equity=Decimal("200.00"))
+    check("compounding: stage 2 at a fresh peak is clipped to half its buffer, not 12%",
+          s2 == 66 and Decimal("0.30") * s2 <= Decimal("20.00"), f"qty={s2}")
+    s3 = sized_contracts(Decimal("87.50"), Decimal("0.30"), params, equity=Decimal("350.00"),
+                         peak_equity=Decimal("350.00"))
+    check("compounding: stage 3 at $350 risks $34.80, not the $42 its 12% allows",
+          s3 == 116 and Decimal("0.30") * s3 <= Decimal("35.00"), f"qty={s3}")
+    drawn = sized_contracts(Decimal("400"), Decimal("0.30"), params,
+                            equity=Decimal("300.00"), peak_equity=Decimal("350.00"))
+    check("compounding: 14% under the peak, only half the $20 buffer may be risked",
+          drawn == 33 and Decimal("0.30") * drawn <= Decimal("10.00"), f"qty={drawn}")
+    cheap = sized_contracts(Decimal("400"), Decimal("0.02"), params,
+                            equity=Decimal("350.00"), peak_equity=Decimal("350.00"))
+    check("compounding: the 300-contract stage 3 ceiling binds on a cheap book",
+          cheap == 300, f"qty={cheap}")
 
     # Stages 4-6: the ladder keeps lifting the ceiling instead of hitting a 250 wall.
-    s4 = sized_contracts(Decimal("1000"), Decimal("0.30"), params, equity=Decimal("1000.00"))
-    check("compounding: stage 4 lifts the ceiling to 1,000 contracts",
-          s4 == 833 and sized_contracts(Decimal("1500"), Decimal("0.30"), params,
-                                        equity=Decimal("1200.00")) == 1000,
-          f"qty={s4}")
-    s5 = sized_contracts(Decimal("5000"), Decimal("0.30"), params, equity=Decimal("5000.00"))
-    check("compounding: stage 5 caps at 2,500 contracts and risks 20% of equity",
-          s5 == 2500 and Decimal("0.30") * s5 <= Decimal("1000.00"), f"qty={s5}")
-    s6 = sized_contracts(Decimal("25000"), Decimal("0.30"), params, equity=Decimal("25000.00"))
-    check("compounding: stage 6 caps at 5,000 contracts and risks 15% of equity",
-          s6 == 5000 and Decimal("0.30") * s6 <= Decimal("3750.00"), f"qty={s6}")
+    s4 = sized_contracts(Decimal("1000"), Decimal("0.30"), params, equity=Decimal("1000.00"),
+                         peak_equity=Decimal("1000.00"))
+    check("compounding: stage 4 risks $100 of a $1,000 account (333, not 833)",
+          s4 == 333, f"qty={s4}")
+    s5 = sized_contracts(Decimal("5000"), Decimal("0.30"), params, equity=Decimal("5000.00"),
+                         peak_equity=Decimal("5000.00"))
+    check("compounding: stage 5 sizes to 10% of equity, under its 2,500 ceiling",
+          s5 == 1666 and Decimal("0.30") * s5 <= Decimal("500.00"), f"qty={s5}")
+    s6 = sized_contracts(Decimal("25000"), Decimal("0.30"), params, equity=Decimal("25000.00"),
+                         peak_equity=Decimal("25000.00"))
+    check("compounding: stage 6 binds its 5,000-contract ceiling at 8% of equity",
+          s6 == 5000 and Decimal("0.30") * s6 <= Decimal("2000.00"), f"qty={s6}")
 
     boundaries = [
         (Decimal("174.99"), "stage1"), (Decimal("175.00"), "stage2"),
@@ -752,16 +775,31 @@ def control_compounding() -> None:
     check("compounding: the six stages break exactly at 175/350/1k/5k/25k", not wrong,
           f"wrong={wrong}")
     sized_by_risk = sized_contracts(Decimal("100.00"), Decimal("0.47"), params,
-                                    equity=Decimal("200.00"))
-    check("compounding: the 20% risk cap binds before the contract ceiling",
-          sized_by_risk == 85 and Decimal("0.47") * sized_by_risk <= Decimal("40.00"),
+                                    equity=Decimal("200.00"),
+                                    peak_equity=Decimal("200.00"))
+    check("compounding: the drawdown buffer binds before the contract ceiling",
+          sized_by_risk == 42 and Decimal("0.47") * sized_by_risk <= Decimal("20.00"),
           f"qty={sized_by_risk}")
+
+    # The invariant itself: a total-premium loss can never cross the floor.
+    tail = []
+    for equity, peak in ((Decimal("200.00"), Decimal("200.00")),
+                         (Decimal("190.00"), Decimal("200.00")),
+                         (Decimal("165.00"), Decimal("200.00"))):
+        qty = sized_contracts(Decimal("1000"), Decimal("0.62"), params,
+                              equity=equity, peak_equity=peak)
+        premium = Decimal("0.62") * qty
+        tail.append((str(equity), qty, str(premium),
+                     equity - premium >= peak * Decimal("0.80")))
+    check("compounding: a total-premium loss can never cross the 20% floor",
+          all(row[3] for row in tail), f"{tail}")
 
     # $0.62 is tradeable at every stage; one cent above it never is.
     check("compounding: 0.62 is still tradeable at the top stage",
           sized_contracts(Decimal("500"), Decimal("0.62"), params,
-                          equity=Decimal("400.00")) > 0,
-          f"qty={sized_contracts(Decimal('500'), Decimal('0.62'), params, equity=Decimal('400'))}")
+                          equity=Decimal("400.00"),
+                          peak_equity=Decimal("400.00")) > 0,
+          f"qty={sized_contracts(Decimal('500'), Decimal('0.62'), params, equity=Decimal('400'), peak_equity=Decimal('400'))}")
     above = [sized_contracts(Decimal("500"), Decimal("0.63"), params, equity=equity)
              for equity in (Decimal("100"), Decimal("200"), Decimal("400"))]
     check("compounding: 0.63 is refused at every stage",
@@ -807,9 +845,10 @@ def control_compounding() -> None:
     slot.bankroll = Decimal("50.00")
     ex = LiveExecutor(growing, broker)
     asyncio.run(ex._place_entry(slot, entry, q, NOW, 300.0))
-    check("compounding: stage 2 sizes the live order to its 20% risk budget",
-          slot.order is not None and slot.order.contracts == 85
-          and broker.placed and broker.placed[-1]["contracts"] == 85,
+    check("compounding: stage 2 sizes the live order to half the drawdown buffer",
+          slot.order is not None and slot.order.contracts == 42
+          and broker.placed and broker.placed[-1]["contracts"] == 42
+          and Decimal("0.47") * 42 <= Decimal("20.00"),
           f"contracts={slot.order.contracts if slot.order else None}")
 
 
