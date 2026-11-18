@@ -1,12 +1,17 @@
 {
   "name": "coinbase_lead_lag_premise",
-  "version": 1,
+  "version": 2,
   "registered": "2026-11-18T11:15:00-05:00",
-  "status": "pre-registered; not run; no spot_ticks data has been read",
+  "status": "pre-registered (amended once, before any code ran); not run; no spot_ticks data has been read",
   "question": "Does the 60-second CF Benchmarks RTI lag pure, venue-labelled Coinbase prints by 1-3 seconds, often enough and by enough to support a settlement-average trade, and does a Coinbase-based settlement probability beat the market's own mid?",
   "data": {
     "coinbase": "spot_ticks rows with source == 'coinbase' only (kraken and rest are excluded), exported read-only from data/openkal-prod.db into spot_ticks.npz",
-    "lane_symbols": {"KXBTC15M": "BTC-USD", "KXETH15M": "ETH-USD", "KXSOL15M": "SOL-USD", "KXXRP15M": "XRP-USD"},
+    "lane_symbols": {
+      "KXBTC15M": "BTC-USD",
+      "KXETH15M": "ETH-USD",
+      "KXSOL15M": "SOL-USD",
+      "KXXRP15M": "XRP-USD"
+    },
     "rti": "index_*.npz (ts, value, accum, k) from the pinned tape",
     "books_and_outcomes": "book_*.npz and markets.json from the same pinned tape"
   },
@@ -24,18 +29,32 @@
     "reads": "only rows with ts < cut are used by the lead-lag statistic; the funnel and Brier use windows closing before the cut"
   },
   "lead_lag": {
-    "horizons_s": [1, 2, 5],
     "grid_s": 1,
     "fresh_s": 1.5,
     "series": "per second, the last Coinbase print and the last RTI print at or before t, each used only when at most fresh_s old",
-    "statistic": "for horizon h and sample times t that are multiples of h: x = ln cb(t) - ln cb(t-h), y = ln rti(t+h) - ln rti(t), u = ln rti(t) - ln rti(t-h), v = ln cb(t+h) - ln cb(t); rows need all five prices; delta_h = corr(x, y) - corr(u, v), Pearson. Positive means Coinbase's past move predicts the RTI's next move better than the reverse.",
-    "bootstrap": {"block_s": 900, "draws": 2000, "ci": 0.95, "seed": 0, "method": "resample 15-minute blocks of rows with replacement; percentile interval"},
-    "lane_passes_when": "delta_1 >= 0.05 and delta_2 >= 0.05 and the bootstrap lower bound of both is above 0",
+    "statistic": "r_cb(t) = ln cb(t) - ln cb(t-1) and r_rti(t) = ln rti(t) - ln rti(t-1) on the integer-second grid (a return needs both prices fresh). For lag k: A_k = corr(r_cb(t), r_rti(t+k)) - corr(r_rti(t), r_cb(t+k)), Pearson over all t with both returns finite. Positive A_k means Coinbase's move k seconds earlier predicts the RTI's move better than the reverse. Primary statistic S = A_1 + A_2; A_5 is reported only.",
+    "bootstrap": {
+      "block_s": 900,
+      "draws": 2000,
+      "ci": 0.95,
+      "seed": 0,
+      "method": "resample 15-minute blocks (floor(t / 900)) of per-second rows with replacement; percentile interval of S"
+    },
+    "lane_passes_when": "S >= 0.10 and the bootstrap lower bound of S is above 0",
     "criterion_passes_when": "at least 3 of the 4 lanes pass",
-    "horizon_5": "reported only"
+    "horizon_5": "A_5 is reported only; it should be near zero if the lag is 1-3 s",
+    "lags_s": [
+      1,
+      2,
+      5
+    ],
+    "effect_size_note": "0.10 is about a sixth of the lag-0 return correlation seen on the engine spot (0.61); on that unlabelled spot A_1 = 0.160 - 0.227 and A_2 = 0.026 - 0.080, so S was about -0.12"
   },
   "funnel": {
-    "secs_left": [25, 90],
+    "secs_left": [
+      25,
+      90
+    ],
     "grid_s": 1,
     "min_abs_divergence_bps": 8.0,
     "cb_fresh_s": 1.5,
@@ -45,11 +64,19 @@
     "criterion_passes_when": "at least 100 events across at least 40 distinct window closes"
   },
   "brier": {
-    "secs_left": [25, 60],
+    "secs_left": [
+      25,
+      60
+    ],
     "model": "p_cb_asian: P(mean of the 60 fixings >= strike) with the Coinbase print standing in for every fixing still to come (scripts/track8_coinbase_rti_settle.asian_p)",
     "market": "mid = (yes_bid + yes_ask) / 2",
     "difference": "d = (p_cb - y)^2 - (mid - y)^2 per row, y the YES outcome; also reported: the RTI-spot probability and the mid, each on the same rows",
-    "bootstrap": {"block": "window close", "draws": 2000, "ci": 0.95, "seed": 0},
+    "bootstrap": {
+      "block": "window close",
+      "draws": 2000,
+      "ci": 0.95,
+      "seed": 0
+    },
     "criterion_passes_when": "mean d < 0 and the 95% bootstrap upper bound of mean d is below 0"
   },
   "decision": {
@@ -60,11 +87,29 @@
   },
   "prior_to_beat": {
     "source": "independent backtest on 23.5k windows, supplied by the owner",
-    "claims": ["no taker edge at a 5 s or longer delay", "in the final 60 s the market predicted settlement better than public feeds (Brier 0.004 against 0.039)"]
+    "claims": [
+      "no taker edge at a 5 s or longer delay",
+      "in the final 60 s the market predicted settlement better than public feeds (Brier 0.004 against 0.039)"
+    ]
   },
   "known_before_registering": [
     "Track 8 used the engine's unlabelled tick spot (Coinbase, Kraken or REST). On BTC its 1 s return correlation with the index was 0.609 at lag 0, 0.227 with the index return a second before and 0.160 a second after, i.e. no lead over the index.",
     "Track 8's 8 bps divergence funnel on that spot was 5 rows in 3 lane-windows in sample; the live-spot repricing lost money even without the divergence trigger."
   ],
-  "disclosure": "The thresholds above were set after seeing those Track 8 results. The expectation is that the premise fails; the bar is meant to be hard."
+  "disclosure": "The thresholds above were set after seeing those Track 8 results. The expectation is that the premise fails; the bar is meant to be hard.",
+  "amendments": [
+    {
+      "version": 2,
+      "date": "2026-11-18T11:40:00-05:00",
+      "supersedes_commit": "81927da6aee5bdbaf0ecdc338f7f335102574285",
+      "reason": "v1 measured lead-lag with a past window x over (t-h, t] against a future window y over (t, t+h] and required both h=1 and h=2 to pass. A pure RTI lag of 2 s or 3 s leaves no overlap at h=1 (the lagged move lies before the past window), so v1 could fail a true 1-3 s lag, which is the premise being tested. It also said 'five prices' where the statistic used six. Replaced by exact-lag correlations of 1-second returns.",
+      "made_before": "any code for the premise test, any run, and any read of spot_ticks data",
+      "changed": [
+        "lead_lag.statistic",
+        "lead_lag.lane_passes_when",
+        "lead_lag.criterion_passes_when",
+        "lead_lag.horizons_s renamed lags_s"
+      ]
+    }
+  ]
 }
