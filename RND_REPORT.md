@@ -15,19 +15,19 @@ The venue locks one fixing per second over the final 60s and streams the locked 
 ### Validation on the frozen tape (`scripts/asian_validate.py`, whole tape, all four lanes)
 
 - Priced 84.4–87.0% of 17,172 samples/lane; refusals: guard 10–12.6%, `stale_spot` 2.8%, `no_venue_rows` 37/lane (outage windows, unpriceable by design), σ-pairs 1.
-- **First-seen lag of the locked count validates `KSEQ_TOL_S=0.5`:** p50 0.055–0.057s, p90 0.083s, **p99 0.36–0.41s** on every lane; 0.97% of slots exceed 0.5s; 151/9,449 k-slots never appear (restart-poisoned windows, refused).
-- **y-convention audit:** the tape average over [close−60, close] reproduces the settled outcome for 92/94 IS windows per lane (matches the known 99.2% tape-vs-venue agreement).
+- **First-seen lag of the locked count validates `KSEQ_TOL_S=0.5`:** p50 0.055–0.057s, p90 0.083–0.084s, **p99 0.36–0.41s** on every lane; 0.97–0.98% of slots exceed 0.5s; 151/9,449 k-slots never appear (restart-poisoned windows, refused).
+- **y-convention audit:** the tape average over [close−60, close] reproduces the settled outcome for 92/94 IS windows on BTC/SOL/XRP and 91/94 on ETH (the known ~99.2% tape-vs-venue agreement).
 
 ### Model honesty (`scripts/asian_diag.py`, IS only; z = (model mean − realised tape average)/model sd at each sample)
 
 | lane | z all samples (n) | z in-band, either side costable (n) | realised-future-vol ÷ trailing σ (p50, in-window) |
 |---|---|---|---|
-| BTC | −0.19 / 1.59 (4,451) | **−1.03 / 2.64** (283) | 1.08, in 1.31 |
-| ETH | −0.08 / 1.00 (4,734) | −0.21 / 0.99 (410) | 1.05, in 1.07 |
-| SOL | −0.01 / 0.74 (4,915) | −0.01 / **0.70** (321) | 0.93, in 0.82 |
-| XRP | −0.06 / 1.22 (4,884) | +0.08 / 0.90 (332) | 0.83, in 0.77 |
+| BTC | −0.19 / 1.59 (4,451) | **−1.03 / 2.64** (283) | 0.92, in 0.91 |
+| ETH | −0.08 / 1.00 (4,734) | −0.21 / 0.99 (410) | 0.95, in 0.97 |
+| SOL | −0.01 / 0.74 (4,915) | −0.01 / **0.70** (321) | 0.96, in 0.91 |
+| XRP | −0.06 / 1.22 (4,884) | +0.08 / 0.90 (332) | 0.91, in 0.87 |
 
-Reading: **the variance laws and mean construction are correct** — ETH's z is (−0.2, 1.0) everywhere, the full-population z is near-honest on all four lanes. Two per-lane effects sit exactly where a trigger can fire: BTC's in-band subset (both sides mid-band ⇒ spread ≥ $0.20 — stressed books) is adverse to a zero-drift model, realised landing 1σ below the mean with 2.6× the modelled spread; SOL and XRP's trailing σ **overstates** the realised end-of-window vol (0.82/0.77), which flattens the model to coin-flip pricing exactly where the market prices 0.35–0.41. Spot staleness is excluded as a cause (100% of in-band samples had a print ≤0.5s old). No code defect was found; the honest conclusion is the model is right on average and wrong in the tradeable microstates.
+Reading: **the variance laws and mean construction are correct** — ETH's z is (−0.2, 1.0) everywhere, the full-population z is near-honest on all four lanes. Two per-lane effects sit exactly where a trigger can fire. First, the trailing-150s σ mildly **overstates** the realised next-window vol on every lane (0.91–0.96 median; most in-window on XRP/SOL), which flattens the model toward coin-flip pricing exactly where the market prices 0.35–0.41. Second, BTC's in-band subset is adverse to a zero-drift model: realised lands 1σ below the mean with 2.6× the modelled spread — the tradeable microstate (diag's in-band is a bid-band proxy; where both sides qualify the spread is ≥ $0.20, i.e. stressed books) carries outcome spread far beyond the model's, not a systematic σ bias. Spot staleness is excluded as a cause (99.4–100% of in-band samples had a print ≤0.5s old). No code defect was found; the honest conclusion is the model is right on average and wrong in the tradeable microstates.
 
 ### IS sweep (`scripts/asian_pin.py`, cut 1794881700, hurdles 0.06/0.09/0.12, cost [0.35,0.60], 50 contracts, settle-only exit)
 
