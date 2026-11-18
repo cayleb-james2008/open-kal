@@ -202,6 +202,13 @@ class Track2D(unittest.TestCase):
             self.assertIsNone(C.run_pinned_tracks())
             self.assertFalse(C.PINNED_CACHE.exists())
             eth_book.write_bytes(complete)
+            with np.load(eth_book, allow_pickle=False) as archive:
+                uneven = dict(archive)
+            uneven["yes_ask_sz"] = uneven["yes_ask_sz"][:-1]
+            np.savez(eth_book, **uneven)
+            self.assertIsNone(C.run_pinned_tracks())
+            self.assertFalse(C.PINNED_CACHE.exists())
+            eth_book.write_bytes(complete)
 
             atomic_text = C.atomic_text
 
@@ -216,6 +223,12 @@ class Track2D(unittest.TestCase):
             self.assertFalse(D.OUT.exists())
             ledger = C.LEDGER.read_text()
             self.assertIn('"status": "scored"', ledger.splitlines()[-1])
+            hook = remote / "hooks/pre-receive"
+            hook.write_text("#!/bin/sh\nexit 1\n")
+            hook.chmod(0o755)
+            with self.assertRaises(subprocess.CalledProcessError):
+                C.publish_results(json.loads(C.OUT.read_text()))
+            c_only = git("rev-parse", "HEAD")
             c, d = C.run_pinned_tracks()
             self.assertEqual(d["frozen_input_sha256"], c["frozen_input_sha256"])
             self.assertEqual(d["fit_params"], c["fit_params"])
@@ -230,15 +243,13 @@ class Track2D(unittest.TestCase):
             self.assertEqual([(r["family"], r["status"]) for r in map(json.loads, ledger.splitlines())],
                              [(C.FAMILY, "started"), (C.FAMILY, "scored"),
                               (D.FAMILY, "started"), (D.FAMILY, "scored")])
-            hook = remote / "hooks/pre-receive"
-            hook.write_text("#!/bin/sh\nexit 1\n")
-            hook.chmod(0o755)
-            with self.assertRaises(subprocess.CalledProcessError):
+            C.LEDGER.write_text(ledger + '{"family":')
+            with self.assertRaisesRegex(RuntimeError, "malformed OOS ledger"):
                 C.publish_results(c, d)
-            first_commit = git("rev-parse", "HEAD")
-            hook.unlink()
-            C.publish_results(c, d)
-            self.assertEqual(git("rev-parse", "HEAD"), first_commit)
+            C.LEDGER.write_text(ledger)
+            with patch.object(C, "time", SimpleNamespace(sleep=lambda _: hook.unlink())):
+                C.publish_with_retry(c, d)
+            self.assertEqual(git("rev-parse", "HEAD^"), c_only)
             self.assertEqual(git("ls-remote", "origin", f"refs/heads/{C.BRANCH}").split()[0], git("rev-parse", "HEAD"))
             _, retry = C.run_pinned_tracks()
             self.assertEqual(retry, d)

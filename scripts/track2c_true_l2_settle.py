@@ -507,11 +507,29 @@ def snapshot_cache(destination: Path) -> dict | None:
         return None
     for name in names[1:]:
         with ZipFile(destination / name) as archive:
-            needed = (("tickers", "ts", "tid", "bid", "ask", "yes_bid_sz", "yes_ask_sz", "microprice",
-                       "trade_ts", "trade_px", "trade_sz", "trade_ty", "trade_tid")
-                      if name.startswith("book_") else ("ts", "value"))
-            if not {key + ".npy" for key in needed}.issubset(archive.namelist()) or archive.testzip() is not None:
-                raise BadZipFile(f"{name}: incomplete frozen cache")
+            groups = ((("tickers",), ("ts", "tid", "bid", "ask", "yes_bid_sz", "yes_ask_sz", "microprice"),
+                       ("trade_ts", "trade_px", "trade_sz", "trade_ty", "trade_tid"))
+                      if name.startswith("book_") else (("ts", "value"),))
+            for group in groups:
+                lengths = set()
+                for key in group:
+                    try:
+                        with archive.open(key + ".npy") as arr:
+                            version = np.lib.format.read_magic(arr)
+                            reader = {(1, 0): np.lib.format.read_array_header_1_0,
+                                      (2, 0): np.lib.format.read_array_header_2_0}.get(version)
+                            if reader is None:
+                                raise ValueError(f"unsupported NPY header {version}")
+                            shape, _, dtype = reader(arr)
+                            if len(shape) != 1 or dtype.hasobject:
+                                raise ValueError(f"{key}: expected a plain one-dimensional array")
+                            lengths.add(shape[0])
+                    except (KeyError, ValueError, EOFError) as e:
+                        raise BadZipFile(f"{name}: invalid {key} array: {e}") from e
+                if len(lengths) != 1:
+                    raise BadZipFile(f"{name}: unaligned {group[0]} arrays")
+            if archive.testzip() is not None:
+                raise BadZipFile(f"{name}: frozen cache checksum failed")
     return snapshot_digests(destination, names)
 
 
@@ -621,12 +639,20 @@ def publish_results(obj, follow_on=None):
 
     if git("branch", "--show-current") != BRANCH:
         raise RuntimeError("refusing to publish from a different branch")
+    try:
+        if LEDGER.exists():
+            for line in LEDGER.read_text().splitlines():
+                if line.strip() and not isinstance(json.loads(line), dict):
+                    raise ValueError("expected a JSON object")
+    except ValueError as e:
+        raise RuntimeError("refusing to publish a malformed OOS ledger") from e
     artifacts = [RND_REPORT, NEXT_JSON, OUT, TRADES, LEDGER, OOS_TRADES]
+    c_paths = {str(p.relative_to(ROOT)) for p in artifacts if p.exists()}
     if follow_on is not None:
         artifacts += [D.OUT, D.IS_TRADES, D.OOS_TRADES]
     paths = [str(p.relative_to(ROOT)) for p in artifacts if p.exists()]
-    label = "Track 2C/2D true-L2 results" if follow_on is not None else "Track 2C true-L2 sweep"
-    subject = f"{label}: {obj['champion']['config']}"
+    c_subject = f"Track 2C true-L2 sweep: {obj['champion']['config']}"
+    subject = f"Track 2C/2D true-L2 results: {obj['champion']['config']}" if follow_on is not None else c_subject
     ref = f"refs/heads/{BRANCH}"
     remote = git("ls-remote", "origin", ref).split()
     head, *parents = git("rev-list", "--parents", "-n1", "HEAD").split()
@@ -635,9 +661,14 @@ def publish_results(obj, follow_on=None):
     retrying = head != remote[0]
     if retrying:
         committed = set(git("diff-tree", "--no-commit-id", "--name-only", "-r", head).splitlines())
-        if (parents != [remote[0]] or git("log", "-1", "--format=%s") != subject
-                or not committed or committed.difference(paths)):
+        prior_subject = git("log", "-1", "--format=%s")
+        compatible_c_only = follow_on is not None and prior_subject == c_subject and committed <= c_paths
+        if (parents != [remote[0]] or not committed or committed.difference(paths)
+                or (prior_subject != subject and not compatible_c_only)):
             raise RuntimeError("refusing to push an unrelated unpublished commit")
+        if compatible_c_only:
+            git("push", "origin", f"{ref}:{ref}")
+            retrying = False
     if set(git("diff", "--cached", "--name-only").splitlines()).difference(paths):
         raise RuntimeError("refusing to commit unrelated staged files")
     git("add", "-f", "--", *paths)
@@ -651,6 +682,19 @@ def publish_results(obj, follow_on=None):
         raise RuntimeError("remote R&D ref did not verify")
     print(f"Published {'Track 2C/2D' if follow_on is not None else 'Track 2C'} on {BRANCH}: "
           f"{git('rev-parse', '--short', 'HEAD')}", flush=True)
+
+
+def publish_with_retry(obj, follow_on=None):
+    # A pinned result is publishable even if the source is between cache generations.
+    for attempt in range(3):
+        try:
+            publish_results(obj, follow_on)
+            return
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            if attempt == 2:
+                raise
+            print(f"Publication attempt {attempt + 1} failed; retrying the existing receipt: {e}", file=sys.stderr)
+            time.sleep(15)
 
 
 def run_pinned_tracks(*, on_follow_on_error=None):
@@ -717,12 +761,12 @@ def main() -> int:
     with (ROOT / "data/overnight-track2c.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         try:
-            result = run_pinned_tracks(on_follow_on_error=publish_results if args.publish else None)
+            result = run_pinned_tracks(on_follow_on_error=publish_with_retry if args.publish else None)
             if result is None:
                 return 75
             obj, follow_on = result
             if args.publish:
-                publish_results(obj, follow_on)
+                publish_with_retry(obj, follow_on)
         except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
             print(f"I/O or publication failed; retry without rescoring a completed track: {e}", file=sys.stderr)
             return 75
