@@ -171,8 +171,10 @@ class Accumulation(unittest.TestCase):
             self.assertEqual((info["rows"], info["new_rows"], info["max_rowid"]), (7, 2, 7))
             ts = np.load(dest / X.OUT_NAME)["ts"]
             np.testing.assert_array_equal(ts, np.sort(ts))
-            self.assertEqual(X.export(db, dest)["new_rows"], 0)                              # nothing new: nothing appended
-            self.assertEqual(len(np.load(dest / X.OUT_NAME)["ts"]), 7)
+            before = digest(dest / X.OUT_NAME)
+            again = X.export(db, dest)
+            self.assertEqual((again["new_rows"], again["rows"], again["max_rowid"]), (0, 7, 7))      # nothing new: nothing appended
+            self.assertEqual(digest(dest / X.OUT_NAME), before)                                       # and the file is not rewritten
             writer.close()
 
     def test_rows_the_engine_later_prunes_stay_in_the_archive(self):

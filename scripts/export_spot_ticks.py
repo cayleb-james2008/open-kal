@@ -77,25 +77,26 @@ def read_new_rows(db: Path, watermark: int, *, chunk: int = CHUNK, on_snapshot=N
         expected = conn.execute("SELECT count(*) FROM spot_ticks WHERE rowid > ? AND rowid <= ?", (watermark, bound)).fetchone()[0]
         if on_snapshot is not None:
             on_snapshot(bound)                              # test hook: rows added after this point must stay out
-        cols = {k: [] for k in FIELDS}
-        last = watermark
+        parts = {k: [] for k in FIELDS}                     # numpy arrays per chunk: only one chunk is ever Python objects
+        last, read = watermark, 0
         while last < bound:
             rows = conn.execute(f"SELECT {COLUMNS} FROM spot_ticks WHERE rowid > ? AND rowid <= ? ORDER BY rowid LIMIT ?",
                                 (last, bound, chunk)).fetchall()
             if not rows:
                 break
-            last = rows[-1][0]
+            last, read = rows[-1][0], read + len(rows)
             for i, k in enumerate(FIELDS, start=1):
-                cols[k].extend(r[i] for r in rows)
+                col = [r[i] for r in rows]
+                parts[k].append(to_strings(col) if k in ("symbol", "source") else to_floats(col))
             if on_chunk is not None:
                 on_chunk(last)                              # test hook: a prune between chunks
     finally:
         conn.close()
-    if expected != len(cols["ts"]):
-        raise RuntimeError(f"{expected} rows were in the database for this range when the snapshot started but {len(cols['ts'])} were "
+    if expected != read:
+        raise RuntimeError(f"{expected} rows were in the database for this range when the snapshot started but {read} were "
                            "read: rows vanished during the export (a prune?). Nothing was written; run it again.")
-    return {"ts": to_floats(cols["ts"]), "symbol": to_strings(cols["symbol"]), "source": to_strings(cols["source"]),
-            "price": to_floats(cols["price"]), "bid": to_floats(cols["bid"]), "ask": to_floats(cols["ask"])}, int(bound)
+    empty = {"ts": np.zeros(0), "symbol": np.zeros(0, "U1"), "source": np.zeros(0, "U1"), "price": np.zeros(0), "bid": np.zeros(0), "ask": np.zeros(0)}
+    return {k: (np.concatenate(v) if v else empty[k]) for k, v in parts.items()}, int(bound)
 
 
 def load_archive(out: Path) -> tuple[dict, int]:
@@ -123,6 +124,8 @@ def export(db: Path = DEFAULT_DB, dest: Path = DEFAULT_DEST, *, chunk: int = CHU
     out = check_paths(db, dest)
     old, watermark = load_archive(out)
     new, bound = read_new_rows(db, watermark, chunk=chunk, on_snapshot=on_snapshot, on_chunk=on_chunk)
+    if not len(new["ts"]) and out.exists():                 # nothing new: leave the archive exactly as it is
+        return summary(out, old, 0, watermark)
     merged = {k: np.concatenate([old[k], new[k]]) for k in FIELDS}
     order = np.argsort(merged["ts"], kind="stable")
     arrays = {k: v[order] for k, v in merged.items()}
@@ -130,9 +133,13 @@ def export(db: Path = DEFAULT_DB, dest: Path = DEFAULT_DEST, *, chunk: int = CHU
     arrays["meta_exported_at"] = np.array([time.time()], dtype=np.float64)
     arrays["meta_source_db"] = np.array([str(db)])
     write_archive(out, arrays)
+    return summary(out, arrays, int(len(new["ts"])), bound)
+
+
+def summary(out: Path, arrays: dict, new_rows: int, max_rowid: int) -> dict:
     sources, counts = np.unique(arrays["source"], return_counts=True)
     ts = arrays["ts"]
-    return {"path": str(out), "rows": int(len(ts)), "new_rows": int(len(new["ts"])), "max_rowid": bound,
+    return {"path": str(out), "rows": int(len(ts)), "new_rows": new_rows, "max_rowid": max_rowid,
             "ts_min": float(ts.min()) if len(ts) else None, "ts_max": float(ts.max()) if len(ts) else None,
             "rows_by_source": {str(s): int(c) for s, c in zip(sources, counts)}}
 

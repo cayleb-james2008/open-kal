@@ -14,7 +14,7 @@ import numpy as np
 from scripts import track8_coinbase_rti_settle as M8
 from scripts import track9_coinbase_lead_lag as M
 
-PREREG_SHA256 = "66bc153252603d9cb4d1aeb461c201ac8b6538e3c35fdc8044a6cb21d084354b"   # v2, amended before any code or data
+PREREG_SHA256 = "c4329276e95f6406e1bd0c92a1954b994cd5d4a60691139e3da4c3e69edf0758"   # v3; both amendments made before any data was read
 T0 = 1_800_000_000.0
 
 
@@ -34,10 +34,19 @@ def stat(lag=0, noise=0.0, **kw):
 
 
 class Registration(unittest.TestCase):
-    def test_the_registered_file_is_the_v2_amended_before_any_code_and_has_not_drifted(self):
+    def test_the_registered_file_is_v3_amended_twice_before_any_data_and_has_not_drifted(self):
         self.assertEqual(hashlib.sha256(M.SPEC_PATH.read_bytes()).hexdigest(), PREREG_SHA256)
-        self.assertEqual((M.SPEC["version"], M.SPEC_SHA256), (2, PREREG_SHA256))
-        self.assertEqual(M.SPEC["amendments"][0]["supersedes_commit"], "81927da6aee5bdbaf0ecdc338f7f335102574285")
+        self.assertEqual((M.SPEC["version"], M.SPEC_SHA256), (3, PREREG_SHA256))
+        v2, v3 = M.SPEC["amendments"]
+        self.assertEqual((v2["version"], v2["supersedes_commit"]), (2, "81927da6aee5bdbaf0ecdc338f7f335102574285"))
+        self.assertEqual((v3["version"], v3["supersedes_commit"]), (3, "b8ea5e0538144c64c280d81d401f354d6a17c5ce"))
+        self.assertIn("no threshold", v3["not_changed"])
+
+    def test_the_clock_basis_of_both_series_is_recorded(self):
+        cb = M.SPEC["clock_basis"]
+        self.assertIn("time.time()", cb["coinbase_ts"])
+        self.assertIn("received_at", cb["rti_ts"])
+        self.assertIn("not_measured", cb)
 
     def test_the_registered_numbers_are_the_ones_the_code_uses(self):
         s = M.SPEC

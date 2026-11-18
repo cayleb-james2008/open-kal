@@ -1,8 +1,8 @@
 {
   "name": "coinbase_lead_lag_premise",
-  "version": 2,
+  "version": 3,
   "registered": "2026-11-18T11:15:00-05:00",
-  "status": "pre-registered (amended once, before any code ran); not run; no spot_ticks data has been read",
+  "status": "pre-registered (amended twice, both before any data was read); not run; no spot_ticks data has been read",
   "question": "Does the 60-second CF Benchmarks RTI lag pure, venue-labelled Coinbase prints by 1-3 seconds, often enough and by enough to support a settlement-average trade, and does a Coinbase-based settlement probability beat the market's own mid?",
   "data": {
     "coinbase": "spot_ticks rows with source == 'coinbase' only (kraken and rest are excluded), exported read-only from data/openkal-prod.db into spot_ticks.npz",
@@ -110,6 +110,24 @@
         "lead_lag.criterion_passes_when",
         "lead_lag.horizons_s renamed lags_s"
       ]
+    },
+    {
+      "version": 3,
+      "date": "2026-11-18T12:05:00-05:00",
+      "supersedes_commit": "b8ea5e0538144c64c280d81d401f354d6a17c5ce",
+      "reason": "The clock basis of the two series was not stated. Read from source: spot_ticks.ts is the engine host's time.time() when the Coinbase print callback ran; the index ts is the Kalshi websocket frame's received_at field (milliseconds, a Kalshi-side clock) when present, else the host's time.time(). A lead-lag statistic at 1-2 s therefore compares 'Coinbase as our host saw it' with 'RTI as Kalshi stamped it'.",
+      "made_before": "any run and any read of spot_ticks data",
+      "changed": [
+        "clock_basis added"
+      ],
+      "not_changed": "no threshold, rule, window, split, bootstrap setting or criterion"
     }
-  ]
+  ],
+  "clock_basis": {
+    "coinbase_ts": "spot_ticks.ts = the engine host's time.time() when the print callback ran (openkal/engine.py _on_price)",
+    "rti_ts": "index_*.npz ts = the Kalshi websocket frame's received_at (ms, Kalshi-side clock) when present, else the host's time.time() (openkal/kalshi_ws.py _handle_index)",
+    "meaning": "A pass reads: Coinbase prints as stamped by our host lead the RTI as stamped by Kalshi by 1-2 seconds.",
+    "not_measured": "the host-versus-Kalshi clock offset and each feed's network latency; the 1 s grid assigns most prints to the same second for any offset under about half a second, and a real lead of a second or more is far above NTP-scale offsets, but this is not verified",
+    "tradeability": "the lead as seen by our host in real time is what a trade could use; the Brier criterion, not the lead-lag statistic, is what tests whether anything of value follows from it"
+  }
 }
