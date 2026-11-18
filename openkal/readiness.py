@@ -71,6 +71,10 @@ MAX_WS_LAG_MS = WS_MAX_LAG_MS["coinbase"]
 CANARY_MAX_AGE_S = 6 * 3600.0
 
 _CONTROLS: dict[str, Any] = {"ts": 0.0, "ok": False, "detail": "not run yet", "key": None}
+# Decision parity is a tape scan, not a replay: cached for a minute so the twice-a-
+# second snapshot does not read 20k rows per lane on every publish.
+_PARITY: dict[str, Any] = {"ts": 0.0, "ok": False, "detail": "not run yet", "key": None}
+PARITY_MAX_AGE_S = 60.0
 
 
 @dataclass
@@ -91,6 +95,7 @@ def evaluate(engine: Any) -> dict[str, Any]:
     checks.append(_feeds(engine))
     checks.append(_loop(engine))
     checks.append(_venue(engine))
+    checks.append(_signal_parity(engine))
     ready = all(c.ok for c in checks)
     blockers = [c.label for c in checks if not c.ok]
     stats = engine.store.epoch_stats(engine.epoch_start)
@@ -460,6 +465,57 @@ def _canary() -> Check:
     if problems:
         detail += " — " + "; ".join(problems)
     return Check("canary", label, not problems, detail)
+
+
+# ------------------------------------------- decision parity (live vs canonical)
+def _signal_parity(engine: Any) -> Check:
+    """Every recorded live decision must equal the canonical decision for its tick.
+
+    A ledger/replay mismatch can only be seen after a fill, and a detector that
+    changed its mind between the hot path and the canonical path could go unnoticed
+    for a whole window. This reads the decisions the engine recorded with each tick
+    and re-derives them with `strategy.decide` from the same inputs, so drift is a
+    named blocker instead of an unexplained P&L difference. Loud on purpose: a
+    single mismatch blocks arming.
+    """
+    from .parity import lane_parity
+
+    label = "live decisions match the canonical decision path"
+    try:
+        key = tuple((s.cfg.series, str(s.params.to_json())) for s in engine.slots)
+    except Exception:  # noqa: BLE001 - a broken slot is a red check, not a crash
+        key = ()
+    if (_PARITY["ts"] > 0.0 and _PARITY.get("key") == key
+            and time.time() - _PARITY["ts"] < PARITY_MAX_AGE_S):
+        return Check("parity", label, _PARITY["ok"], _PARITY["detail"])
+    checked = mismatches = skipped = 0
+    examples: list[str] = []
+    try:
+        for slot in engine.slots:
+            ticks = engine.store.recent_ticks(slot.cfg.series, engine.epoch_start, limit=20000)
+            result = lane_parity(slot.cfg.series, ticks, slot.params)
+            checked += result["checked"]
+            mismatches += result["mismatches"]
+            skipped += result["skipped"]
+            for row in result["examples"]:
+                examples.append(f"{result['series']} {row['ts']:.0f}s live {row['live']} "
+                                f"vs canonical {row['canonical']}")
+    except Exception as exc:  # noqa: BLE001 - an unreadable tape is a blocker
+        _PARITY.update(ts=time.time(), ok=False, key=key,
+                       detail=f"parity read failed: {type(exc).__name__}: {exc}")
+        return Check("parity", label, False, _PARITY["detail"])
+    ok = mismatches == 0 and checked > 0
+    if checked == 0:
+        detail = ("no recorded decisions yet: this build records one per tick, so the "
+                  "check binds after the first tick of this epoch")
+    else:
+        detail = f"{checked:,} decisions re-derived, {mismatches} mismatches"
+        if skipped:
+            detail += f", {skipped:,} skipped (position open or inputs not recorded)"
+    if examples:
+        detail += " — " + "; ".join(examples[:3])
+    _PARITY.update(ts=time.time(), ok=ok, key=key, detail=detail)
+    return Check("parity", label, ok, detail)
 
 
 # --------------------------------------------------- operational hygiene (kept)

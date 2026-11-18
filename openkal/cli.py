@@ -98,7 +98,11 @@ async def _amain(args: argparse.Namespace) -> int:
 
     async def publish() -> None:
         while True:
-            box.put(engine.snapshot())
+            # `dashboard_payload` says "booting" until the engine has read the
+            # venue and the ledger. Publishing `snapshot()` here reported the
+            # previous epoch's realized P&L (equity -42.54) for the first ~10s of
+            # every start, before any balance had been read.
+            box.put(engine.dashboard_payload())
             await asyncio.sleep(0.5)
 
     publisher = asyncio.create_task(publish())

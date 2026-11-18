@@ -122,6 +122,35 @@ REGIME_MAX_ECE = Decimal("0.10")
 REGIME_MIN_PROFITABLE_LANES = 2
 
 
+# --- entry re-quote cooldown ------------------------------------------------
+# One new entry quote per lane per 90 seconds. The per-window caps count entries,
+# not time: a lane whose order is pulled unfilled (thesis gone, book moved) could
+# re-quote on the next tick, and four lanes at 5Hz turned that into a stream of
+# quotes nobody's study measured. 90s is the cooldown the frozen research scripts
+# already use when they pick events (`pick(..., cooldown=90.0)`), so the live gate
+# and the scored rule agree on what "the same trade" means.
+REQUOTE_COOLDOWN_S = 90.0
+
+
+def entry_quote_allowed(last_ts: float | None, now: float,
+                        cooldown_s: float = REQUOTE_COOLDOWN_S) -> bool:
+    """Whether a lane may issue a new entry quote at `now`.
+
+    `last_ts` is when the lane last issued one (0.0 = never). The comparison is
+    inclusive: a quote exactly `cooldown_s` old is allowed, one a tick younger is
+    not. A clock that steps backwards (NTP) refuses rather than allowing, because
+    a negative gap is not evidence that the cooldown elapsed.
+    """
+    try:
+        last = float(last_ts or 0.0)
+        current = float(now)
+    except (TypeError, ValueError):
+        return False
+    if last <= 0.0:
+        return True
+    return 0.0 <= current - last >= cooldown_s
+
+
 # --- live rolling-decay breaker ---------------------------------------------
 # The forward gate is scored before arming; afterwards the epoch's own closed
 # trades are the only evidence that the edge is still there. A rule that stops

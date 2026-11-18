@@ -15,10 +15,10 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from . import features, sim_core
+from . import arming, features, sim_core
 from .auth import KalshiClient, money
 from .config import (DECAY_WINDOW_TRADES, ROOT, SeriesConfig, Settings,
-                     rolling_decay_breaker)
+                     entry_quote_allowed, rolling_decay_breaker)
 from .decision_gate import LayaGate, verdict_payload
 from .execution import Executor, RestingExit, RestingOrder
 from .feeds import SpotFeed
@@ -87,6 +87,9 @@ class SlotRuntime:
     last_trade: dict[str, Any] | None = None
     window_open_ts: float = 0.0
     last_tick_store: float = 0.0
+    # When this lane last issued a new entry quote. One per lane, not one per
+    # executor: the cooldown is a property of the lane's own re-quote behaviour.
+    last_entry_quote_ts: float = 0.0
     gate: dict[str, Any] | None = None
     signal: str = ""
     signal_detail: str = ""
@@ -167,6 +170,14 @@ class Engine:
         self.live_armed = False
         self.arm_ts: float | None = None
         self.kill_reason: str | None = None
+        # The dashboard may not publish a snapshot before the boot read is done:
+        # `__init__` restores the previous epoch's realized P&L, so an early
+        # snapshot reports an equity the account does not have.
+        self.ready = False
+        # Operator arming evidence. An instance attribute, not a module constant, so
+        # a test can point it at a scratch file; production reads data/live-arm.json.
+        self.arm_path = arming.ARM_PATH
+        self._arm_lock_noted = False
         self.epoch_start = time.time()
         self.broker = None
         self.live = None
@@ -398,6 +409,13 @@ class Engine:
 
     # ---------- lifecycle ----------
     async def run(self) -> None:
+        # An arm record from a previous boot is not permission for this one: a
+        # restart must never put money at risk. Discard it before anything reads it.
+        stale = arming.clear(self.arm_path)
+        if stale is not None:
+            self.supervisor.note(
+                "ARM_LOCK",
+                f"discarded a pre-boot arm record ({stale.get('by') or 'unknown'})")
         await self.feed.start()
         # The authenticated socket is the primary market data plane: index prints the
         # contracts settle on, and the real ladder instead of a 3-second poll.
@@ -429,6 +447,10 @@ class Engine:
         # Record the program this process is actually running: the replay controls
         # re-run *that* program against the ledger, not whatever today's defaults are.
         self._record_program()
+        # The loop is live from here. Before this point the account, the venue and
+        # the lanes have not been read, so a snapshot would be a guess -- and the
+        # previous epoch's realized P&L is exactly the guess it used to publish.
+        self.ready = True
         try:
             while not self._stop.is_set():
                 started = time.perf_counter()
@@ -624,13 +646,31 @@ class Engine:
         )
         self.supervisor.note("ADOPT", f"{ticker}: {contracts} {side} at {price}")
 
+    def _note_arm_lock(self, why: str) -> None:
+        """Say once, in the supervisor log, that live is configured but locked."""
+        if getattr(self, "_arm_lock_noted", False):
+            return
+        self._arm_lock_noted = True
+        try:
+            self.supervisor.note("ARM_LOCKED", f"live configured; {why}")
+        except Exception:  # noqa: BLE001 - a note must never block the loop
+            pass
+
     async def _maybe_arm(self, now: float) -> None:
-        """The only place `live_armed` can become true."""
+        """The only place `live_armed` can become true.
+
+        Four independent things must hold, and none of them is something the process
+        can produce for itself: `settings.live` (this build may send venue orders at
+        all), `settings.arm_live` (the environment asks for a live run), an operator
+        arm record written *after this process started* by `scripts/arm_live.py`, and
+        a green readiness gate. `OPENKAL_ARM_LIVE=1` alone used to be enough, which
+        made every restart and every inherited environment an arm; it now only asks
+        for one, and a person has to answer.
+        """
         # A killed process stays paper for its lifetime: `kill_reason` is set by
         # `kill()`, which includes the decay breaker, and re-arming on the next
         # readiness pass would undo the disarm before an operator ever saw it.
-        if (self.live_armed or self.kill_reason or not self.settings.arm_live
-                or not self.settings.live):
+        if self.live_armed or self.kill_reason or not self.settings.live:
             return
         # 5s, not 30s, until armed. The first check runs before any quote exists (the
         # `feeds` row needs one), and a 30s retry left a whole window for a paper fill
@@ -639,6 +679,13 @@ class Engine:
         if now - self._last_arm_check < 5:
             return
         self._last_arm_check = now
+        if not self.settings.arm_live:
+            self._note_arm_lock("OPENKAL_ARM_LIVE is not set")
+            return
+        record = arming.read(getattr(self, "arm_path", arming.ARM_PATH))
+        if not arming.armed(record, started=getattr(self, "started", 0.0), now=now):
+            self._note_arm_lock("no operator arm record for this boot")
+            return
         from .readiness import evaluate
 
         verdict = evaluate(self)
@@ -667,9 +714,30 @@ class Engine:
             from .live_exec import LiveExecutor
 
             self.live = LiveExecutor(self, self.broker)
-            self.supervisor.note("ARM_LIVE", "readiness passed: venue orders enabled")
+            # One act, one process: the record may not arm the next boot.
+            arming.consume(getattr(self, "arm_path", arming.ARM_PATH))
+            self.supervisor.note(
+                "ARM_LIVE", f"readiness passed; armed by {record.get('by')}")
         elif verdict["blockers"]:
             self.supervisor.note("READY_WAIT", "; ".join(verdict["blockers"][:3]))
+
+    def _requote_allowed(self, slot: SlotRuntime, now: float) -> bool:
+        """At most one new entry quote per lane per `REQUOTE_COOLDOWN_S`.
+
+        A pulled or unfilled entry order does not reset this: a lane that quotes,
+        cancels and quotes again every second is exactly what the cooldown exists to
+        stop, and the per-window caps cannot see it.
+        """
+        return entry_quote_allowed(getattr(slot, "last_entry_quote_ts", 0.0), now)
+
+    def _can_open(self, slot: SlotRuntime, signal: Any, crossed: bool,
+                  prospective: str | None, awaiting_arm: bool, now: float) -> bool:
+        """Every gate that must hold before a lane may issue a new entry quote."""
+        return ((signal is not None) and not crossed and not slot.halted
+                and not awaiting_arm
+                and self._window_open(slot, signal)
+                and self._capacity_ok(slot, prospective)
+                and self._requote_allowed(slot, now))
 
     def _clear_paper_orders(self) -> None:
         """Pull resting paper bids before the venue takes over. No fills, no trades."""
@@ -1183,10 +1251,7 @@ class Engine:
         # The zero-drift GBM is a reference price, not a thesis: measured against the
         # book it is worse (Brier 0.2271 vs 0.2187) and it lost money on the tape. It may
         # not open a position. Only a microstructure signal can.
-        can_open = ((signal is not None) and not crossed and not slot.halted
-                    and not awaiting_arm
-                    and self._window_open(slot, signal)
-                    and self._capacity_ok(slot, prospective))
+        can_open = self._can_open(slot, signal, crossed, prospective, awaiting_arm, now)
         hurdle = self._edge_hurdle(slot)
         decision = decide(
             quote=quote, p_up=slot.p_up, seconds_left=seconds_left,
@@ -1220,6 +1285,13 @@ class Engine:
         slot.state = "halted" if slot.halted else decision.regime
         slot.reason = decision.reason
 
+        # The cooldown gate above refuses a second quote inside 90s; this stamps the
+        # moment the first one is actually issued, live or paper. A lane holding an
+        # order or a position is not quoting, so it does not reset the window.
+        flat_before = slot.position is None
+        if decision.action == "entry" and flat_before and slot.order is None:
+            slot.last_entry_quote_ts = now
+
         if self.live_armed and self.live is not None:
             # Real orders: the venue is the only source of fills.
             await self.live.step(slot, decision, quote, seconds_left, now, venue or {"orders": {}, "fills": []})
@@ -1249,6 +1321,9 @@ class Engine:
             signal=slot.signal, can_open=can_open, stake=str(slot.bankroll),
             spot_age=spot_age, hurdle=str(hurdle), impulse_bps=impulse_bps,
             gate=json.dumps(slot.gate) if slot.gate else "",
+            strike=float(quote.strike), quote_age=float(quote.age_s),
+            decision=(f"{decision.action}:{decision.side or '-'}"
+                      if flat_before else ""),
         )
         slot.tape.append({"ts": now, "p": slot.p_up, "mid": float(quote.mid),
                           "edge": float(decision.edge), "spot": slot.spot})
@@ -1327,6 +1402,22 @@ class Engine:
             return report if float(report.get("since") or 0) >= self.epoch_start - 1 else None
         except (OSError, ValueError, TypeError):
             return None
+
+    def dashboard_payload(self) -> dict[str, Any]:
+        """What `/api/state` may say right now.
+
+        Until `run()` has read the venue, the ledger and the lanes, the only honest
+        answer is "booting". `__init__` restores the epoch's realized P&L from
+        SQLite, so a snapshot published in the seconds before the first balance read
+        reported an equity (-42.54 on this box) that belonged to the previous epoch,
+        against a venue balance of 121.46. A dashboard that shows a fabricated
+        account number is worse than one that says it is still booting.
+        """
+        if not self.ready:
+            stamped = time.time()
+            return {"mode": "booting", "generated_at": stamped,
+                    "uptime_s": round(stamped - self.started, 1)}
+        return self.snapshot()
 
     @property
     def running_program(self) -> str:

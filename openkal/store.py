@@ -13,6 +13,15 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+# Two tapes, two retention windows. `ticks` is the decision tape a replay needs to
+# reconstruct a live epoch, and an epoch is measured in hours, so three days is
+# generous. `spot_ticks` is the longest-lived research input on the box (a 5Hz feed
+# per venue, four symbols) and Track 9 reads it across restarts through 2026-11-21,
+# so it keeps 14 days. They shared one cutoff before; a 3-day prune landing at the
+# wrong moment would have deleted evidence the tracker still needed.
+KEEP_S = 86400 * 3
+SPOT_KEEP_S = 86400 * 14
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS ticks (
     ts REAL NOT NULL, series TEXT NOT NULL, ticker TEXT NOT NULL,
@@ -124,6 +133,15 @@ class Store:
                            # freshness and the calibration-adjusted hurdle.
                            ("spot_age", "REAL"), ("hurdle", "TEXT"),
                            ("impulse_bps", "REAL"),
+                           # The strike the live decision compared the spot print to.
+                           # Replay's quote builder leaves it at 0, which silently
+                           # changes F2's side rule; the tape keeps the real number.
+                           ("strike", "REAL"),
+                           # The decision the live detector produced on this tick, as
+                           # `action:side`, and the quote age it saw. Both exist so
+                           # `openkal.parity` can re-derive the decision from the same
+                           # inputs instead of comparing against a guess.
+                           ("decision", "TEXT"), ("quote_age", "REAL"),
                            # Laya's shadow verdict for this trigger, as JSON. Without it
                            # an ablation can only re-run the model with hindsight; with
                            # it, the verdict the live lane actually saw is on the tape.
@@ -151,13 +169,21 @@ class Store:
              last: str, spot: float, p_model: float, edge: float, secs_left: float,
              spread: float, signal: str = "", can_open: bool = False,
              stake: str = "", spot_age: float = 0.0, hurdle: str = "",
-             impulse_bps: float = 0.0, gate: str = "") -> None:
+             impulse_bps: float = 0.0, gate: str = "", strike: float = 0.0,
+             decision: str = "", quote_age: float = 0.0) -> None:
+        """Append one evaluation.
+
+        `decision` is empty when a position was open at decision time: the canonical
+        path this tape is checked against re-decides a flat lane, and an exit
+        decision is not a function of the same inputs.
+        """
         self._exec(
             "INSERT INTO ticks(ts,series,ticker,yes_bid,yes_ask,last,spot,p_model,edge,secs_left,"
-            "spread,signal,can_open,stake,spot_age,hurdle,impulse_bps,gate)"
-            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "spread,signal,can_open,stake,spot_age,hurdle,impulse_bps,gate,strike,decision,"
+            "quote_age) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (ts, series, ticker, yes_bid, yes_ask, last, spot, p_model, edge, secs_left, spread,
-             signal, 1 if can_open else 0, stake, spot_age, hurdle, impulse_bps, gate),
+             signal, 1 if can_open else 0, stake, spot_age, hurdle, impulse_bps, gate, strike,
+             decision, quote_age),
         )
 
     def set_tick_gate(self, *, series: str, gate: str, ticker: str | None = None) -> None:
@@ -454,9 +480,15 @@ class Store:
             row = self._db.execute("SELECT v FROM meta WHERE k=?", (key,)).fetchone()
         return json.loads(row["v"]) if row else default
 
-    def prune(self, keep_s: float = 86400 * 3) -> None:
-        cutoff = time.time() - keep_s
-        self._exec("DELETE FROM ticks WHERE ts<?", (cutoff,))
-        # The spot tape is a diagnostics/research input, not the ledger: it is
-        # pruned on the same window so a 5Hz feed cannot grow the file forever.
-        self._exec("DELETE FROM spot_ticks WHERE ts<?", (cutoff,))
+    def prune(self, keep_s: float = KEEP_S, spot_keep_s: float | None = None) -> None:
+        """Age both tapes out, each on its own window.
+
+        `keep_s` is the decision tape's window (3 days). `spot_keep_s` defaults to
+        `SPOT_KEEP_S` (14 days) and exists separately because the spot tape outlives
+        the epochs it was recorded for: Track 9 reads it through 2026-11-21, and a
+        restart on the 20th must not take the prints from the 8th with it.
+        """
+        now = time.time()
+        self._exec("DELETE FROM ticks WHERE ts<?", (now - keep_s,))
+        self._exec("DELETE FROM spot_ticks WHERE ts<?",
+                   (now - (SPOT_KEEP_S if spot_keep_s is None else spot_keep_s),))

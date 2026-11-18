@@ -24,6 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from openkal import arming  # noqa: E402
 from openkal.config import SLOTS, load_settings  # noqa: E402
 from openkal.engine import Engine  # noqa: E402
 from openkal.live_exec import LiveExecutor  # noqa: E402
@@ -144,6 +145,13 @@ def entry_fee(fills: list) -> Decimal:
 
 
 async def main() -> int:
+    # Real orders, so the same operator record the engine requires: the arm lock is
+    # only real if no script can bypass it.
+    record = arming.consume()
+    if record is None:
+        log("refusing: no operator arm record; run scripts/arm_live.py --by <name> first")
+        return 2
+    log(f"operator {record.get('by')} armed this run")
     settings = load_settings()
     store = Store(Path(settings.db_path))
     engine = Engine(settings, store)

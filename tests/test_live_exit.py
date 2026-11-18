@@ -1863,7 +1863,7 @@ def control_spot_ticks() -> None:
         check("spot_ticks: per-venue counts are visible for a dead-socket check",
               store.spot_venues(0.0).get("BTC-USD") == {"coinbase": 2, "kraken": 1},
               str(store.spot_venues(0.0)))
-        store.prune(keep_s=0.0)
+        store.prune(keep_s=0.0, spot_keep_s=0.0)
         check("spot_ticks: prune ages the spot tape out with the tick tape",
               store.spot_ticks("BTC-USD", 0.0) == [], "not pruned")
         store._db.close()

@@ -13,6 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from openkal import arming  # noqa: E402
 from openkal.config import load_settings  # noqa: E402
 from openkal.engine import Engine  # noqa: E402
 from openkal.live_exec import LiveExecutor  # noqa: E402
@@ -45,6 +46,13 @@ async def counts(engine: Engine) -> tuple[int, int]:
 
 
 async def main() -> int:
+    # This script puts real orders on the venue. The engine's arm lock would be a
+    # fiction if a test harness could set `live_armed` without a person's record.
+    record = arming.consume()
+    if record is None:
+        log("refusing: no operator arm record; run scripts/arm_live.py --by <name> first")
+        return 2
+    log(f"operator {record.get('by')} armed this run")
     settings = load_settings()
     store = Store(Path(settings.db_path))
     engine = Engine(settings, store)
