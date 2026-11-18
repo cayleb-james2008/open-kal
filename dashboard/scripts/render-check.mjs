@@ -143,9 +143,10 @@ const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css
 // render the "engine unreachable" state instead of the console and the checks
 // would measure an error page. The live engine's own snapshot is captured once and
 // served frozen: the engine's counters move every second, and a page that is not
-// the same twice cannot be swept for hover, press or inertness. Without BASE_URL the
-// bench still serves dist/ itself.
-const external = process.env.BASE_URL ? process.env.BASE_URL.replace(/\/?$/, "/") : null;
+// the same twice cannot be swept for hover, press or inertness. It defaults to the
+// engine on this machine; set BASE_URL to point the sweep at another origin.
+const external = benchMode && !process.env.BASE_URL ? null
+  : (process.env.BASE_URL ?? "http://127.0.0.1:8787").replace(/\/?$/, "/");
 let server = null;
 let base;
 const serveStatic = (req, res) => {
@@ -156,7 +157,10 @@ const serveStatic = (req, res) => {
   fs.createReadStream(file).pipe(res);
 };
 if (external) {
-  const snapshot = await fetch(new URL("api/state", external)).then((r) => r.text());
+  const snapshot = await fetch(new URL("api/state", external)).then((r) => r.text()).catch((e) => {
+    console.error(`The engine at ${external} did not answer /api/state (${e.message}): start it with .venv/bin/python run.py --port 8787, or set BASE_URL.`);
+    process.exit(2);
+  });
   console.log("checking the running app at", external, "with a frozen /api/state snapshot");
   server = http.createServer((req, res) => {
     const url = new URL(req.url, "http://x");
