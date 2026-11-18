@@ -390,6 +390,9 @@ def breaker_case(name: str, balance: str, delta: str, expect: int,
         "--verdict-file", str(d / "verdict.json"), "--forward-out", str(d / "forward.json"),
         "--dry-run",
     ]
+    # These drills make a forward check due by starting from `checks_done: 0`;
+    # without a stubbed `run` each case would execute the production cache rebuild
+    # (hours of tape reads) instead of a unit test.
     with sandbox(STATE=d / "state.json", REPORT=d / "report.md", NEXT=d / "next.json",
                  LOG=d / "log.txt", VERDICT=d / "verdict.json",
                  FORWARD_PATH=d / "forward.json", DRY_RUN=True,
@@ -398,7 +401,8 @@ def breaker_case(name: str, balance: str, delta: str, expect: int,
                  reconcile=lambda since=None: {"delta": str(delta)},
                  restart_flat=fake_restart,
                  epoch_start=lambda: float(D.FORWARD_SINCE),
-                 venue_flat=lambda: (True, "flat")):
+                 venue_flat=lambda: (True, "flat"),
+                 run=Recorder(forward_trades=5)):
         sys.argv = argv
         D.main()
     state = read(d / "state.json")
