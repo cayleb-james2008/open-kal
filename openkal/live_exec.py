@@ -175,6 +175,8 @@ class LiveExecutor(Executor):
             price = pin
             if not (slot.params.sl2_min_price <= price <= slot.params.sl2_max_price):
                 self.note = f"settlement entry refused: pinned cost {price} outside the band"
+                self.record(slot, "cancel", decision.side or "YES", price, 0, Decimal("0"),
+                            "settlement band")
                 return
         # Two invariants outrank every stage: no entry above the $0.62 cost
         # ceiling, and no new risk once the account is 20% below its high-water

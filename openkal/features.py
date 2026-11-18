@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import math
+from bisect import bisect_left, bisect_right
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -56,6 +57,45 @@ def realized_sigma(points: list[tuple[float, float]], window_s: float = 2.0) -> 
         return 0.0
     # Floor: a tape that looks perfectly quiet is still not a certain outcome.
     return max(math.sqrt(var), 2.5e-5)
+
+
+def trailing_sigma(points: list[tuple[float, float]], now: float,
+                   window_s: float = 150.0, floor: float = 5.0e-5,
+                   min_pairs: int = 5) -> float:
+    """Trailing per-sqrt-second volatility of a price tape, over `window_s`.
+
+    The estimate is the mean of `log(v1/v0)^2 / dt` over the consecutive points
+    whose later point falls in `(now - window_s, now]`, with `dt` between 1ms and
+    5s, floored at `floor` and refused when fewer than `min_pairs` usable pairs
+    are inside the window.
+
+    This is the estimator the research scripts use (`alpha_search.trailing_sigma`,
+    and the fit behind the frozen Student-t coefficients), written out here so the
+    live engine and the forward scorer price the same contract with the same
+    number. `realized_sigma` above is a different estimator: it averages over
+    every point it was given, so it answered for a nine-minute buffer where the
+    scorer answered for a 150-second one, and two prices of the same contract
+    were not the same contract.
+    """
+    if not points:
+        return floor
+    lo = max(bisect_left(points, (now - window_s,)) - 1, 0)
+    hi = bisect_right(points, (now, float("inf")))
+    num = 0.0
+    den = 0
+    prev: tuple[float, float] | None = None
+    for i in range(lo, hi):
+        ts, value = points[i]
+        if prev is not None:
+            dt = ts - prev[0]
+            if 1e-3 <= dt <= 5.0 and prev[1] > 0 and value > 0:
+                r = math.log(value / prev[1])
+                num += (r * r) / dt
+                den += 1
+        prev = (ts, value)
+    if den < min_pairs:
+        return floor
+    return max(math.sqrt(num / den), floor)
 
 
 @dataclass(frozen=True)

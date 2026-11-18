@@ -92,7 +92,6 @@ class SlotRuntime:
     gate_ts: float = 0.0
     weak_ticks: int = 0
     edge_streak: int = 0
-    gate_ticker: str = ""
     # Last fully printed settlement average for the current contract. A lock-in
     # position is settled at 1/0 from this, not marked at the next window's bid.
     lock_in_settlement: tuple[str, float, float] | None = None
@@ -340,6 +339,11 @@ class Engine:
         Student-t fit is of the index's own standardised returns. The imbalance is
         the resting size on the two sides of the touch, and the flow is the signed
         aggressor print tape on a fast and a slow window.
+
+        The volatility is the *same* trailing estimator the forward scorer uses
+        (`features.trailing_sigma`), on the same tape: pricing one program with
+        two estimators is how the live lane and the scored lane end up trading
+        different things.
         """
         fit = features.STUDENT_T_FIT.get(slot.cfg.series)
         if fit is None:
@@ -350,7 +354,7 @@ class Engine:
         spot = _last_point(pts, now, slot.params.max_spot_age_s)
         if spot is None:
             return None
-        index_sigma = features.realized_sigma(pts)
+        index_sigma = features.trailing_sigma(pts, now)
         if index_sigma <= 0:
             return None
         obi = features.l2_imbalance(quote.yes_bid_sz, quote.yes_ask_sz)
@@ -918,19 +922,29 @@ class Engine:
         """Apply the cached Laya verdict to an entry. A cache read: 0ms.
 
         The gate can only veto: the kernel's numeric abstention still stands when Laya
-        votes enter. It never creates a trade the model did not ask for, and a gate
-        that is offline never blocks -- the kernel's numeric edge decides.
+        votes enter. It never creates a trade the model did not ask for.
 
         `Params.require_layagate_allow` turns the cached opinion into a hard filter
         for a promoted strategy, with no code edit. The fine-tuned ONNX build has
         always had veto power; the switch exists so a strategy that was promoted
         against the gate's own forward evidence can enforce it too.
+
+        A filter that is binding does not trade on an absence of opinion: before
+        the gate has answered for this contract there is nothing to enforce, and
+        the forward score keeps only the trades whose verdict was an allow, so the
+        two have to agree. A gate that is *down* is a different thing -- its own
+        verdict says the kernel's numeric edge decides -- so an unavailable gate
+        never blocks.
         """
         params = slot.params
         if not (params.require_layagate_allow or self.gate.mode == "onnx"):
             return decision
         verdict = self.gate.cached(quote.ticker)
-        if verdict is None or not verdict.available:
+        if verdict is None:
+            return Decision("abstain", "laya gate: no verdict yet",
+                            side=decision.side, price=decision.price, p_model=decision.p_model,
+                            confidence=decision.confidence, edge=decision.edge, regime="gate")
+        if not verdict.available:
             return decision
         if verdict.allow and verdict.confidence >= params.layagate_min_confidence:
             return decision
@@ -1104,7 +1118,6 @@ class Engine:
         # cached per ticker. The entry path below reads that cache, so the tick
         # loop never waits on a forward pass.
         self._gate_refresh(slot, quote, seconds_left, decision)
-        slot.gate_ticker = quote.ticker
         if decision.action == "entry":
             decision = self._gate_veto(slot, quote, decision)
         slot.decision = decision

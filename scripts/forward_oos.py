@@ -371,58 +371,109 @@ def _flow_at(trade_ts: np.ndarray, cum_signed: np.ndarray, cum_size: np.ndarray,
     return float((cum_signed[hi] - cum_signed[lo]) / den)
 
 
-def _gate_verdicts(db_path: Path) -> dict[str, tuple[np.ndarray, np.ndarray]]:
-    """The LayaGate verdicts the live engine recorded, per series.
+def _gate_verdicts(db_path: Path):
+    """The LayaGate verdicts the live engine recorded, by ticker and by series.
 
-    Two arrays per series: the tick timestamp, and the verdict's `allow` flag
-    (1.0 allow, 0.0 deny). This is the shadow opinion the lane actually saw at
-    the time -- the same rows the offline ablation reads -- so a gate filter on a
-    forward score is the same filter the live path would have applied.
+    Two indexes of the same rows: one keyed by the contract the verdict was
+    about, one keyed by the lane. The contract is the honest key -- a verdict
+    belongs to the contract it judged -- and the lane index is the fallback for
+    the rows written before the recorder pinned its verdicts to their ticker.
+
+    Each entry is `(ts, allow, confidence)`: the tick timestamp, whether the gate
+    said enter (1) or skip (0), and how sure it was. This is the shadow opinion
+    the lane actually saw at the time -- the same rows the offline ablation
+    reads -- so a gate filter on a forward score is the same filter the live path
+    applies.
     """
-    out: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    by_ticker: dict[str, list[tuple[float, float, float]]] = {}
+    by_series: dict[str, list[tuple[float, float, float]]] = {}
     if not db_path.exists():
-        return out
+        return {}, {}
     con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
         rows = con.execute(
-            "SELECT series, ts, gate FROM ticks "
-            "WHERE gate IS NOT NULL AND gate != '' ORDER BY series, ts").fetchall()
+            "SELECT series, ticker, ts, gate FROM ticks "
+            "WHERE gate IS NOT NULL AND gate != '' ORDER BY ts").fetchall()
     finally:
         con.close()
-    by_series: dict[str, list[tuple[float, float]]] = {}
-    for series, ts, gate in rows:
+    for series, ticker, ts, gate in rows:
         try:
-            allow = json.loads(gate).get("allow")
+            payload = json.loads(gate)
         except (TypeError, ValueError):
             continue
+        allow = payload.get("allow")
         if allow is None:
             continue
-        by_series.setdefault(str(series), []).append((float(ts), 1.0 if allow else 0.0))
-    for series, items in by_series.items():
-        out[series] = (np.array([t for t, _ in items], dtype=np.float64),
-                       np.array([a for _, a in items], dtype=np.float64))
-    return out
+        confidence = float(payload.get("confidence") or 0.0)
+        item = (float(ts), 1.0 if allow else 0.0, confidence)
+        by_ticker.setdefault(f"{series}|{ticker}", []).append(item)
+        by_series.setdefault(str(series), []).append(item)
+
+    def _index(items: list[tuple[float, float, float]]):
+        return (np.array([t for t, _, _ in items], dtype=np.float64),
+                np.array([a for _, a, _ in items], dtype=np.float64),
+                np.array([c for _, _, c in items], dtype=np.float64))
+
+    return ({k: _index(v) for k, v in by_ticker.items()},
+            {k: _index(v) for k, v in by_series.items()})
 
 
-def _gate_allow(verdicts: dict[str, tuple[np.ndarray, np.ndarray]], series: str,
-                t: float) -> bool | None:
-    """The verdict in force at `t`: the last one recorded at or before it."""
-    pair = verdicts.get(series)
-    if not pair:
-        return None
-    ts, allow = pair
-    idx = int(np.searchsorted(ts, t, "right")) - 1
-    if idx < 0:
-        return None
-    return bool(float(allow[idx]) >= 0.5)
+def _gate_allow(by_ticker: dict, by_series: dict, series: str, ticker: str, t: float,
+                min_confidence: float = 0.0) -> bool | None:
+    """The verdict in force at `t`: the last one recorded at or before it.
+
+    `None` means the gate had no opinion at that moment. The live path refuses
+    an absent opinion when the filter is binding, so the forward score drops the
+    trade the same way: the two have to keep the same trades or they are not the
+    same program.
+    """
+    for index in (by_ticker.get(f"{series}|{ticker}"), by_series.get(series)):
+        if not index:
+            continue
+        ts, allow, confidence = index
+        idx = int(np.searchsorted(ts, t, "right")) - 1
+        if idx < 0:
+            continue
+        if float(confidence[idx]) < min_confidence:
+            return False
+        return bool(float(allow[idx]) >= 0.5)
+    return None
 
 
-def _settlement_triggers(lane: Lane, name: str, closes: set[float], sig: dict,
+def simulate_settlement(lane: Lane, trig: dict):
+    """One settlement trigger through the canonical simulator.
+
+    A taker entry that arrives a full second after its trigger, at the cost of
+    the side held, capped at the desk's $0.62 ceiling and inside the $0.35-$0.60
+    band, and a contract carried to expiry for a $0 exit fee. Every one of those
+    is a rule, not a default: the cap refuses an arrival above it, and the exit
+    is settlement rather than a crossing.
+    """
+    return sim_core.run_trade(
+        sim_core.Tape.from_lane(lane, int(trig["tid"]), float(trig["close"]),
+                                int(trig["y"])),
+        side=trig["side"],
+        trigger_ts=float(trig["ts"]),
+        entry_style=sim_core.TAKER,
+        qty=MAX_QTY,
+        lag_s=LAG_S,
+        max_cost=Decimal(str(SL2_CAP)),
+        cost_lo=Decimal(str(SL2_COST_LO)),
+        cost_hi=Decimal(str(SL2_COST_HI)),
+        barrier_exit="settle",
+        min_print=MIN_FILL,
+    )
+
+
+def _settlement_triggers(lane: Lane, name: str, closes: set[float],
+                          index_tape: list[tuple[float, float]],
                           params: Params) -> tuple[list[dict], Counter]:
     """The settlement program's own entries on one lane.
 
     Every row is put to `strategy.decide`, so what is scored here is the program
-    the engine runs, not a research copy of it.
+    the engine runs, not a research copy of it. The volatility is
+    `features.trailing_sigma` on the same settlement index the live engine reads:
+    one estimator, one number, or the scored program is not the traded program.
     """
     nu, s = features.STUDENT_T_FIT[name]
     depth_bid, depth_ask = _lane_depth(name)
@@ -437,7 +488,6 @@ def _settlement_triggers(lane: Lane, name: str, closes: set[float], sig: dict,
         ts = lane.ts[a:b]
         bid = lane.bid[a:b]
         ask = lane.ask[a:b]
-        sigma_row = sig[tid]
         spots = A.index_at_past(lane, close - grid)
         lo_tr, hi_tr = int(lane.trade_bounds[tid]), int(lane.trade_bounds[tid + 1])
         trade_ts = lane.trade_ts[lo_tr:hi_tr]
@@ -473,9 +523,10 @@ def _settlement_triggers(lane: Lane, name: str, closes: set[float], sig: dict,
             obi = (bid_sz - ask_sz) / (bid_sz + ask_sz)
             flow_fast = _flow_at(trade_ts, cum_signed, cum_size, t, params.sl2_flow_fast_s)
             flow_slow = _flow_at(trade_ts, cum_signed, cum_size, t, params.sl2_flow_slow_s)
+            sigma = features.trailing_sigma(index_tape, t)
             p_up = features.student_t_settlement_p_up(
                 spot=spot, strike=strike, seconds_left=float(secs),
-                sigma=float(sigma_row[j]), nu=nu, s=s)
+                sigma=sigma, nu=nu, s=s)
             quote = Quote(
                 ticker=ticker, series=name, strike=strike, close_ts=close,
                 yes_bid=sim_core.px(bid[j]), yes_ask=sim_core.px(ask[j]),
@@ -499,12 +550,13 @@ def _settlement_triggers(lane: Lane, name: str, closes: set[float], sig: dict,
                 "obi": obi, "flow_fast": flow_fast,
                 "flow_slow": flow_slow, "secs_left": float(secs),
             })
-    # One entry per contract per minute, at most two in a window: the same
-    # per-window cap the R&D study scored.
+    # One entry per contract per minute, at most `sl2_max_window_trades` in a
+    # window: the cap is the strategy's own, read from the same Params the live
+    # lane runs, so the score and the lane cannot disagree about it.
     kept: list[dict] = []
     for row in triggers:
         same = [k for k in kept if k["tid"] == row["tid"]]
-        if len(same) >= SL2_PER_WINDOW:
+        if len(same) >= params.sl2_max_window_trades:
             continue
         if same and row["ts"] - same[-1]["ts"] < SL2_COOLDOWN:
             continue
@@ -513,7 +565,8 @@ def _settlement_triggers(lane: Lane, name: str, closes: set[float], sig: dict,
 
 
 def score_student_t_l2(since: float, until: float | None = None,
-                       gate_filter: bool = False, db_path: Path | None = None) -> dict:
+                       gate_filter: bool = False, gate_min_confidence: float = 0.0,
+                       db_path: Path | None = None) -> dict:
     """Score the settlement program on windows closing in `[since, until)`.
 
     The probability this program carries is a *settlement* probability, so the
@@ -523,19 +576,28 @@ def score_student_t_l2(since: float, until: float | None = None,
 
     `gate_filter=True` keeps only the trades whose trigger carried a LayaGate
     verdict of `allow == True` -- the same opinion the live lane saw, read off
-    the recorded `ticks.gate` rows. It is optional because the gate is still a
-    shadow in this build; the filter is how a promoted strategy would enforce it
-    without a code edit.
+    the recorded `ticks.gate` rows. A trigger the gate had no opinion on is
+    dropped, because the live path refuses an absent opinion when the filter is
+    binding; keeping the two the same is the point. `gate_min_confidence` is the
+    same floor `Params.layagate_min_confidence` sets live.
+
+    It is optional because the gate is still a shadow in this build; the filter
+    is how a promoted strategy would enforce it without a code edit.
     """
     params = Params()
-    verdicts = _gate_verdicts(db_path or load_settings().db_path)
+    # The gate verdicts are only read when the filter is asked for: the scan is
+    # over every recorded tick, and a score that does not use the gate has no
+    # business paying for it.
+    by_ticker, by_series = ({}, {})
+    if gate_filter:
+        by_ticker, by_series = _gate_verdicts(db_path or load_settings().db_path)
     lanes = {name: Lane(name) for name in LANES}
     rows: list[dict] = []
     skips: Counter = Counter()
     windows: set[float] = set()
     pools_ok: dict[str, int] = {}
     events = 0
-    gate_counts = {"allowed": 0, "denied": 0, "unlogged": 0}
+    gate_counts = {"allowed": 0, "denied": 0, "no_opinion": 0}
     for name, lane in lanes.items():
         closes = {float(m["close"]) for m in lane.meta.values()
                   if float(m["close"]) >= since
@@ -543,33 +605,22 @@ def score_student_t_l2(since: float, until: float | None = None,
         pools_ok[name] = len(closes)
         if not closes:
             continue
-        sig = A.trailing_sigma(lane)
-        triggers, lane_skips = _settlement_triggers(lane, name, closes, sig, params)
+        index_tape = ([(float(t), float(v)) for t, v in zip(lane.index["ts"], lane.index["value"])]
+                      if lane.index else [])
+        triggers, lane_skips = _settlement_triggers(lane, name, closes, index_tape, params)
         events += len(triggers)
         for key, value in lane_skips.items():
             skips[key] += value
         for trig in triggers:
-            res = sim_core.run_trade(
-                sim_core.Tape.from_lane(lane, int(trig["tid"]), float(trig["close"]),
-                                        int(trig["y"])),
-                side=trig["side"],
-                trigger_ts=float(trig["ts"]),
-                entry_style=sim_core.TAKER,
-                qty=MAX_QTY,
-                lag_s=LAG_S,
-                max_cost=Decimal(str(SL2_CAP)),
-                cost_lo=Decimal(str(SL2_COST_LO)),
-                cost_hi=Decimal(str(SL2_COST_HI)),
-                barrier_exit="settle",
-                min_print=MIN_FILL,
-            )
+            res = simulate_settlement(lane, trig)
             if isinstance(res, sim_core.Skip):
                 skips[res.reason] += 1
                 continue
             windows.add(float(trig["close"]))
-            allow = _gate_allow(verdicts, name, float(trig["ts"]))
+            allow = _gate_allow(by_ticker, by_series, name, str(trig["ticker"]),
+                                float(trig["ts"]), gate_min_confidence)
             gate_counts["allowed" if allow is True else
-                        "denied" if allow is False else "unlogged"] += 1
+                        "denied" if allow is False else "no_opinion"] += 1
             rows.append({
                 "lane": name, "ticker": trig["ticker"], "tid": trig["tid"],
                 "ts": float(res.order_ts), "fill_ts": float(res.legs[0].ts),
@@ -602,6 +653,7 @@ def score_student_t_l2(since: float, until: float | None = None,
         "score_model": "openkal.sim_core",
         "strategy": "student_t_l2_settle",
         "gate_filter": gate_filter,
+        "gate_min_confidence": gate_min_confidence,
         "gate_counts": gate_counts,
         "program": {
             "settlement_model": "Student-t per lane (nu, s)",
@@ -658,12 +710,14 @@ def main() -> int:
     # Optional LayaGate gating for the settlement program: keep only the trades
     # whose trigger carried an `allow == True` verdict in the recorded ticks.
     ap.add_argument("--gate-filter", action="store_true")
+    ap.add_argument("--gate-min-confidence", type=float, default=0.0)
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
     if args.strategy == "student_t_l2_settle":
         if args.out == str(OUT):
             args.out = str(OUT_STUDENT_T)
-        report = score_student_t_l2(args.since, args.until, gate_filter=args.gate_filter)
+        report = score_student_t_l2(args.since, args.until, gate_filter=args.gate_filter,
+                                   gate_min_confidence=args.gate_min_confidence)
     else:
         report = score(args.since, args.until)
     out = Path(args.out)

@@ -24,6 +24,7 @@ import time
 import types
 from decimal import Decimal
 from pathlib import Path
+from dataclasses import replace
 from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -1066,17 +1067,38 @@ def control_layagate_filter() -> None:
     import numpy as np
 
     from scripts import forward_oos as F
-    verdicts = {"KXBTC15M": (np.array([100.0, 200.0, 300.0]),
-                             np.array([1.0, 0.0, 1.0]))}
+    ts = np.array([100.0, 200.0, 300.0])
+    allow = np.array([1.0, 0.0, 1.0])
+    conf = np.array([0.9, 0.9, 0.9])
+    by_ticker = {"KXBTC15M|KX-A": (ts, allow, conf)}
+    by_series = {"KXBTC15M": (ts, allow, conf)}
     check("gate: the forward filter takes the verdict in force at the trigger",
-          F._gate_allow(verdicts, "KXBTC15M", 150.0) is True
-          and F._gate_allow(verdicts, "KXBTC15M", 250.0) is False
-          and F._gate_allow(verdicts, "KXBTC15M", 350.0) is True,
+          F._gate_allow(by_ticker, by_series, "KXBTC15M", "KX-A", 150.0) is True
+          and F._gate_allow(by_ticker, by_series, "KXBTC15M", "KX-A", 250.0) is False
+          and F._gate_allow(by_ticker, by_series, "KXBTC15M", "KX-A", 350.0) is True,
           "the last verdict at or before the trigger")
     check("gate: a trigger before the first verdict has no opinion to read",
-          F._gate_allow(verdicts, "KXBTC15M", 50.0) is None
-          and F._gate_allow(verdicts, "KXETH15M", 150.0) is None,
+          F._gate_allow(by_ticker, by_series, "KXBTC15M", "KX-A", 50.0) is None
+          and F._gate_allow(by_ticker, {}, "KXETH15M", "KX-A", 150.0) is None,
           "no verdict in force")
+    check("gate: the forward filter reads the contract's own verdict first",
+          F._gate_allow(by_ticker, by_series, "KXBTC15M", "KX-B", 150.0) is True,
+          "the lane index is the fallback for rows with no contract-keyed verdict")
+    weak = {"KXBTC15M|KX-A": (ts, allow, np.array([0.1, 0.1, 0.1]))}
+    check("gate: the forward filter honours a minimum confidence",
+          F._gate_allow(weak, {}, "KXBTC15M", "KX-A", 150.0, 0.5) is False,
+          "an allow below the confidence floor is not an allow")
+
+    # A filter that is binding refuses an absent opinion, and the forward score
+    # drops the same trades: the two have to keep the same trades.
+    engine = gate_engine(LayaGate("http://127.0.0.1:1", mode="shadow"))
+    slot = SimpleNamespace(params=Params(require_layagate_allow=True))
+    entry = Decision("entry", "kernel entry", side="YES", price=Decimal("0.47"),
+                     p_model=0.62, edge=Decimal("0.06"))
+    silent = engine._gate_veto(slot, quote("0.45", "0.47"), entry)
+    check("gate: a binding filter refuses an entry the gate has not judged",
+          silent.action == "abstain" and "no verdict" in silent.reason,
+          f"action={silent.action} reason={silent.reason!r}")
 
     # The verdict is filed on the contract it judged. A review still in flight when
     # the window rolls must not land on the next contract's tick row: an ablation
@@ -1103,6 +1125,19 @@ def control_layagate_filter() -> None:
 # 11. The settlement program: Student-t value, true-L2 imbalance, signed flow,
 #     and the cost ceiling that bounds a carry.
 # --------------------------------------------------------------------------
+def _synthetic_lane(*, bid: float, ask: float, close: float):
+    """One contract's book and print tape, shaped like the research lane object."""
+    import numpy as np
+    ts = np.arange(1000.0, close - 5.0, 1.0)
+    n = len(ts)
+    return SimpleNamespace(
+        ts=ts, bid=np.full(n, bid), ask=np.full(n, ask), tid=np.zeros(n, dtype=np.int32),
+        trade_ts=np.array([1000.5, 1001.5]), trade_px=np.array([ask, ask]),
+        trade_sz=np.array([100.0, 100.0]), trade_ty=np.array([1, 1], dtype=np.int8),
+        book_bounds=np.array([0, n]), trade_bounds=np.array([0, 2]),
+        tickers=["KX-A"], meta={"KX-A": {"close": close, "strike": 100.0, "y": 1}})
+
+
 def settlement_quote(bid: str, ask: str) -> Quote:
     return Quote(ticker=TICKER, series="KXSOL15M", strike=70.0, close_ts=NOW + 300,
                  yes_bid=Decimal(bid), yes_ask=Decimal(ask), last=Decimal(bid),
@@ -1111,6 +1146,8 @@ def settlement_quote(bid: str, ask: str) -> Quote:
 
 
 def control_settlement_program() -> None:
+    import numpy as np
+
     params = Params()
 
     # The Student-t CDF is exact, not a table: it has to reproduce the published
@@ -1211,6 +1248,26 @@ def control_settlement_program() -> None:
           thin.action == "abstain" and "under" in thin.reason,
           f"action={thin.action} reason={thin.reason!r}")
 
+    # The NO side is the mirror of the YES side, and it has to be: a NO entry
+    # needs the resting size leaning to the ask and the aggressors leaning NO.
+    no_entry = entry(settlement_quote("0.52", "0.54"), p_up=0.30, obi=-0.6,
+                     flow_fast=-0.5, flow_slow=-0.4)
+    check("settlement: a NO entry with the book and flow leaning NO is taken",
+          no_entry.action == "entry" and no_entry.side == "NO"
+          and no_entry.price == Decimal("0.48"),
+          f"action={no_entry.action} side={no_entry.side} price={no_entry.price} "
+          f"reason={no_entry.reason!r}")
+    wrong_side_book = entry(settlement_quote("0.52", "0.54"), p_up=0.30, obi=0.6,
+                             flow_fast=-0.5, flow_slow=-0.4)
+    check("settlement: a NO entry against a bid-heavy book is refused",
+          wrong_side_book.action == "abstain" and "imbalance" in wrong_side_book.reason,
+          f"action={wrong_side_book.action} reason={wrong_side_book.reason!r}")
+    wrong_side_flow = entry(settlement_quote("0.52", "0.54"), p_up=0.30, obi=-0.6,
+                             flow_fast=0.5, flow_slow=-0.4)
+    check("settlement: a NO entry against YES-leaning aggressors is refused",
+          wrong_side_flow.action == "abstain" and "flow" in wrong_side_flow.reason,
+          f"action={wrong_side_flow.action} reason={wrong_side_flow.reason!r}")
+
     # The exit is the settlement: there is no take-profit and no stop.
     pos = Position(ticker=TICKER, side="YES", entry=Decimal("0.48"), contracts=10,
                    opened_ts=NOW - 300, p_entry=0.70, stake=Decimal("4.80"),
@@ -1221,6 +1278,95 @@ def control_settlement_program() -> None:
     check("settlement: the position is held to expiry, never taken off early",
           held.action == "hold" and held.regime == "settle",
           f"action={held.action} regime={held.regime} reason={held.reason!r}")
+
+    # The volatility is one estimator in both places. The live engine priced the
+    # contract with the whole index buffer and the scorer with a 150-second
+    # window, so the two prices of the same contract were 7-11 cents apart and
+    # the scored program was not the traded program.
+    def numpy_trailing_sigma(points, now, window_s=150.0, floor=5.0e-5, min_pairs=5):
+        ts = np.array([p[0] for p in points], dtype=np.float64)
+        v = np.array([p[1] for p in points], dtype=np.float64)
+        dt = np.diff(ts)
+        ok = (dt >= 1e-3) & (dt <= 5.0)
+        rate = np.where(ok, np.log(v[1:] / v[:-1]) ** 2 / np.maximum(dt, 1e-3), 0.0)
+        stamps = ts[1:]
+        sel = (stamps <= now) & (stamps >= now - window_s) & ok
+        if int(sel.sum()) < min_pairs:
+            return floor
+        return max(float(np.sqrt(rate[sel].mean())), floor)
+
+    rng = np.random.default_rng(7)
+    base = 1000.0
+    tape = [(base + i * 0.2, 100.0 + float(rng.normal(0, 0.02))) for i in range(600)]
+    now = base + 119.0
+    check("settlement: the trailing volatility matches the vectorised reference",
+          abs(features.trailing_sigma(tape, now) - numpy_trailing_sigma(tape, now)) < 1e-12,
+          f"py={features.trailing_sigma(tape, now)!r} "
+          f"np={numpy_trailing_sigma(tape, now)!r}")
+    check("settlement: a tape with too few points inside the window is floored",
+          features.trailing_sigma(tape[:3], base + 0.4) == 5.0e-5,
+          f"sigma={features.trailing_sigma(tape[:3], base + 0.4)}")
+    check("settlement: the volatility window is the trailing 150 seconds, not the whole tape",
+          abs(features.trailing_sigma(tape, now) - numpy_trailing_sigma(tape, now)) < 1e-12
+          and features.trailing_sigma(tape, now)
+          != numpy_trailing_sigma(tape, now, window_s=1e9),
+          "the two windows give different numbers on the same tape")
+
+    # The live engine's own signal: the settlement index, the resting size and
+    # the aggressor tape, and nothing else.
+    from openkal.kalshi_ws import INDEX_BY_SERIES
+    index_id = INDEX_BY_SERIES["KXBTC15M"]
+    live_now = time.time()
+    engine = Engine.__new__(Engine)
+    engine.index_tape = {index_id: [(live_now - 60.0 + i * 0.2, 70000.0 + i * 0.05)
+                                    for i in range(300)]}
+    engine.trade_hist = {TICKER: [(live_now - 5.0 + i * 0.05, 100.0, 1) for i in range(60)]}
+    slot = SimpleNamespace(cfg=SimpleNamespace(series="KXBTC15M"), spot=70015.0,
+                           params=Params())
+    live_quote = Quote(ticker=TICKER, series="KXBTC15M", strike=70010.0,
+                       close_ts=live_now + 300.0, yes_bid=Decimal("0.46"),
+                       yes_ask=Decimal("0.48"), last=Decimal("0.47"),
+                       updated_ts=live_now, received_ts=live_now,
+                       yes_bid_sz=Decimal("500"), yes_ask_sz=Decimal("200"))
+    sig = engine._settlement_signal(slot, live_quote, 300.0)
+    check("settlement: the live signal carries the index price, the imbalance and the flow",
+          sig is not None and sig.name == "student_t_l2_settle"
+          and abs(sig.l2_obi - (300.0 / 700.0)) < 1e-9 and sig.flow_fast > 0.5
+          and 0.0 < sig.p_up < 1.0,
+          f"sig={sig}")
+    no_depth = engine._settlement_signal(
+        slot, replace(live_quote, yes_bid_sz=None, yes_ask_sz=None), 300.0)
+    check("settlement: the live signal refuses a ladder with no resting size",
+          no_depth is None, f"sig={no_depth}")
+
+    # The scorer's pricing: a taker entry that arrives a second after its
+    # trigger, at the cost of the side held, capped at 62c and inside the band,
+    # and a contract carried to expiry for a $0 exit fee.
+    from scripts import forward_oos as F
+    synthetic = _synthetic_lane(bid=0.40, ask=0.42, close=1100.0)
+    trade = F.simulate_settlement(synthetic, {"tid": 0, "ts": 1000.0, "close": 1100.0,
+                                              "y": 1, "side": "YES"})
+    check("settlement: the scored entry is a taker that arrives one second later",
+          not isinstance(trade, F.sim_core.Skip) and trade.entry == Decimal("0.42")
+          and trade.legs[0].ts == 1001.0 and trade.legs[0].style == "taker",
+          f"trade={trade if isinstance(trade, F.sim_core.Skip) else (trade.entry, trade.legs[0].ts, trade.legs[0].style)}")
+    check("settlement: the scored exit is the settlement, with no exit fee",
+          not isinstance(trade, F.sim_core.Skip) and trade.reason == "settle"
+          and trade.exit_value == Decimal("1") and trade.legs[-1].fee == Decimal("0")
+          and trade.fees == trade.legs[0].fee,
+          f"reason={getattr(trade, 'reason', None)} fees={getattr(trade, 'fees', None)}")
+    over = F.simulate_settlement(_synthetic_lane(bid=0.30, ask=0.70, close=1100.0),
+                                 {"tid": 0, "ts": 1000.0, "close": 1100.0, "y": 1,
+                                  "side": "YES"})
+    check("settlement: the scored entry is refused above the 62c ceiling",
+          isinstance(over, F.sim_core.Skip) and over.reason == "cost_band",
+          f"over={over}")
+    under = F.simulate_settlement(_synthetic_lane(bid=0.10, ask=0.20, close=1100.0),
+                                  {"tid": 0, "ts": 1000.0, "close": 1100.0, "y": 1,
+                                   "side": "YES"})
+    check("settlement: the scored entry is refused below the 35c band floor",
+          isinstance(under, F.sim_core.Skip) and under.reason == "cost_band",
+          f"under={under}")
 
 
 

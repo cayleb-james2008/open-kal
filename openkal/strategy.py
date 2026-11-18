@@ -264,6 +264,21 @@ PARAM_BOUNDS: dict[str, tuple[Decimal, Decimal]] = {
     "max_quote_age_s": (Decimal("1.0"), Decimal("6.0")),
     "max_spot_age_s": (Decimal("4.0"), Decimal("20.0")),
     "max_divergence": (Decimal("0.18"), Decimal("0.40")),
+    # The settlement program's own knobs. The evolve loop may move them inside
+    # these bounds, but it may not move them outside: the entry band ends at the
+    # desk's $0.62 ceiling, and the window bounds have to fit inside a
+    # 15-minute contract.
+    "sl2_min_price": (Decimal("0.20"), Decimal("0.45")),
+    "sl2_max_price": (Decimal("0.50"), Decimal("0.62")),
+    "sl2_min_edge": (Decimal("0.00"), Decimal("0.15")),
+    "sl2_min_obi": (Decimal("0.00"), Decimal("0.50")),
+    "sl2_min_flow": (Decimal("0.00"), Decimal("0.80")),
+    "sl2_flow_fast_s": (Decimal("1"), Decimal("30")),
+    "sl2_flow_slow_s": (Decimal("5"), Decimal("120")),
+    "sl2_min_seconds_left": (Decimal("30"), Decimal("300")),
+    "sl2_max_seconds_left": (Decimal("300"), Decimal("900")),
+    "sl2_max_spread": (Decimal("0.01"), Decimal("0.08")),
+    "sl2_max_window_trades": (Decimal("1"), Decimal("3")),
 }
 
 
@@ -273,9 +288,15 @@ def clamp_params(params: Params) -> Params:
     for key, (low, high) in PARAM_BOUNDS.items():
         value = Decimal(str(data[key]))
         value = max(low, min(high, value))
-        data[key] = int(value) if key == "maker_offset_ticks" else value
+        data[key] = int(value) if key in ("maker_offset_ticks", "sl2_max_window_trades") else value
     if data["min_price"] >= data["max_price"]:
         data["min_price"] = data["max_price"] - Decimal("0.10")
+    if data["sl2_min_price"] >= data["sl2_max_price"]:
+        data["sl2_min_price"] = data["sl2_max_price"] - Decimal("0.05")
+    # The evolve loop mutates parameters; it does not get to decide that a live
+    # gate filter is on. That switch belongs to the operator and to a promoted
+    # strategy, not to a random walk.
+    data["require_layagate_allow"] = False
     return Params(**data)
 
 
