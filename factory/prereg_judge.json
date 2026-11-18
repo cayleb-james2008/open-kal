@@ -1,0 +1,93 @@
+{
+  "name": "strategy_factory_judge",
+  "version": 1,
+  "registered": "2026-11-18T12:47:37-05:00",
+  "status": "pre-registered before any candidate was scored and before any feature matrix was built; the commit time is the authority",
+  "owner_bars": {
+    "oos_ev": "mean net USD per trade out of sample > 0 with the lower confidence bound > 0",
+    "oos_trades": ">= 200",
+    "max_drawdown": "< 20% of capital, capital fixed at 164 USD (the live epoch's base); drawdown is the largest peak-to-trough fall of the cumulative out-of-sample PnL path in trade order",
+    "stress": "still EV > 0 when latency is doubled (10 s) and every taker leg pays 1 cent worse"
+  },
+  "additions_to_the_bars": {
+    "why": "at 10,000 candidates an hour a per-candidate 95% bound passes about 250 by luck every hour, so the owner's bars are necessary but not enough",
+    "corrected_lower_bound": "mean - z * se, where se is the window-clustered standard error of the per-trade PnL (trades summed to windows) and z = the standard normal quantile of 1 - 0.05 / N, N = the number of distinct candidates scored on the same out-of-sample blocks (a Bonferroni correction); a candidate is promoted only if this corrected bound is > 0 as well as the owner's uncorrected bound (z = 1.645 at 95% one-sided)",
+    "both_bounds_logged": true,
+    "no_promotion_by_the_judge_alone": "a pass puts a candidate on the promotion ladder as 'passed judge'; paper trading on Session 1's engine is the forward confirmation and arming is the owner's decision"
+  },
+  "walk_forward": {
+    "unit": "block of consecutive window closes spanning 6 hours while the data is under 10 days; 1 day once 10 days exist (the rule is scale-free)",
+    "min_train_blocks": 4,
+    "test_blocks": 2,
+    "step_blocks": 1,
+    "epoch": "epoch e trains on every block before its test blocks and is judged on its test blocks; candidates are frozen at selection and scored on blocks after their selection only, never refit",
+    "evolution_leak_guard": "parents, fitness and tuning for a candidate created at epoch e use only data before epoch e's test blocks; the out-of-sample result of epoch e may inform candidates created at epochs after e, never e itself",
+    "reported": "per candidate: train metrics, out-of-sample metrics, stress metrics, both bounds, status and the reason for every failure"
+  },
+  "execution_model": {
+    "decision_grid_s": 1,
+    "latency_s": 5,
+    "stress_latency_s": 10,
+    "stress_slippage_usd": 0.01,
+    "orders": "taker IOC at the seen touch: entry at the ask of the side held (YES ask, or 1 - YES bid for NO) of the book row at decision time + latency; filled quantity = min(stake quantity, displayed touch size where known); where the touch size is not recorded the lane's median L2-era touch size is used",
+    "fee": "the exact venue formula, ceil(0.07 * contracts * P * (1 - P)) to the cent per order, as sim_core.taker_fee",
+    "entry_cost_ceiling": 0.62,
+    "max_contracts": 50,
+    "capital_usd": 164.0,
+    "exits": "hold to settlement ($0 fee), or any of: take-profit and stop on the side's taker exit price, confirmed one grid step later, time barrier; every exit order arrives latency seconds after the decision and pays the taker fee",
+    "one_position": "at most one open position per lane-window; a cooldown parameter spaces entries",
+    "maker": "not in version 1: a maker candidate is rejected by the factory until the queue model is ported to numba; the canonical queue model stays openkal/sim_core.py Tape.queue_fill",
+    "parity": "on hold-to-settlement taker trades at a grid-aligned arrival the numba simulator must equal sim_core.run_trade on entry price, quantity, fee and PnL, exactly"
+  },
+  "generator": {
+    "no_llm": true,
+    "genome": "up to 3 clauses of up to 3 conditions (feature, direction, threshold), the clauses OR-ed and the conditions AND-ed; a side rule (follow or fade a signed feature); entry window in seconds left; stake as a fraction of capital; cooldown; exit parameters",
+    "search": "a hand-rolled numpy genetic algorithm (tournament selection, uniform crossover, gaussian and swap mutation, elitism of the top 10%) and Optuna TPE for the thresholds of the top 10% on training data only",
+    "learned_component": "the LightGBM decision model enters only as one feature of the registry (milestone 2)",
+    "seed_families": [
+      "momentum",
+      "fade",
+      "late_window_convergence",
+      "cross_coin_lead_lag",
+      "random_tree"
+    ],
+    "deferred_families": [
+      "maker_quoting",
+      "decision_agent_ml",
+      "cross_market_arb"
+    ]
+  },
+  "indicator_registry": {
+    "version": "provisional-1",
+    "status": "PROVISIONAL: the Decision Agent indicator list was not available; this is the engine's own feature set. Replacing it bumps the version and is recorded on every candidate."
+  },
+  "leaderboard": {
+    "store": "sqlite data/factory/leaderboard.db",
+    "every_candidate_logged": true,
+    "columns": [
+      "code_hash",
+      "genome_json",
+      "family",
+      "epoch",
+      "train_end",
+      "registry_version",
+      "created_ts",
+      "train_metrics",
+      "oos_metrics",
+      "stress_metrics",
+      "bound_uncorrected",
+      "bound_corrected",
+      "n_candidates_in_epoch",
+      "status",
+      "failure_reason"
+    ]
+  },
+  "throughput_target": ">= 10,000 candidates per hour on this machine, measured and reported, not assumed",
+  "reporting": "every 2 hours: candidates scored, top 5 by out-of-sample EV with both bounds, anything promoted",
+  "known_before_registering": [
+    "all research tracks to date (Tracks 1-11) found no taker or maker edge on the same tape; the market's ask is well calibrated (Brier about 0.2376 in band)",
+    "the tape holds 238 settled book-backed windows over 2.7 days; 46 have touch sizes",
+    "an independent backtest on 23.5k windows found no taker edge at 5 s or longer delay"
+  ],
+  "expected": "no candidate passes the corrected bound on 2.7 days of data; the factory's first job is to show that honestly and to be ready when more data arrives"
+}
