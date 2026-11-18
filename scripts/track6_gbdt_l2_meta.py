@@ -235,6 +235,24 @@ def predict(models: dict, pack: dict, rows: np.ndarray | None = None) -> dict:
     return out
 
 
+KINDS = ("win", *(f"net_{m}" for m in EXITS))
+
+
+def held_out_preds(packs: dict, splits: list, fit=None) -> dict:
+    """Predictions for each split's held rows from a model that never saw them.
+
+    `splits` is a list of {lane: (train_mask, held_mask)}; rows held out by no split stay NaN."""
+    fit = fit or fit_models
+    out = {n: {(k, s): np.full(len(p["t"]), np.nan) for k in KINDS for s in (S.YES, S.NO)} for n, p in packs.items()}
+    for split in splits:
+        models = fit(packs, {n: split[n][0] for n in packs})
+        for n, p in packs.items():
+            held = split[n][1]
+            for key, val in predict(models, p, held).items():
+                out[n][key] = np.where(held, val, out[n][key])
+    return out
+
+
 def brier(p: np.ndarray, y: np.ndarray) -> float:
     return float(np.mean((p - y) ** 2))
 
@@ -355,9 +373,14 @@ def l2_closes() -> list[float]:
                    if i in have_l2 and i in have_gate and meta.get(n, {}).get("y") in (0, 1) and meta[n].get("strike")})
 
 
+def fit_from(its: np.ndarray, v: np.ndarray, cut: float) -> dict:
+    """Student-t scale from index prints strictly before cut - 900 (`index_near` would otherwise reach 1.5s past it)."""
+    keep = its < cut - KF.FIT_LEAD
+    return KF.fit_lane(its[keep], v[keep], cut)
+
+
 def fit_scale(name: str, cut: float) -> dict:
-    its, v = spot_series(name)
-    return KF.fit_lane(its[its < cut], v[its < cut], cut)
+    return fit_from(*spot_series(name), cut)
 
 
 def gather(closes: list[float], cut: float, split: str, fits: dict, *, label: bool) -> dict:
@@ -400,15 +423,8 @@ def run_is() -> dict:
         if len(pack["t"]) and float(pack["t"].max()) >= cut - 900.0:
             raise RuntimeError("an IS row sits inside the final 900s before the cut")
     t0 = time.process_time()
-    oof = {n: {(k, s): np.full(len(p["t"]), np.nan) for k in ("win", *(f"net_{m}" for m in EXITS)) for s in (S.YES, S.NO)}
-           for n, p in packs.items()}
-    for k in range(A.FOLDS):
-        masks = {n: A.fold_masks(p["rank"], len(closes_is), k) for n, p in packs.items()}
-        models = fit_models(packs, {n: m[0] for n, m in masks.items()})
-        for n, p in packs.items():
-            got = predict(models, p, masks[n][1])
-            for key, val in got.items():
-                oof[n][key] = np.where(masks[n][1], val, oof[n][key])
+    splits = [{n: A.fold_masks(p["rank"], len(closes_is), k) for n, p in packs.items()} for k in range(A.FOLDS)]
+    oof = held_out_preds(packs, splits)
     cv_cpu = time.process_time() - t0
     t0 = time.process_time()
     final = fit_models(packs, {n: np.ones(len(p["t"]), bool) for n, p in packs.items()})
@@ -417,15 +433,8 @@ def run_is() -> dict:
     roll = {}
     for tag, (tr_h, te_h) in ROLLING.items():
         folds = rolling_folds(closes_is, tr_h, te_h)
-        preds = {n: {key: np.full(len(p["t"]), np.nan) for key in oof[n]} for n, p in packs.items()}
-        for tr, te in folds:
-            trs, tes = set(tr), set(te)
-            models = fit_models(packs, {n: np.isin(p["close"], list(trs)) for n, p in packs.items()})
-            for n, p in packs.items():
-                held = np.isin(p["close"], list(tes))
-                for key, val in predict(models, p, held).items():
-                    preds[n][key] = np.where(held, val, preds[n][key])
-        roll[tag] = (folds, preds)
+        splits = [{n: (np.isin(p["close"], tr), np.isin(p["close"], te)) for n, p in packs.items()} for tr, te in folds]
+        roll[tag] = (folds, held_out_preds(packs, splits))
     sets = {"oof": oof, "insample": ins, "rolling_scaled": roll["scaled"][1]}
     outs = score_is(packs, sets)
     configs = build_configs(outs)
@@ -451,6 +460,7 @@ def run_is() -> dict:
 
 
 def score_oos() -> dict:
+    T.refuse_rescore()
     obj = json.loads(OUT.read_text())
     pin = T.pin_tape(TAPE)
     if pin["sha256"] != obj["frozen_input_sha256"]:

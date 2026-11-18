@@ -196,6 +196,7 @@ def run_is() -> dict:
 
 
 def score_oos() -> dict:
+    T.refuse_rescore()
     obj = json.loads(OUT.read_text())
     pin = T.pin_tape()
     if pin["sha256"] != obj["frozen_input_sha256"]:

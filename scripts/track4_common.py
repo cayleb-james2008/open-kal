@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import sys
 from pathlib import Path
 
@@ -40,6 +41,12 @@ def refuse_if_spent(family: str, out: Path) -> None:
         raise RuntimeError(f"{family} already has an OOS ledger entry; its IS receipt is frozen")
     if out.exists() and json.loads(out.read_text()).get("oos_scored") is not None:
         raise RuntimeError(f"{family} receipt already holds a scored OOS look; refusing to rewrite it")
+
+
+def refuse_rescore() -> None:
+    """The ledger's rescore override exists for the lead's manual use; these tracks never take a second look."""
+    if os.environ.get("RND_OOS_RESCORE"):
+        raise RuntimeError("RND_OOS_RESCORE is set: these tracks never rescore an OOS family")
 
 
 def window_closes(tape: Path = TAPE) -> list[float]:

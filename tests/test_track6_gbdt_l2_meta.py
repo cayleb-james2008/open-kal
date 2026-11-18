@@ -6,6 +6,7 @@ Run with the system interpreter, which has scikit-learn:
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import time
 import unittest
@@ -18,7 +19,9 @@ from unittest.mock import patch
 import numpy as np
 
 from openkal import sim_core as S
+from scripts import kurtosis_fv_snipe as KF
 from scripts import track2c_true_l2_settle as C
+from scripts import track4a_empirical_settle as A
 from scripts import track6_gbdt_l2_meta as M
 
 CLOSE, STRIKE, CUT = 2000.0, 100.0, 2900.0
@@ -124,6 +127,37 @@ class Sampling(unittest.TestCase):
         self.assertTrue(M.in_domain(pack, S.YES).all() and not M.in_domain(pack, S.NO).any())
 
 
+class SignsAndFit(unittest.TestCase):
+    def test_no_flips_every_direction_bearing_column_and_nothing_else(self):
+        _, pack = pack_of(arrays())
+        pack["b1"] = pack["b3"] = pack["b10"] = pack["e1"] = pack["e3"] = pack["e10"] = np.full(len(pack["t"]), 0.001)
+        yes, no = M.side_x(pack, S.YES)[0], M.side_x(pack, S.NO)[0]
+        names = M.FEATURES
+        flipped = ("touch_imbalance", "microprice_minus_mid", "student_t_z", "btc_1s", "btc_3s", "btc_10s", "eth_1s", "eth_3s", "eth_10s")
+        for k in flipped:
+            self.assertAlmostEqual(float(yes[names.index(k)]), -float(no[names.index(k)]), msg=k)
+            self.assertNotEqual(float(yes[names.index(k)]), 0.0, msg=k)
+        for k in ("gate_confidence", "spread", "secs_left"):
+            self.assertEqual(float(yes[names.index(k)]), float(no[names.index(k)]), msg=k)
+
+    def test_the_no_label_is_the_complement_of_the_outcome(self):
+        _, pack = pack_of(arrays(), y=1)
+        self.assertTrue((M.side_label(pack, S.YES) == 1).all() and (M.side_label(pack, S.NO) == 0).all())
+
+    def test_the_student_t_fit_never_reads_a_print_from_the_900s_before_the_cut(self):
+        rng = np.random.default_rng(1)
+        cut = 100000.0
+        end = cut - KF.FIT_LEAD
+        its = np.arange(cut - 30000.0 + 14.5, cut, 1.0)                                    # grid points land at end - 0.5
+        v = 100 * np.exp(np.cumsum(rng.normal(0, 3e-5, len(its))))
+        keep = ~((its >= end - 5) & (its < end))
+        its, v = its[keep], v[keep]
+        j = int(np.searchsorted(its, end))
+        its, v = np.insert(its, j, end + 0.2), np.insert(v, j, v[j - 1] * 1.01)             # one print just inside the lead
+        reads_it = KF.fit_lane(its[its < cut], v[its < cut], cut)["n"]
+        self.assertEqual(reads_it - M.fit_from(its, v, cut)["n"], 5)                        # the unclipped fit used it five times
+
+
 class Labels(unittest.TestCase):
     def test_net_labels_come_from_sim_core_and_follow_the_outcome_and_the_exit_mode(self):
         lane, pack = pack_of(arrays(), y=1)                                                 # YES wins
@@ -227,6 +261,13 @@ class Grid(unittest.TestCase):
         cfg = M.build_configs({"oof": oof, "insample": empty, "rolling_scaled": empty})
         self.assertEqual((cfg[name]["is"]["trades"], cfg[name]["is_insample"]["trades"]), (2, 0))
 
+    def test_the_profit_factor_and_crossed_fill_gates_each_exclude(self):
+        def cfg(pf, crossed):
+            return {"is": {"trades": 20, "pf": pf, "profitable_lanes": 3, "crossed_fills": crossed, "net": 9.0}}
+        self.assertTrue(M.pick_champion({"a": cfg(1.25, 0)})["is_eligible"])
+        self.assertFalse(M.pick_champion({"a": cfg(1.24, 0)})["is_eligible"])
+        self.assertFalse(M.pick_champion({"a": cfg(2.0, 1)})["is_eligible"])
+
     def test_champion_needs_fifteen_trades_pf_and_two_lanes(self):
         def cfg(trades, pf, lanes, net):
             return {"is": {"trades": trades, "pf": pf, "profitable_lanes": lanes, "crossed_fills": 0, "net": net}}
@@ -236,7 +277,52 @@ class Grid(unittest.TestCase):
         self.assertEqual((none["config"], none["is_eligible"]), ("b", False))
 
 
+class CrossFit(unittest.TestCase):
+    def packs(self, windows=10, per=4):
+        n = windows * per
+        close = np.repeat(np.arange(windows, dtype=float), per)
+        cols = {k: np.zeros(n) for k in ("imb", "mpm", "gconf", "pty", "z", "b1", "b3", "b10", "e1", "e3", "e10", "bid", "secs")}
+        cols.update(ask=np.full(n, 0.5), ask_y=np.full(n, 0.5), ask_n=np.full(n, 0.5), t=np.arange(n, dtype=float), close=close,
+                    rank=close.astype(np.int64), tid=np.zeros(n, np.int64), y=np.ones(n), net={})
+        for m in M.EXITS:
+            for s in (S.YES, S.NO):
+                cols["net"][(m, s)] = np.zeros(n)
+        return {"KXBTC15M": cols}
+
+    def test_each_row_is_predicted_once_by_a_model_trained_without_it_or_its_neighbours(self):
+        packs, seen = self.packs(), []
+
+        def fake_fit(_, rows):
+            seen.append(rows["KXBTC15M"].copy())
+            return {k: M.Const(0.5) for k in M.KINDS}
+
+        splits = [{"KXBTC15M": A.fold_masks(packs["KXBTC15M"]["rank"], 10, k)} for k in range(A.FOLDS)]
+        out = M.held_out_preds(packs, splits, fit=fake_fit)
+        rank = packs["KXBTC15M"]["rank"]
+        for (train, held), used in zip((s["KXBTC15M"] for s in splits), seen):
+            np.testing.assert_array_equal(train, used)
+            self.assertFalse((train & held).any())
+            near = (rank >= rank[held].min() - 1) & (rank <= rank[held].max() + 1)         # the held block and one window each side
+            self.assertFalse((train & near).any())
+        for side in (S.YES, S.NO):
+            self.assertTrue(np.isfinite(out["KXBTC15M"][("win", side)]).all())              # every row predicted exactly once
+        self.assertEqual(len(seen), A.FOLDS)
+
+    def test_rows_no_split_holds_out_get_no_prediction(self):
+        packs = self.packs()
+        rank = packs["KXBTC15M"]["rank"]
+        splits = [{"KXBTC15M": (rank < 4, (rank >= 5) & (rank < 7))}]
+        out = M.held_out_preds(packs, splits, fit=lambda *_: {k: M.Const(0.5) for k in M.KINDS})
+        got = np.isfinite(out["KXBTC15M"][("win", S.YES)])
+        np.testing.assert_array_equal(got, (rank >= 5) & (rank < 7))
+
+
 class Evaluation(unittest.TestCase):
+    def test_a_rescore_override_is_refused_before_anything_is_read(self):
+        with patch.dict(os.environ, {"RND_OOS_RESCORE": "why not"}):
+            with self.assertRaisesRegex(RuntimeError, "never rescore"):
+                M.score_oos()
+
     def test_rolling_edge_bar_is_the_four_conditions(self):
         ok = {"trades": 12, "net": 0.01, "pf": 1.25, "profitable_lanes": 2}
         self.assertTrue(M.rolling_edge_bar(ok)["pass"])
