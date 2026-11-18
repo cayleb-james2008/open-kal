@@ -97,6 +97,36 @@ class LeadLag(unittest.TestCase):
         self.assertGreater(five["A_5"]["point"], 0.95)                               # reported
         self.assertFalse(five["passes"])                                             # but not the primary statistic
 
+    def test_a_three_second_lag_shows_in_the_descriptive_A_3_and_is_invisible_to_the_registered_statistic(self):
+        r = stat(lag=3)
+        self.assertGreater(r["A_3"]["point"], 0.95)
+        self.assertTrue(r["A_3"]["descriptive"] and r["A_5"]["descriptive"])
+        self.assertFalse("descriptive" in r["A_1"] or "descriptive" in r["A_2"])      # the primary lags are not descriptive
+        self.assertLess(abs(r["S"]["point"]), 0.05)
+        self.assertFalse(r["passes"])                                                 # the extra lag decides nothing
+
+    def test_the_descriptive_lag_leaves_every_registered_number_bit_identical(self):
+        for kw in ({"lag": 1}, {"lag": 3}, {"lag": 2, "noise": 2e-4}, {"lag": 0, "n": 9_000}):
+            with patch.object(M, "DESCRIPTIVE_LAGS", ()):
+                without = stat(**kw)
+            with_it = stat(**kw)
+            self.assertNotIn("A_3", without)
+            self.assertIn("A_3", with_it)
+            for key in ("A_1", "A_2", "A_5", "S", "rows", "blocks", "passes"):
+                self.assertEqual(with_it[key], {k: v for k, v in without[key].items()} if isinstance(without[key], dict) else without[key], (kw, key))
+
+    def test_a_block_with_pairs_only_at_the_descriptive_lag_does_not_change_which_blocks_count(self):
+        # one Coinbase print at second 100 and one RTI print at second 103 of an extra 15-minute block pair only at lag 3: the
+        # block is empty for every registered lag, so it must stay out, or the bootstrap would draw from 41 blocks instead of 40
+        (cts, cpx), (rts, rpx) = feeds(n=36_000)
+        cb = (np.r_[cts, T0 + 36_100.0], np.r_[cpx, 100.0])
+        rti = (np.r_[rts, T0 + 36_103.0], np.r_[rpx, 100.0])
+        with_it = M.lead_lag(cb, rti, T0, T0 + 36_900)
+        with patch.object(M, "DESCRIPTIVE_LAGS", ()):
+            without = M.lead_lag(cb, rti, T0, T0 + 36_900)
+        self.assertEqual(without["blocks"], 40)
+        self.assertEqual((with_it["blocks"], with_it["rows"], with_it["S"]), (without["blocks"], without["rows"], without["S"]))
+
     def test_noise_shrinks_the_statistic_and_the_interval_brackets_it(self):
         clean, noisy = stat(lag=1), stat(lag=1, noise=2e-4)
         self.assertLess(noisy["S"]["point"], clean["S"]["point"] - 0.1)

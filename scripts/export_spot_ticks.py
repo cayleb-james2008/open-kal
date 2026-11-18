@@ -17,11 +17,15 @@ It only ever reads the database:
   * the archive is written to a temporary name beside it, fsynced, and renamed into place, so a failure never leaves a partial
     file or touches any other file in the directory.
 The default destination is the evolve cache, beside the other exports, per the owner's instruction; pass --dest to write elsewhere.
+The archive is also copied to a MIRROR outside the evolve cache (default data/track9-archive in this worktree), because the evolve
+cache is rebuilt by another session and a rebuild would take the archive with it. The mirror is written like the archive
+(temporary name, fsync, rename) and only when its bytes differ; a mirror inside the destination is refused.
 Nothing is read or written until you run it.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import sqlite3
 import sys
@@ -32,6 +36,7 @@ import numpy as np
 
 DEFAULT_DB = Path("/home/cayleb/open-kal/data/openkal-prod.db")
 DEFAULT_DEST = Path("/home/cayleb/open-kal/data/evolve-cache")
+DEFAULT_MIRROR = Path(__file__).resolve().parent.parent / "data" / "track9-archive"
 OUT_NAME = "spot_ticks.npz"
 CHUNK = 200_000
 COLUMNS = "rowid, ts, symbol, source, price, bid, ask"
@@ -119,9 +124,46 @@ def write_archive(out: Path, arrays: dict) -> None:
         tmp.unlink(missing_ok=True)
 
 
-def export(db: Path = DEFAULT_DB, dest: Path = DEFAULT_DEST, *, chunk: int = CHUNK, on_snapshot=None, on_chunk=None) -> dict:
-    """Append the new rows to `spot_ticks.npz` in `dest` (created on the first run) and return a summary."""
+def sha256_of(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def mirror_archive(out: Path, mirror: Path) -> dict:
+    """Copy the archive into `mirror` (created if missing) unless it already holds the same bytes; atomically, like the archive."""
+    mirror = mirror.resolve()
+    mirror.mkdir(parents=True, exist_ok=True)
+    target = mirror / OUT_NAME
+    digest = sha256_of(out)
+    copied = not target.exists() or sha256_of(target) != digest
+    if copied:
+        tmp = mirror / f"{OUT_NAME[:-4]}.tmp-{os.getpid()}.npz"
+        try:
+            tmp.write_bytes(out.read_bytes())
+            with open(tmp, "rb") as f:
+                os.fsync(f.fileno())
+            os.replace(tmp, target)
+        finally:
+            tmp.unlink(missing_ok=True)
+    return {"mirror": str(target), "mirror_sha256": digest, "mirror_copied": copied}
+
+
+def export(db: Path = DEFAULT_DB, dest: Path = DEFAULT_DEST, *, mirror: Path | None = None, chunk: int = CHUNK,
+           on_snapshot=None, on_chunk=None) -> dict:
+    """Append the new rows to `spot_ticks.npz` in `dest` (created on the first run), mirror it if asked, and return a summary."""
     out = check_paths(db, dest)
+    if mirror is not None and (mirror.resolve() == dest.resolve() or dest.resolve() in mirror.resolve().parents):
+        raise RuntimeError(f"the mirror {mirror} is inside the destination {dest}, which another session rebuilds; pick another folder")
+    info = _export(db, dest, out, chunk, on_snapshot, on_chunk)
+    if mirror is not None:
+        info.update(mirror_archive(out, mirror))
+    return info
+
+
+def _export(db: Path, dest: Path, out: Path, chunk: int, on_snapshot, on_chunk) -> dict:
     old, watermark = load_archive(out)
     new, bound = read_new_rows(db, watermark, chunk=chunk, on_snapshot=on_snapshot, on_chunk=on_chunk)
     if not len(new["ts"]) and out.exists():                 # nothing new: leave the archive exactly as it is
@@ -148,8 +190,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--db", type=Path, default=DEFAULT_DB)
     ap.add_argument("--dest", type=Path, default=DEFAULT_DEST)
+    ap.add_argument("--mirror", type=Path, default=DEFAULT_MIRROR, help="second copy of the archive, outside the evolve cache")
     args = ap.parse_args()
-    print(export(args.db, args.dest))
+    print(export(args.db, args.dest, mirror=args.mirror))
     return 0
 
 

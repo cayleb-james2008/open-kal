@@ -270,5 +270,102 @@ class Output(unittest.TestCase):
             writer.close()
 
 
+class Mirror(unittest.TestCase):
+    def test_the_default_mirror_is_outside_the_evolve_cache_that_another_session_rebuilds(self):
+        mirror, dest = X.DEFAULT_MIRROR.resolve(), X.DEFAULT_DEST.resolve()
+        self.assertTrue(mirror != dest and dest not in mirror.parents and mirror not in dest.parents)
+        self.assertEqual(X.DEFAULT_DEST, Path("/home/cayleb/open-kal/data/evolve-cache"))        # the owner's destination is unchanged
+
+    def test_the_mirror_holds_the_same_bytes_and_the_summary_says_where(self):
+        with tempfile.TemporaryDirectory() as d:
+            db, writer, dest = setup(Path(d))
+            mirror = Path(d) / "keep" / "deep"
+            info = X.export(db, dest, mirror=mirror)
+            self.assertEqual(digest(mirror / X.OUT_NAME), digest(dest / X.OUT_NAME))
+            self.assertEqual((info["mirror"], info["mirror_copied"]), (str(mirror.resolve() / X.OUT_NAME), True))
+            self.assertEqual(info["mirror_sha256"], digest(dest / X.OUT_NAME))
+            self.assertEqual([p.name for p in mirror.iterdir()], [X.OUT_NAME])                  # no temporary file left
+            writer.close()
+
+    def test_an_unchanged_archive_is_not_copied_again_and_a_changed_one_is(self):
+        with tempfile.TemporaryDirectory() as d:
+            db, writer, dest = setup(Path(d))
+            mirror = Path(d) / "keep"
+            X.export(db, dest, mirror=mirror)
+            first = (mirror / X.OUT_NAME).stat()
+            again = X.export(db, dest, mirror=mirror)
+            self.assertFalse(again["mirror_copied"])
+            self.assertEqual((mirror / X.OUT_NAME).stat().st_ino, first.st_ino)                  # untouched, not rewritten
+            writer.execute("INSERT INTO spot_ticks VALUES (500, 'BTC-USD', 'coinbase', 1, NULL, NULL)")
+            writer.commit()
+            third = X.export(db, dest, mirror=mirror)
+            self.assertTrue(third["mirror_copied"])
+            self.assertEqual(digest(mirror / X.OUT_NAME), digest(dest / X.OUT_NAME))
+            self.assertEqual(int(len(np.load(mirror / X.OUT_NAME)["ts"])), 6)
+            writer.close()
+
+    def test_a_stale_mirror_is_refreshed_after_the_archive_was_rebuilt_without_the_pruned_rows(self):
+        with tempfile.TemporaryDirectory() as d:
+            db, writer, dest = setup(Path(d))
+            mirror = Path(d) / "keep"
+            X.export(db, dest, mirror=mirror)
+            (mirror / X.OUT_NAME).write_bytes(b"corrupted copy")
+            self.assertTrue(X.export(db, dest, mirror=mirror)["mirror_copied"])
+            self.assertEqual(digest(mirror / X.OUT_NAME), digest(dest / X.OUT_NAME))
+            writer.close()
+
+    def test_a_mirror_inside_the_destination_is_refused_before_anything_is_written(self):
+        with tempfile.TemporaryDirectory() as d:
+            db, writer, dest = setup(Path(d))
+            for bad in (dest, dest / "sub", dest / "a" / "b"):
+                with self.assertRaisesRegex(RuntimeError, "inside the destination"):
+                    X.export(db, dest, mirror=bad)
+            self.assertEqual(list(dest.iterdir()), [])                                            # not even the archive
+            link = Path(d) / "link"                                                              # a symlink into the destination is inside it too
+            link.symlink_to(dest)
+            with self.assertRaisesRegex(RuntimeError, "inside the destination"):
+                X.export(db, dest, mirror=link)
+            writer.close()
+
+    def test_the_copy_is_synced_before_it_is_renamed_and_a_failed_copy_keeps_the_old_mirror(self):
+        with tempfile.TemporaryDirectory() as d:
+            db, writer, dest = setup(Path(d))
+            mirror = Path(d) / "keep"
+            X.export(db, dest, mirror=mirror)
+            good = digest(mirror / X.OUT_NAME)
+            writer.execute("INSERT INTO spot_ticks VALUES (500, 'BTC-USD', 'coinbase', 1, NULL, NULL)")
+            writer.commit()
+            order = []
+            fsync, replace = X.os.fsync, X.os.replace
+            with patch.object(X.os, "fsync", lambda fd: (order.append("fsync"), fsync(fd))[1]), \
+                    patch.object(X.os, "replace", lambda a, b: (order.append(Path(b).parent.name), replace(a, b))[1]):
+                X.export(db, dest, mirror=mirror)
+            self.assertEqual(order, ["fsync", "out", "fsync", "keep"])                           # archive: sync, rename; mirror: sync, rename
+            writer.execute("INSERT INTO spot_ticks VALUES (501, 'BTC-USD', 'coinbase', 1, NULL, NULL)")
+            writer.commit()
+            kept = digest(mirror / X.OUT_NAME)
+            def half(self_path, data):
+                open(self_path, "wb").write(b"half a file")
+                raise OSError("disk full")
+
+            with patch.object(Path, "write_bytes", half):
+                with self.assertRaises(OSError):
+                    X.export(db, dest, mirror=mirror)
+            self.assertEqual(digest(mirror / X.OUT_NAME), kept)
+            self.assertNotEqual(kept, good)
+            self.assertEqual([p.name for p in mirror.iterdir()], [X.OUT_NAME])
+            writer.close()
+
+    def test_the_archive_is_written_even_when_the_mirror_cannot_be(self):
+        with tempfile.TemporaryDirectory() as d:
+            db, writer, dest = setup(Path(d))
+            blocker = Path(d) / "file-not-folder"
+            blocker.write_text("x")
+            with self.assertRaises(OSError):
+                X.export(db, dest, mirror=blocker / "keep")
+            self.assertEqual(int(len(np.load(dest / X.OUT_NAME)["ts"])), 5)                     # the primary copy is safe
+            writer.close()
+
+
 if __name__ == "__main__":
     unittest.main()

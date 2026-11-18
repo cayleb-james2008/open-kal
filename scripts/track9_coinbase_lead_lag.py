@@ -48,6 +48,8 @@ TAPE = ROOT / "data" / "track9-tape"
 SPOT_FILE = "spot_ticks.npz"
 LAGS = tuple(LL["lags_s"])
 PRIMARY = (1, 2)
+DESCRIPTIVE_LAGS = (3,)              # owner's request after registration: A_3 is reported beside A_5, never in S or any criterion
+                                     # (the registered file is untouched; a test pins that S is bit-identical with and without it)
 ELIG_WINDOW_S, ELIG_MIN_PRINTS, ELIG_MAX_GAP_S = 150.0, 30, 3.0       # the registered eligibility rule
 MIN_BLOCKS = 30                      # validity guard, not a registered threshold: fewer bootstrap blocks/windows cannot make an interval
                                      # (the 288-window gate puts at least 172 in-sample windows behind it, so it never binds there)
@@ -148,21 +150,25 @@ def lead_lag(cb: tuple, rti: tuple, t_start: float, t_end: float) -> dict:
     r_cb, r_rti = second_returns(last_vals(*cb, grid_t)), second_returns(last_vals(*rti, grid_t))
     block = ((grid_t[1:] // LL["bootstrap"]["block_s"]) - (grid_t[1] // LL["bootstrap"]["block_s"])).astype(np.int64)
     blocks = int(block.max()) + 1
+    lags = LAGS + DESCRIPTIVE_LAGS                                             # registered lags first: the extra columns sit after them
     cols = []
-    for k in LAGS:
+    for k in lags:
         n = len(r_cb) - k
         cols += pair_sums(r_cb[:n], r_rti[k:], block[:n], blocks)            # Coinbase leads: r_cb(t) with r_rti(t+k)
         cols += pair_sums(r_rti[:n], r_cb[k:], block[:n], blocks)            # RTI leads:      r_rti(t) with r_cb(t+k)
     stats = np.column_stack(cols)
-    stats = stats[stats[:, 0::6].sum(axis=1) > 0]
+    stats = stats[stats[:, 0:12 * len(LAGS):6].sum(axis=1) > 0]               # which blocks count is decided by the registered lags only
 
     def fn(t):
-        a = [corr_from(*t[12 * i:12 * i + 6]) - corr_from(*t[12 * i + 6:12 * i + 12]) for i in range(len(LAGS))]
+        a = [corr_from(*t[12 * i:12 * i + 6]) - corr_from(*t[12 * i + 6:12 * i + 12]) for i in range(len(lags))]
         return np.array(a + [sum(a[LAGS.index(k)] for k in PRIMARY)])
 
     b = LL["bootstrap"]
     point, lo, hi = bootstrap(stats, fn, b["draws"], b["seed"], b["ci"])
-    out = {f"A_{k}": {"point": float(point[i]), "lo": float(lo[i]), "hi": float(hi[i])} for i, k in enumerate(LAGS)}
+    out = {f"A_{k}": {"point": float(point[i]), "lo": float(lo[i]), "hi": float(hi[i])} for i, k in enumerate(lags)}
+    for k in lags:
+        if k not in PRIMARY:
+            out[f"A_{k}"]["descriptive"] = True
     out["S"] = {"point": float(point[-1]), "lo": float(lo[-1]), "hi": float(hi[-1])}
     out.update(rows=int(stats[:, 0].sum()), blocks=int(len(stats)))
     out["passes"] = lane_passes(out["S"]) and out["blocks"] >= MIN_BLOCKS
