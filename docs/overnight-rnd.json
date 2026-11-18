@@ -78,9 +78,19 @@
     "503733e Track 2C/2D true-L2 results: h0.05_obi0.45_w10_30_maker"
    ],
    "note": "1 new commit(s)"
+  },
+  {
+   "at": "2026-11-18 07:16 EST",
+   "head": "514b3fea6a9e67b7e1ed5d879e43e9d4b665cf4b",
+   "new_commits": 2,
+   "commits": [
+    "514b3fe Tracks 4A/4B IS results: both miss the IS bar, OOS looks unspent",
+    "3c1a1b6 Tracks 4A/4B: calibrated settlement logistic and final-minute Asian maker bid, with sim_core entry_limit"
+   ],
+   "note": "2 new commit(s)"
   }
  ],
- "updated_at": "2026-11-18 06:41 EST",
- "head": "503733ecf849449f63ca334b73e27e932a23cb0c",
+ "updated_at": "2026-11-18 07:16 EST",
+ "head": "514b3fea6a9e67b7e1ed5d879e43e9d4b665cf4b",
  "branch": "origin/rnd/alpha-evolve"
 }
