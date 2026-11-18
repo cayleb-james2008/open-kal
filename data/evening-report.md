@@ -1,12 +1,12 @@
 # Open-Kal 24/7 report
 
-Updated 2026-11-18T05:00:24-05:00 by `scripts/daemon_247.py`.
+Updated 2026-11-18T05:43:28-05:00 by `scripts/daemon_247.py`.
 
 ## State
 
 - Decision: **waiting**
-- Engine: mode=None live_armed=None strategy=None
-- Equity: None (start None, peak None, realized None)
+- Engine: mode=paper live_armed=False strategy=F2_taker_1s
+- Equity: 121.46 (start 163.9971, peak 121.46, realized -42.54)
 - Venue balance: 121.4563
 - Trailing floor: 131.54 (peak 164.4269)
 - Reconcile delta: 0.00 (cap $0.05)
@@ -54,8 +54,6 @@ Updated 2026-11-18T05:00:24-05:00 by `scripts/daemon_247.py`.
 
 ## Events
 
-- 2026-11-18T02:38:35-05:00 **gate refused**: ['forward net $-22.61 <= 0', 'forward PF 0.642 < 1.15', 'payoff ECE 0.3820 > 0.08', '1 profitable lane(s) < 2']
-- 2026-11-18T02:38:35-05:00 **report**: gate refused at the hourly check
 - 2026-11-18T02:46:08-05:00 **report**: unarmed 15-minute reconcile
 - 2026-11-18T03:00:11-05:00 **report**: unarmed 15-minute reconcile
 - 2026-11-18T03:37:53-05:00 **gate refused**: ['forward net $-22.61 <= 0', 'forward PF 0.642 < 1.15', 'payoff ECE 0.3820 > 0.08', '1 profitable lane(s) < 2']
@@ -66,3 +64,5 @@ Updated 2026-11-18T05:00:24-05:00 by `scripts/daemon_247.py`.
 - 2026-11-18T04:38:18-05:00 **report**: gate refused at the hourly check
 - 2026-11-18T04:46:21-05:00 **report**: unarmed 15-minute reconcile
 - 2026-11-18T05:00:24-05:00 **report**: unarmed 15-minute reconcile
+- 2026-11-18T05:43:28-05:00 **gate refused**: ['forward net $-22.61 <= 0', 'forward PF 0.642 < 1.15', 'payoff ECE 0.3820 > 0.08', '1 profitable lane(s) < 2']
+- 2026-11-18T05:43:28-05:00 **report**: gate refused at the hourly check
