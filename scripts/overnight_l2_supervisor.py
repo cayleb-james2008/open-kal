@@ -256,6 +256,11 @@ def finish_cache_export(proc: subprocess.Popen, progress: dict, started: float,
     }
     progress["last_cache_export"] = progress["cache"]["finished_at"]
     progress["cache_ok"] = rc == 0
+    # A completed export is evidence, so it is appended to a history instead of only
+    # living in the key the next export overwrites.
+    progress["cache_history"] = (progress.get("cache_history") or [])[-8:] + [
+        {k: progress["cache"].get(k) for k in
+         ("started_at", "finished_at", "duration_s", "rc", "dir", "files")}]
     log(f"cache export finished rc={rc} in {progress['cache']['duration_s']}s "
         f"({len(progress['cache'].get('files') or {})} npz file(s))")
     if rc != 0:
@@ -390,6 +395,10 @@ def main() -> int:
         "last_rnd": prior.get("last_rnd"),
         "last_cache_export": prior.get("last_cache_export"),
         "cache_ok": prior.get("cache_ok"),
+        # Carried across a restart: a resumed run used to drop the export record it
+        # had already earned, leaving rc=None in the night's evidence.
+        "cache": prior.get("cache") or {},
+        "cache_history": prior.get("cache_history") or [],
         "errors": (prior.get("errors") or [])[-20:],
     }
     log(f"overnight supervisor up: until {progress['until']}, every {args.interval:.0f}s, "
