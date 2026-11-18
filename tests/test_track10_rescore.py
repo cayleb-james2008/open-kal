@@ -3,8 +3,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import tempfile
 import unittest
+from decimal import Decimal
 from pathlib import Path
+from unittest.mock import patch
+
+import numpy as np
+
+from openkal import sim_core as S
+from scripts import track10_champion_rescore as M
 
 ROOT = Path(__file__).resolve().parent.parent
 SPEC_PATH = ROOT / "scripts" / "track10_prereg.json"
@@ -79,6 +87,281 @@ class Registration(unittest.TestCase):
         self.assertIn("fewer than 30", SPEC["verdict"]["underpowered"])
         self.assertIn("5 folds", SPEC["walk_forward"]["folds"])
         self.assertTrue(SPEC["walk_forward"]["nothing_refit"].startswith("all thresholds, the fade's z-score normaliser and every exit are frozen"))
+
+
+FREEZE = M.FREEZE_CLOSE
+
+
+def row(close, pnl, family="F2_taker_1s", lane="KXBTC15M", reason="tp"):
+    return {"lane": lane, "close": close, "pnl": str(pnl), "reason": reason, "entry": "0.40", "fee_entry": "0.01", "fee_exit": "0",
+            "crossed": 0, "requotes": 0, "family": family, "slice": "post" if close > FREEZE else "pre"}
+
+
+class Constants(unittest.TestCase):
+    def test_the_code_uses_the_registered_numbers(self):
+        self.assertEqual((M.LATENCIES, M.SCORED, M.M, M.ALPHA), ((1, 2, 5), ("F2_taker_1s", "passive_mm_fade"), 12, 0.05))
+        self.assertEqual((M.DRAWS, M.SEED, M.MIN_TRADES, M.FOLDS_PRE), (10_000, 0, 30, 5))
+        self.assertEqual(M.FREEZE_CLOSE, SPEC["freeze"]["freeze_close_epoch"])
+        self.assertIn("draws 10000, seed 0", SPEC["test"]["p_value"])
+        self.assertIn("at least 30", SPEC["verdict"]["edge_confirmed"])
+        self.assertIn("5 folds", SPEC["walk_forward"]["folds"])
+        self.assertEqual(M.SPEC_SHA256, PREREG_SHA256)
+
+
+class Statistics(unittest.TestCase):
+    def test_holm_steps_down_over_twelve_hypotheses_not_over_the_cells_that_were_scored(self):
+        h = M.holm({"a": 0.004, "b": 0.0045, "c": 0.2})
+        self.assertAlmostEqual(h["a"]["threshold"], 0.05 / 12)                               # m is 12 even though three cells were scored
+        self.assertEqual([h[k]["rejected"] for k in "abc"], [True, True, False])
+        self.assertAlmostEqual(h["b"]["threshold"], 0.05 / 11)
+        late = M.holm({"a": 0.005, "b": 0.0001})                                            # sorted: b first; a misses its 0.05/11
+        self.assertEqual((late["b"]["rejected"], late["a"]["rejected"]), (True, False))
+
+    def test_a_later_p_value_under_its_own_threshold_is_still_not_rejected_after_an_earlier_failure(self):
+        h = M.holm({"a": 0.03, "b": 0.04}, m=2)                                             # a misses 0.025, so b may not use its 0.05
+        self.assertEqual((h["a"]["rejected"], h["b"]["rejected"]), (False, False))
+
+    def test_once_a_step_fails_no_later_p_value_is_rejected(self):
+        h = M.holm({"a": 0.0001, "b": 0.2, "c": 0.2001, "d": 0.0002}, m=4)
+        self.assertEqual({k: v["rejected"] for k, v in h.items()}, {"a": True, "d": True, "b": False, "c": False})
+
+    def test_the_bootstrap_resamples_windows_not_trades(self):
+        windows = [float(i) for i in range(10)]
+        rows = [row(0.0 + 0, 1.0) for _ in range(20)] + [row(float(i), -1.0) for i in range(1, 10)]
+        p = M.bootstrap_p(windows, rows)
+        self.assertGreater(p["mean"], 0.3)                                                   # 11 net over 29 trades: positive
+        self.assertGreater(p["p"], 0.25)                                                     # but every draw that misses window 0 is a loss
+
+    def test_a_draw_with_no_trades_counts_as_a_mean_of_zero(self):
+        p = M.bootstrap_p([1.0, 2.0, 3.0], [row(1.0, 1.0), row(1.0, 1.0)])
+        self.assertTrue(0.25 < p["p"] < 0.34)                                                # (2/3)^3 = 0.296 of draws miss window 1
+
+    def test_a_clear_edge_is_significant_a_loss_is_not_and_no_trades_is_p_one(self):
+        windows = [float(i) for i in range(70)]
+        win = M.bootstrap_p(windows, [row(float(i), 2.0) for i in range(70)])
+        loss = M.bootstrap_p(windows, [row(float(i), -2.0) for i in range(70)])
+        none = M.bootstrap_p(windows, [])
+        self.assertEqual(win["p"], 1 / 10_001)
+        self.assertEqual(loss["p"], 1.0)
+        self.assertEqual((none["p"], none["mean"]), (1.0, None))
+
+    def test_the_bootstrap_is_reproducible_and_reads_only_the_given_rows(self):
+        windows = [float(i) for i in range(40)]
+        rows = [row(float(i), (-1) ** i * 1.5) for i in range(40)]
+        self.assertEqual(M.bootstrap_p(windows, rows), M.bootstrap_p(windows, rows))
+        self.assertNotEqual(M.bootstrap_p(windows, rows, seed=1)["p"], M.bootstrap_p(windows, rows, seed=2)["p"])
+
+    def test_the_verdict_needs_thirty_trades_and_a_holm_rejection(self):
+        self.assertEqual(M.verdict(29, True), "underpowered")
+        self.assertEqual(M.verdict(0, False), "underpowered")
+        self.assertEqual(M.verdict(30, True), "edge_confirmed")
+        self.assertEqual(M.verdict(30, False), "no_edge_shown")
+
+    def test_folds_are_five_equal_pre_freeze_blocks_and_the_post_freeze_windows_are_the_sixth(self):
+        pre = [FREEZE - 900.0 * k for k in range(168)]
+        post = [FREEZE + 900.0 * (k + 1) for k in range(70)]
+        f = M.folds_of(sorted(pre + post))
+        sizes = [sum(1 for v in f.values() if v == k) for k in range(1, 7)]
+        self.assertEqual(sizes, [34, 34, 34, 33, 33, 70])
+        self.assertEqual((f[min(pre)], f[FREEZE], f[FREEZE + 900.0]), (1, 5, 6))             # the freeze close itself is pre-freeze
+        self.assertTrue(all(f[a] <= f[b] for a, b in zip(sorted(f), sorted(f)[1:])))         # folds run forward in time
+
+
+class FakeTape:
+    def __init__(self):
+        self.quotes = []
+
+    def quote(self, ts):
+        self.quotes.append(ts)
+        return 0.40, 0.42
+
+
+class Trading(unittest.TestCase):
+    def call(self, family, lag, side=S.NO):
+        tape, seen = FakeTape(), []
+        with patch.object(M.S, "run_trade", lambda tp, **kw: seen.append(kw) or S.Skip("unfilled")):
+            M.run_one({"family": family, "ts": 100.0, "side": side}, tape, lag)
+        return seen[0], tape
+
+    def test_the_scenario_latency_reaches_run_trade_and_the_stake_quote(self):
+        for lag in (1, 2, 5):
+            kw, tape = self.call("F2_taker_1s", lag)
+            self.assertEqual((kw["lag_s"], tape.quotes), (lag, [100.0 + lag]))
+            kw, tape = self.call("passive_mm_fade", lag)
+            self.assertEqual((kw["lag_s"], tape.quotes), (lag, [100.0 + lag]))
+
+    def test_every_entry_is_a_taker_and_nothing_asks_for_a_cost_above_the_canonical_ceiling(self):
+        for fam in M.SCORED:
+            kw, _ = self.call(fam, 2)
+            self.assertEqual(kw["entry_style"], S.TAKER)
+            self.assertNotIn("max_cost", kw)                                                  # run_trade's default is the 0.62 cap
+            self.assertEqual(kw["side"], S.NO)
+
+    def test_f2_and_the_fade_use_their_own_frozen_exits(self):
+        f2, _ = self.call("F2_taker_1s", 1)
+        self.assertEqual((f2["cost_lo"], f2["tp_c"], f2["stop_c"], f2["stop_confirm_s"], f2["hold_s"], f2["barrier_exit"]),
+                         (Decimal("0.25"), Decimal("0.05"), Decimal("0.07"), 2.0, 90.0, "taker"))
+        fade, _ = self.call("passive_mm_fade", 1)
+        self.assertEqual((fade["cost_hi"], fade["tp_c"], fade["hold_s"], fade["barrier_exit"]), (Decimal("0.55"), Decimal("0.06"), 180.0, "scratch"))
+        self.assertNotIn("stop_c", fade)
+
+    def test_a_crossed_or_empty_book_leaves_the_stake_for_run_trade_to_skip(self):
+        class Crossed:
+            def quote(self, ts):
+                raise S.CrossedBook("crossed")
+        self.assertEqual(M.stake_qty(Crossed(), S.YES, 1.0, 1), S.MAX_QTY)
+
+    def test_rows_are_split_at_the_freeze_and_skips_are_counted_per_slice_and_reason(self):
+        trig = [{"family": "F2_taker_1s", "lane": "KXBTC15M", "tid": i, "ticker": "T", "close": c, "ts": 1.0, "side": S.YES}
+                for i, c in enumerate([FREEZE - 900, FREEZE, FREEZE + 900, FREEZE + 1800])]
+        tapes = {("KXBTC15M", i): FakeTape() for i in range(4)}
+        seen = []
+
+        def fake(tape, **kw):
+            seen.append(kw["lag_s"])
+            return S.Skip("cost_band") if len(seen) in (2, 4) else None
+
+        with patch.object(M, "run_one", lambda t, tape, lag: fake(tape, lag_s=lag) or S.Skip("unfilled")), \
+                patch.object(M.RC, "trade_row", lambda tr, **kw: kw):
+            rows, skips = M.score_cell(trig, tapes, 5)
+        self.assertEqual(rows, [])
+        self.assertEqual(skips, {"pre": {"cost_band": 1, "unfilled": 1}, "post": {"cost_band": 1, "unfilled": 1}})
+        self.assertEqual(seen, [5, 5, 5, 5])
+
+    def test_the_fade_buys_the_opposite_side_of_the_flow_and_uses_the_frozen_normaliser_without_refitting(self):
+        calls = []
+        P = {"tid": np.array([0, 0, 0]), "ts": np.array([10.0, 200.0, 400.0]), "close": np.array([900.0] * 3)}
+        lane = type("L", (), {"tickers": ["T0"]})()
+
+        def prepare(l, name, cut, which, norm=None):
+            calls.append((name, cut, which, norm, M.PM.POOL_DIR))
+            return P, norm, 3
+
+        with patch.object(M.PM, "prepare", prepare), \
+                patch.object(M.PM, "trigger_mask", lambda P_, cfg: (np.array([True, True, True]), np.array([2.5, -2.5, 3.0]))):
+            out = M.fade_triggers("KXBTC15M", lane, Path("/pools"), {"KXBTC15M": {"flow": {"mean": 0.1, "std": 0.5}}})
+        self.assertEqual([t["side"] for t in out], [S.NO, S.YES, S.NO])                      # flow buying YES buys NO
+        self.assertEqual(calls[0][1:3], (float("inf"), "is"))                                # every row 'in sample': nothing is refit
+        self.assertEqual(calls[0][3], {"flow": {"mean": 0.1, "std": 0.5}})
+        self.assertEqual(calls[0][4], Path("/pools"))
+        self.assertNotEqual(M.PM.POOL_DIR, Path("/pools"))                                   # the module's own pool dir is put back
+
+    def test_f2_triggers_take_the_side_of_the_spot_and_the_frozen_cooldown(self):
+        pool = {"tid": np.array([0, 0]), "ts": np.array([1.0, 2.0]), "close": np.array([900.0, 900.0])}
+        lane = type("L", (), {"tickers": ["T0"]})()
+        asked = []
+
+        def fake_pick(pool_, mask, *, cooldown, per_window):
+            asked.append((cooldown, per_window))
+            return [0, 1]
+
+        with patch.object(M.F, "frozen_mask", lambda p, style: (np.array([True, True]), np.array([True, False]))), patch.object(M, "pick", fake_pick):
+            out = M.f2_triggers("KXXRP15M", lane, pool)
+        self.assertEqual([t["side"] for t in out], [S.YES, S.NO])
+        self.assertEqual(asked, [(90.0, 3)])
+
+
+class Run(unittest.TestCase):
+    """The whole run with the heavy parts replaced, to pin the ledger order, the gate and the single-run rule."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.pre = [FREEZE - 900.0 * k for k in range(168)]
+        self.post = [FREEZE + 900.0 * (k + 1) for k in range(70)]
+        self.closes = sorted(self.pre + self.post)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def triggers(self, pre_f2=111, pre_fade=56, post=3):
+        def make(fam, pre_closes, n_post):
+            rows = [{"family": fam, "lane": "KXBTC15M", "tid": i, "ticker": "T", "close": c, "ts": 1.0, "side": S.YES} for i, c in enumerate(pre_closes)]
+            return rows + [{"family": fam, "lane": "KXBTC15M", "tid": 1000 + i, "ticker": "T", "close": self.post[i], "ts": 1.0, "side": S.YES}
+                           for i in range(n_post)]
+        f2 = [self.pre[i % 168] for i in range(pre_f2)]
+        fade = [M.FADE_IS_CUT - 900.0 * (1 + i % 10) for i in range(pre_fade)]              # all before the fade's own cut, hence pre-freeze
+        return make("F2_taker_1s", f2, post), make("passive_mm_fade", fade, post)
+
+    def go(self, f2, fade, ledger_during=None, **patches):
+        ledger = self.dir / "ledger.jsonl"
+        score_calls = []
+
+        def score_cell(triggers, tapes, lag):
+            score_calls.append(ledger.read_text().count("\n") if ledger.exists() else 0)
+            fam = triggers[0]["family"]
+            return [row(self.post[0], 1.5, fam), row(self.pre[0], -1.0, fam)], {"pre": {"cost_band": 1}, "post": {}}
+
+        pools = patch.object(M, "load_pool", lambda name, d: {})
+        with patch.object(M.T, "pin_tape", lambda tape: {"sha256": {"x": "y"}}), patch.object(M.T, "window_closes", lambda tape: self.closes), \
+                patch.object(M.RC, "load_lanes", lambda: {n: object() for n in M.LANES}), patch.object(M, "fade_norm", lambda: {}), pools, \
+                patch.object(M, "f2_triggers", lambda n, l, p: f2 if n == "KXBTC15M" else []), \
+                patch.object(M, "fade_triggers", lambda n, l, d, nm: fade if n == "KXBTC15M" else []), \
+                patch.object(M.RC, "tape", lambda lane, tid: FakeTape()), patch.object(M, "score_cell", score_cell), \
+                patch.object(M.RC, "LEDGER", ledger), patch.object(M, "ROOT", self.dir):
+            out = M.run(self.dir / "tape", self.dir / "pool", self.dir)
+        return out, [json.loads(x) for x in ledger.read_text().splitlines()], score_calls
+
+    def test_six_started_lines_are_on_the_ledger_before_any_cell_is_scored_and_six_scored_lines_follow(self):
+        f2, fade = self.triggers()
+        out, lines, calls = self.go(f2, fade)
+        self.assertEqual(calls, [6] * 6)                                                     # every look logged before the first score
+        self.assertEqual([x["status"] for x in lines], ["started"] * 6 + ["scored"] * 6)
+        names = {x["family"] for x in lines}
+        self.assertEqual(names, {f"rescore10:{f}@{l}s" for f in M.SCORED for l in (1, 2, 5)})
+        self.assertTrue(all(x["rescore"] and x["rescore_reason"].startswith("Track 10") for x in lines))
+        self.assertFalse(names & {"F2_taker_1s", "passive_mm_fade"})                         # never under a family's own name
+        self.assertEqual(out["holm"], {"m": 12, "alpha": 0.05, "scored_cells": 6})
+
+    def test_the_receipt_the_trades_and_the_window_ledger_are_written_and_the_pin_cannot_be_scored_twice(self):
+        f2, fade = self.triggers()
+        out, _, _ = self.go(f2, fade)
+        receipt = self.dir / f"track10-rescore-{int(self.closes[-1])}.json"
+        self.assertTrue(receipt.exists() and (self.dir / "track10-window-ledger.json").exists())
+        self.assertEqual(len((self.dir / "track10-rescore-trades.jsonl").read_text().splitlines()), 12)
+        cell = out["cells"]["F2_taker_1s"]["5"]
+        self.assertEqual((cell["post"]["trades"], cell["pre"]["trades"], cell["triggers"]), (1, 1, {"pre": 111, "post": 3}))
+        self.assertEqual(cell["verdict"], "underpowered")
+        self.assertEqual(out["windows"]["post_freeze"], 70)
+        ledger = json.loads((self.dir / "track10-window-ledger.json").read_text())
+        self.assertEqual(sorted(ledger), ["F2_taker_1s", "passive_mm_fade", "zobi_band_084", "zobi_xrp_carry"])
+        self.assertTrue(ledger["zobi_band_084"]["pre_freeze"]["seen"])
+        self.assertFalse(ledger["F2_taker_1s"]["post_freeze"]["seen_before_this_run"])
+        self.assertEqual(ledger["F2_taker_1s"]["pre_freeze"]["windows"], 168)
+        with self.assertRaisesRegex(RuntimeError, "already scored"):
+            self.go(f2, fade)
+
+    def test_pools_that_do_not_rebuild_the_recorded_triggers_stop_the_run_before_anything_is_logged(self):
+        f2, fade = self.triggers(pre_f2=110)
+        with self.assertRaisesRegex(RuntimeError, "do not reproduce"):
+            self.go(f2, fade)
+        self.assertFalse((self.dir / "ledger.jsonl").exists())
+        f2, fade = self.triggers(pre_fade=57)
+        with self.assertRaisesRegex(RuntimeError, "do not reproduce"):
+            self.go(f2, fade)
+
+    def test_a_tape_with_no_post_freeze_window_is_refused(self):
+        self.closes = self.pre
+        f2, fade = self.triggers()
+        with self.assertRaisesRegex(RuntimeError, "no post-freeze"):
+            self.go(f2, fade)
+
+
+class Building(unittest.TestCase):
+    def test_the_pool_builder_never_overwrites_the_older_pools(self):
+        with self.assertRaisesRegex(RuntimeError, "rnd-pool"):
+            M.build_pools(M.TAPE, M.RB.POOL)
+
+    def test_a_tape_is_pinned_once_and_only_from_a_consistent_snapshot(self):
+        with tempfile.TemporaryDirectory() as d:
+            dest = Path(d) / "tape"
+            with self.assertRaisesRegex(RuntimeError, "changed while it was copied"):
+                M.build_tape(dest, snapshot=lambda p: None)
+            self.assertFalse((dest / "pin.json").exists())
+            M.build_tape(dest, snapshot=lambda p: {"a": "b"})
+            self.assertEqual(json.loads((dest / "pin.json").read_text())["sha256"], {"a": "b"})
+            with self.assertRaisesRegex(RuntimeError, "already pinned"):
+                M.build_tape(dest, snapshot=lambda p: {"a": "b"})
 
 
 if __name__ == "__main__":
