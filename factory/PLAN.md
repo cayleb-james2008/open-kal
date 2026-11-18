@@ -24,3 +24,14 @@ M1 pre-registered judge + feature matrix + numba taker simulator (parity-tested 
 M2 maker queue in numba; LightGBM gate (needs the Decision Agent definition); 2-hour reporter.
 M3 collectors for other Kalshi series and spot feeds; cross-market families.
 M4 paper-ladder export for Session 1 (specs only; arming is the owner's).
+
+## Owner's second brief (12:51) and its consequences
+- Two tiers: a fast screen (`factory/sim.py`, target >= 10k candidates/min) and an event-by-event replay through `openkal/sim_core.py` (queue model included) for the top 100 an hour; only the replay promotes.
+- Judge adds purged CV, probability of backtest overfitting (CSCV), the deflated Sharpe ratio, a fresh-date-range re-test, and a count of every candidate tried (`prereg_judge.json` v2).
+- Layers: LightGBM probability, then a small evolved decision net on PnL after fees, best runs' weights averaged. **No usable GPU driver here** (`nvidia-smi` fails), so the net is evolved on CPU in numba; evosax/EvoTorch are not installed and add JAX/PyTorch for a net this size.
+- First targets: combo quote pricing (needs Session 1's recorder data), fav_maker bid placement (Track 11 family), 15-minute crypto.
+- Infrastructure: CF Benchmarks BTC index reconstruction from its constituent exchanges' public feeds, a strike-ladder snapshotter, and collectors for other Kalshi series; all read-only, my own processes, no `.env`/`keys/`.
+
+## Status
+- Done: registration v2 (pushed before any scoring), provisional indicator registry, per-lane feature matrix (`data/factory/features-1795017600`, 724,768 rows, 19 features), numba screening simulator with 14 tests including exact parity with `sim_core.run_trade` on hold-to-settlement taker trades.
+- Next: search (GA + Optuna), judge (walk-forward, purged CV, DSR, PBO), leaderboard, throughput, first leaderboard; then tier-2 replay.

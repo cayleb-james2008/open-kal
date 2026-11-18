@@ -1,8 +1,8 @@
 {
   "name": "strategy_factory_judge",
-  "version": 1,
+  "version": 2,
   "registered": "2026-11-18T12:47:37-05:00",
-  "status": "pre-registered before any candidate was scored and before any feature matrix was built; the commit time is the authority",
+  "status": "pre-registered (v1, then one amendment from the owner's second brief); no candidate has been scored and no feature matrix has been read by any search or judge; the commit time is the authority",
   "owner_bars": {
     "oos_ev": "mean net USD per trade out of sample > 0 with the lower confidence bound > 0",
     "oos_trades": ">= 200",
@@ -89,5 +89,51 @@
     "the tape holds 238 settled book-backed windows over 2.7 days; 46 have touch sizes",
     "an independent backtest on 23.5k windows found no taker edge at 5 s or longer delay"
   ],
-  "expected": "no candidate passes the corrected bound on 2.7 days of data; the factory's first job is to show that honestly and to be ready when more data arrives"
+  "expected": "no candidate passes the corrected bound on 2.7 days of data; the factory's first job is to show that honestly and to be ready when more data arrives",
+  "screening_and_replay": {
+    "tier_1_screen": "the numba pass over the one-second feature matrix; target >= 10,000 candidates per minute across the machine's cores, measured and reported",
+    "tier_2_replay": "the top 100 candidates per hour by screened train score are replayed event by event through openkal/sim_core.py (T+latency arrival, the queue model for resting orders, exact fees) on the same out-of-sample blocks; the leaderboard shows both numbers and only the replay may promote",
+    "agreement": "a candidate whose replay net per trade differs from its screen by more than 25% of |screen| or changes sign is flagged and never promoted"
+  },
+  "judge_additions_v2": {
+    "purged_cv": "blocks split into train and test with every window within one window of a test block purged from train (embargo = 1 window), so no train feature overlaps a test trade",
+    "pbo": "probability of backtest overfitting by combinatorially symmetric cross-validation (Bailey, Borwein, Lopez de Prado, Zhu) on the block-by-candidate PnL matrix of each epoch, 16 blocks split in halves; reported per epoch and per family; a family whose PBO is above 0.5 cannot promote",
+    "deflated_sharpe": "the deflated Sharpe ratio (Bailey and Lopez de Prado) of each candidate's out-of-sample per-window PnL with the trial count N set to the number of distinct candidates tried in its epoch and family combined, using the sample skew and kurtosis; promotion needs DSR >= 0.95",
+    "fresh_range_retest": "a candidate that clears the judge is re-scored once on a date range that did not exist when it was selected (the windows recorded after its epoch's test blocks, or, when none exist yet, it waits); that re-test must also have EV > 0 with the lower bound > 0 at the owner's 95% level and >= 50 trades before it reaches the paper ladder",
+    "count_every_candidate": "every candidate that was scored in any tier, including mutants and Optuna trials and failures, is a row in the leaderboard and adds to N; a candidate deleted from the table is a protocol violation; the trial counter is stored beside the leaderboard and reported",
+    "kept_from_v1": "the owner's bars, the window-clustered Bonferroni bound, the leak guard and the 164 USD capital"
+  },
+  "layers": {
+    "layer_1": "LightGBM probability model of the side's win, walk-forward, used as one registry feature (milestone 2; needs the Decision Agent definition)",
+    "layer_2": "a small evolved decision net (inputs: registry features and the layer-1 probability; outputs: threshold, size fraction, sit-out) optimised directly on PnL after fees by an evolution strategy; the best runs' weights are averaged",
+    "gpu": "nvidia-smi reports no usable driver on this machine, so the net is evolved on the CPU in numba; it is tiny, so evosax and EvoTorch (JAX and PyTorch) add nothing yet and a hand-rolled evolution strategy is used; the optimiser is replaceable if a GPU becomes available"
+  },
+  "first_targets": [
+    "combo quote pricing (waits for Session 1's recorder data)",
+    "fav_maker bid placement (the Track 11 family, with the queue model)",
+    "15-minute crypto"
+  ],
+  "data_infrastructure": [
+    "CF Benchmarks bitcoin index reconstruction from its constituent exchanges' public feeds",
+    "a strike-ladder snapshotter for the hourly and daily crypto ladders",
+    "other Kalshi series and spot feeds: read-only public collectors, my own background processes"
+  ],
+  "amendments": [
+    {
+      "version": 2,
+      "date": "2026-11-18T12:51:54-05:00",
+      "supersedes_commit": "5e5154b",
+      "reason": "the owner's second brief added two-tier screening and replay, purged cross-validation, PBO, the deflated Sharpe ratio and a fresh-range re-test, an evolved decision net layer, first targets and the index reconstruction",
+      "made_before": "any candidate was scored by any tier and any search ran on the feature matrix",
+      "changed": [
+        "status",
+        "screening_and_replay",
+        "judge_additions_v2",
+        "layers",
+        "first_targets",
+        "data_infrastructure"
+      ],
+      "not_changed": "no v1 bar, bound, window rule or the leak guard"
+    }
+  ]
 }
