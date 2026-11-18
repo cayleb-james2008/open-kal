@@ -64,6 +64,11 @@ FEATURES = ["p_side", "edge", "secs_left", "flow_fast", "flow_slow"]
 
 
 def run_forward_holdout():
+    if LEDGER.exists() and any(
+        json.loads(line)["family"] in {"flow_student_t_settle_forward_holdout", "flow_student_t_settle_forward_layagate"}
+        for line in LEDGER.read_text().splitlines() if line.strip()
+    ):
+        raise RuntimeError("forward holdout already scored; audit the saved fills without replaying")
     t0 = time.time()
     
     # Verify strict isolation

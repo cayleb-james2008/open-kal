@@ -1,8 +1,10 @@
 {
- "updated": "2026-11-18T00:31:00-05:00",
+ "updated": "2026-11-18T01:05:00-05:00",
  "goal": "24/7 forward-OOS gate, live compounding, trailing drawdown breaker.",
  "rnd_overnight_shift": {
   "lane": "rnd/alpha-evolve",
+  "model": "openai/gpt-6.2-sol",
+  "private_git_dir": "data/overnight-rnd.git",
   "track1_asian_pin": {
    "status": "IS fail",
    "oos_spent": false,
@@ -14,40 +16,59 @@
    "note": "72-cell grid fails trade count bar (best: 4 trades, net +$85.04, PF inf). OOS look unspent."
   },
   "track2b_flow_student_t": {
-   "status": "OOS scored + Verified",
+   "status": "OOS calibration fail; forward loss",
    "is_champion": "h0.05_w5_15_th0.30_taker",
    "is_metrics": {"trades": 44, "net": 333.25, "pf": 1.90, "win_rate": 0.6136, "profitable_lanes": 4},
-   "oos_metrics": {"trades": 36, "net": 229.38, "pf": 1.68, "win_rate": 0.5833, "profitable_lanes": 3, "net_ex_xrp": 131.71},
+   "oos_metrics": {"trades": 36, "net": 229.38, "pf": 1.68, "win_rate": 0.5833, "profitable_lanes": 3, "net_ex_xrp": 131.71, "max_entry_cost": 0.57, "crossed_fills": 0},
    "oos_payoff_ece": 0.1581,
    "gate_pass": false,
    "calibration_diagnosis": {
-    "verdict": "Finite-sample binning noise + 5-feature over-dispersion",
-    "parametric_null_noise_ece": 0.1446,
-    "prob_null_exceeding_0_08": 0.9372,
+    "verdict": "Sampling noise is material but not proven to be the sole cause; all predictors fail 0.08.",
+    "artifact": "data/track2b-calibration-audit.json",
     "raw_p_side_oos_ece": 0.1149,
-    "ridge_2f_p_side_cost_oos_ece": 0.0890
+    "platt_1p_oos_ece": 0.1125,
+    "platt_1p_logit_slope": 1.3399790845770405,
+    "ridge_4f_oos_ece": 0.0982,
+    "historical_ridge_5f_oos_ece": 0.1581,
+    "null_bootstrap": {"draws": 10000, "trades": 36, "true_win_rate": 0.5833333333333334, "flat_rate_noise_mean_ece_5f_bins": 0.1645, "model_conditional_mean_ece_5f_bins": 0.1442, "prob_model_conditional_ge_observed_5f_ece": 0.3558}
    },
    "forward_holdout_1620_present": {
-    "windows_evaluated": 39,
-    "unfiltered": {"trades": 15, "net": -110.54, "pf": 0.51, "win_rate": 0.2667, "payoff_ece": 0.2846, "net_ex_xrp": -107.85},
-    "layagate_filtered": {"trades": 0, "net": 0.00, "pf": 0.00, "denied_trades": 12, "prevented_loss": 99.54, "denied_pf": 0.47}
+    "status": "Prior sealed look audited; no replay",
+    "artifact": "data/track2b-forward-holdout-audit.json",
+    "ledger_lines": [31, 32],
+    "cutoff_close_ts": 1794943521.0,
+    "cutoff_est": "2026-11-17T14:25:21-05:00",
+    "prior_horizon_est": ["2026-11-17T14:30:00-05:00", "2026-11-18T00:00:00-05:00"],
+    "settled_windows_per_lane_at_check": 42,
+    "settled_windows_per_lane_through_prior_horizon": 39,
+    "fills_triggered_before_cutoff_in_first_forward_window": 1,
+    "unfiltered": {"trades": 15, "net": -110.54, "pf": 0.51, "win_rate": 0.2667, "raw_p_side_ece": 0.1790, "platt_1p_ece": 0.1610, "net_ex_xrp": -107.85, "max_entry_cost": 0.52, "crossed_fills": 0,
+     "by_lane": {"KXBTC15M": {"trades": 4, "wins": 0, "net": -83.82}, "KXETH15M": {"trades": 4, "wins": 1, "net": -30.32}, "KXSOL15M": {"trades": 2, "wins": 1, "net": 6.29}, "KXXRP15M": {"trades": 5, "wins": 2, "net": -2.69}}
+    },
+    "layagate_filtered": {"trades": 0, "net": 0.0, "win_rate": null, "pf": null, "raw_p_side_ece": null, "platt_1p_ece": null, "by_lane": {}, "net_ex_xrp": 0.0, "max_entry_cost": null, "crossed_fills": 0},
+    "gate_counts": {"allowed": 0, "denied": 12, "unlogged": 3}
    },
-   "note": "OOS economic pass (+229.38, PF 1.68, net_ex_xrp +131.71). Payoff-ECE 0.1581 confirmed as N=36 binning noise. LayaGate denied 12/12 live trades on forward holdout, shielding -$99.54 in losses."
+   "note": "Do not promote. Frozen OOS fails payoff-ECE and profitability did not replicate forward."
   },
   "track3_layagate_filter": {
-   "status": "Audited & Live Verified",
+   "status": "Forward verdict labels confirmed from cache",
    "coverage_pct_frozen_tape": 0.0,
    "forward_holdout_denial_rate": "100.0% (12/12 denied)",
-   "forward_loss_shielded": 99.54,
-   "note": "First gate row at ts 1794952390.85 (16:53 EST). On forward holdout, LayaGate denied 12/12 candidate trades with realized WR 25.0% and PF 0.47, protecting portfolio."
+   "denied_subset_net": -99.54,
+   "note": "Twelve denied, three unlogged, zero allowed. PF and calibration lift are not measurable on an empty allowed subset."
   },
   "track2c_true_l2_loop": {
-   "status": "Monitoring",
+   "status": "Awaiting scheduled depth checks",
    "loop_script": "scripts/overnight_rnd_loop.py",
+   "service": "openkal-rnd-overnight-20261118.service",
+   "schedule_est": ["2026-11-18T01:15:00-05:00", "2026-11-18T06:00:00-05:00"],
+   "interval_s": 300,
    "current_windows": 16,
    "required_windows": 24,
    "valid_l2_rows": 9517812,
-   "note": "Active 5-minute daemon (task-186) monitoring evolve-cache for >= 24 windows before launching track2c_true_l2_settle.py."
+   "oos_spent": false,
+   "log": "data/overnight-rnd-loop.log",
+   "note": "Preflight 16/24. The timer checks the read-only cache through 06:00 EST; sweep once at 24 qualifying closes and keep OOS sealed if no IS champion qualifies."
   }
  },
  "state": {

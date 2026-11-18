@@ -119,6 +119,7 @@ def summarize(rows: list[dict], skips: dict[str, int] | None = None) -> dict:
         "requotes": sum(int(r["requotes"]) for r in rows),
         "profitable_lanes": sum(1 for d in by_lane.values() if d["net"] > 0),
         "net_ex_best_lane": float(net - best_lane) if by_lane else 0.0,
+        "net_ex_xrp": float(net - by_lane.get("KXXRP15M", {"net": Decimal(0)})["net"]),
         "net_ex_best_window": float(net - best_window) if by_window else 0.0,
         "windows": len(by_window),
         "by_lane": {k: {"trades": v["trades"], "wins": v["wins"], "net": float(v["net"])}
@@ -159,6 +160,7 @@ def promotion_gate(oos: dict, ece: float | None) -> dict:
         "oos_trades_at_least_25": oos["trades"] >= GATE["oos_trades_min"],
         "two_profitable_lanes": oos["profitable_lanes"] >= GATE["profitable_lanes_min"],
         "not_carried_by_one_lane": oos["net_ex_best_lane"] > 0,
+        "net_ex_xrp_positive": oos["net_ex_xrp"] > 0,
         "not_carried_by_one_window": oos["net_ex_best_window"] > 0,
         "zero_crossed_fills": oos["crossed_fills"] == GATE["crossed_fills"],
         "max_entry_cost_at_most_0_62": oos["max_entry_cost"] <= GATE["max_entry_cost"] + 1e-9,

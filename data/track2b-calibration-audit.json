@@ -1,0 +1,861 @@
+{
+  "champion": "h0.05_w5_15_th0.30_taker",
+  "cut": 1794881700.0,
+  "sha256": {
+    "data/track2b-flow-student-t-is.json": "13f8983a96407e3c98be431bfd0683a840a46c0fa376bf894995eb8b4114a2a6",
+    "data/track2b-flow-student-t-is-trades.jsonl": "66abbe87114f001f19c451229601c702b5315ddf48df384568723e8012bced85",
+    "data/track2b-flow-student-t-oos-trades.jsonl": "a5c2ed48c1b65c0b64b9be514644e2b7ae8c577c9d9fe1fd254995caf3f1a809",
+    "openkal/sim_core.py": "9a9623a0db7a785c19ef2feb72888ca253ba71cc62c1d62f0a2786745f9527cd"
+  },
+  "economics": {
+    "is": {
+      "trades": 44,
+      "wins": 27,
+      "losses": 17,
+      "win_rate": 0.6136,
+      "net": 333.25,
+      "pf": 1.9047593190888605,
+      "avg_pnl": 7.573863636363637,
+      "max_entry_cost": 0.6,
+      "fees_entry": 37.25,
+      "fees_exit": 0.0,
+      "crossed_fills": 0,
+      "requotes": 0,
+      "profitable_lanes": 4,
+      "net_ex_best_lane": 198.34,
+      "net_ex_xrp": 236.78,
+      "net_ex_best_window": 218.13,
+      "windows": 33,
+      "by_lane": {
+        "KXBTC15M": {
+          "trades": 10,
+          "wins": 8,
+          "net": 134.91
+        },
+        "KXETH15M": {
+          "trades": 11,
+          "wins": 6,
+          "net": 35.15
+        },
+        "KXSOL15M": {
+          "trades": 11,
+          "wins": 6,
+          "net": 66.72
+        },
+        "KXXRP15M": {
+          "trades": 12,
+          "wins": 7,
+          "net": 96.47
+        }
+      },
+      "by_reason": {
+        "settle": {
+          "trades": 44,
+          "net": 333.25
+        }
+      },
+      "skips": {}
+    },
+    "oos": {
+      "trades": 36,
+      "wins": 21,
+      "losses": 15,
+      "win_rate": 0.5833,
+      "net": 229.38,
+      "pf": 1.6832479447158346,
+      "avg_pnl": 6.371666666666667,
+      "max_entry_cost": 0.57,
+      "fees_entry": 30.62,
+      "fees_exit": 0.0,
+      "crossed_fills": 0,
+      "requotes": 0,
+      "profitable_lanes": 3,
+      "net_ex_best_lane": 127.77,
+      "net_ex_xrp": 131.71,
+      "net_ex_best_window": 120.31,
+      "windows": 24,
+      "by_lane": {
+        "KXBTC15M": {
+          "trades": 7,
+          "wins": 5,
+          "net": 101.61
+        },
+        "KXETH15M": {
+          "trades": 8,
+          "wins": 6,
+          "net": 93.11
+        },
+        "KXSOL15M": {
+          "trades": 7,
+          "wins": 2,
+          "net": -63.01
+        },
+        "KXXRP15M": {
+          "trades": 14,
+          "wins": 8,
+          "net": 97.67
+        }
+      },
+      "by_reason": {
+        "settle": {
+          "trades": 36,
+          "net": 229.38
+        }
+      },
+      "skips": {}
+    }
+  },
+  "fit_on_is_only": {
+    "platt_logit_slope": 1.3399790845770405,
+    "platt_intercept": 0.0,
+    "ridge": 1.0,
+    "features4": [
+      "p_side",
+      "p_side_minus_trigger_cost",
+      "secs",
+      "abs_x"
+    ],
+    "ridge4_weights": [
+      0.6155234357334983,
+      -0.4350684149100706,
+      0.262775898482431,
+      -0.06755631966567928,
+      0.5149515147095085
+    ],
+    "ridge4_norm": [
+      0.5076748104184378,
+      0.06585662860025586,
+      410.1818181818182,
+      0.18870641361221088,
+      0.08578739755349618,
+      0.018264313679875306,
+      212.83062757286098,
+      0.12182690006644703
+    ],
+    "historical_features5": [
+      "p_side",
+      "edge",
+      "secs_left",
+      "flow_fast",
+      "flow_slow"
+    ],
+    "historical_ridge5_weights": [
+      0.6234557396080324,
+      -0.45948039817801467,
+      0.23894141149630174,
+      -0.20469700446878883,
+      -0.047278198403585964,
+      0.5164247394449994
+    ],
+    "historical_ridge5_norm": [
+      0.5076748104184378,
+      0.06585662860025586,
+      410.1818181818182,
+      -0.10673408912909829,
+      -0.11235758426280884,
+      0.08578739755349618,
+      0.018264313679875306,
+      212.83062757286098,
+      0.6486476237373154,
+      0.5394997501172808
+    ]
+  },
+  "bootstrap": {
+    "draws": 10000,
+    "seed": 1794943521,
+    "trades_per_draw": 36,
+    "bins": 10,
+    "fixed_win_rate": 0.5833333333333334,
+    "assumption": "Independent labels conditionally on fixed OOS bin membership. Flat null uses the same 21/36 truth in each occupied bin; conditional null draws at each predictor's own fitted probabilities. The i.i.d. null does not model shared window effects."
+  },
+  "models": {
+    "raw_student_t": {
+      "is": {
+        "trades": 44,
+        "ece": 0.1381015729896621,
+        "brier": 0.23812620962575892,
+        "log_loss": 0.6684794441896453,
+        "mean_p": 0.5076748104184378,
+        "win_rate": 0.6136363636363636,
+        "gap_realized_minus_predicted": 0.10596155321792589,
+        "prediction_sd": 0.0857873975534962,
+        "buckets": [
+          {
+            "bin": 4,
+            "trades": 24,
+            "wins": 14,
+            "mean_p": 0.4376417380322554,
+            "win_rate": 0.5833333333333334,
+            "gap_realized_minus_predicted": 0.14569159530107795,
+            "wilson_95": [
+              0.38834665865229256,
+              0.7553239739018787
+            ]
+          },
+          {
+            "bin": 5,
+            "trades": 12,
+            "wins": 6,
+            "mean_p": 0.5589233695815161,
+            "win_rate": 0.5,
+            "gap_realized_minus_predicted": -0.058923369581516116,
+            "wilson_95": [
+              0.2537815976337112,
+              0.7462184023662888
+            ]
+          },
+          {
+            "bin": 6,
+            "trades": 8,
+            "wins": 7,
+            "mean_p": 0.6409011888323666,
+            "win_rate": 0.875,
+            "gap_realized_minus_predicted": 0.23409881116763342,
+            "wilson_95": [
+              0.5291118177871563,
+              0.9775825085499423
+            ]
+          }
+        ]
+      },
+      "oos": {
+        "trades": 36,
+        "ece": 0.11489196552070113,
+        "brier": 0.2531137764808131,
+        "log_loss": 0.6993434358950494,
+        "mean_p": 0.5000584861498384,
+        "win_rate": 0.5833333333333334,
+        "gap_realized_minus_predicted": 0.08327484718349498,
+        "prediction_sd": 0.07320080018251791,
+        "buckets": [
+          {
+            "bin": 4,
+            "trades": 19,
+            "wins": 11,
+            "mean_p": 0.43898433545070037,
+            "win_rate": 0.5789473684210527,
+            "gap_realized_minus_predicted": 0.13996303297035229,
+            "wilson_95": [
+              0.3627590353425557,
+              0.7685810871754536
+            ]
+          },
+          {
+            "bin": 5,
+            "trades": 12,
+            "wins": 6,
+            "mean_p": 0.5474256775058094,
+            "win_rate": 0.5,
+            "gap_realized_minus_predicted": -0.047425677505809394,
+            "wilson_95": [
+              0.2537815976337112,
+              0.7462184023662888
+            ]
+          },
+          {
+            "bin": 6,
+            "trades": 5,
+            "wins": 4,
+            "mean_p": 0.6184589995522332,
+            "win_rate": 0.8,
+            "gap_realized_minus_predicted": 0.1815410004477669,
+            "wilson_95": [
+              0.37553462976253477,
+              0.9637758913675682
+            ]
+          }
+        ]
+      },
+      "flat_win_rate_binning_noise": {
+        "mean": 0.10811805555555556,
+        "sd": 0.05019571985021097,
+        "q025_q975": [
+          0.02777777777777777,
+          0.2222222222222222
+        ],
+        "prob_gt_gate_0_08": 0.7337,
+        "prob_ge_observed_ece": 0.398
+      },
+      "perfectly_calibrated_conditional_on_model_p": {
+        "mean": 0.1108669977699462,
+        "sd": 0.04868163017991693,
+        "q025_q975": [
+          0.02783626392761625,
+          0.2184413678126323
+        ],
+        "prob_gt_gate_0_08": 0.7103,
+        "prob_ge_observed_ece": 0.4099
+      }
+    },
+    "platt_1p": {
+      "is": {
+        "trades": 44,
+        "ece": 0.1712456620339252,
+        "brier": 0.23776049499415403,
+        "log_loss": 0.6668443330178677,
+        "mean_p": 0.5097397152972147,
+        "win_rate": 0.6136363636363636,
+        "gap_realized_minus_predicted": 0.10389664833914891,
+        "prediction_sd": 0.11332072339296226,
+        "buckets": [
+          {
+            "bin": 3,
+            "trades": 12,
+            "wins": 6,
+            "mean_p": 0.3818063574968198,
+            "win_rate": 0.5,
+            "gap_realized_minus_predicted": 0.11819364250318021,
+            "wilson_95": [
+              0.2537815976337112,
+              0.7462184023662888
+            ]
+          },
+          {
+            "bin": 4,
+            "trades": 12,
+            "wins": 8,
+            "mean_p": 0.45222908350098906,
+            "win_rate": 0.6666666666666666,
+            "gap_realized_minus_predicted": 0.21443758316567757,
+            "wilson_95": [
+              0.39062208887280636,
+              0.8618799089087835
+            ]
+          },
+          {
+            "bin": 5,
+            "trades": 8,
+            "wins": 3,
+            "mean_p": 0.5602097876606349,
+            "win_rate": 0.375,
+            "gap_realized_minus_predicted": -0.1852097876606349,
+            "wilson_95": [
+              0.13684428582360114,
+              0.6942576053973659
+            ]
+          },
+          {
+            "bin": 6,
+            "trades": 9,
+            "wins": 7,
+            "mean_p": 0.6462234020326565,
+            "win_rate": 0.7777777777777778,
+            "gap_realized_minus_predicted": 0.1315543757451213,
+            "wilson_95": [
+              0.4525889691069974,
+              0.9367748928821512
+            ]
+          },
+          {
+            "bin": 7,
+            "trades": 3,
+            "wins": 3,
+            "mean_p": 0.7074777538415854,
+            "win_rate": 1.0,
+            "gap_realized_minus_predicted": 0.2925222461584146,
+            "wilson_95": [
+              0.4385029682449681,
+              1.0
+            ]
+          }
+        ]
+      },
+      "oos": {
+        "trades": 36,
+        "ece": 0.11252339171054149,
+        "brier": 0.2565438507653435,
+        "log_loss": 0.706328250091697,
+        "mean_p": 0.49991455541270924,
+        "win_rate": 0.5833333333333334,
+        "gap_realized_minus_predicted": 0.08341877792062413,
+        "prediction_sd": 0.09710909065752699,
+        "buckets": [
+          {
+            "bin": 3,
+            "trades": 8,
+            "wins": 4,
+            "mean_p": 0.3814691999512957,
+            "win_rate": 0.5,
+            "gap_realized_minus_predicted": 0.11853080004870431,
+            "wilson_95": [
+              0.21521606221388284,
+              0.7847839377861172
+            ]
+          },
+          {
+            "bin": 4,
+            "trades": 11,
+            "wins": 7,
+            "mean_p": 0.44587682550908947,
+            "win_rate": 0.6363636363636364,
+            "gap_realized_minus_predicted": 0.19048681085454688,
+            "wilson_95": [
+              0.3538011745078556,
+              0.8483352890463207
+            ]
+          },
+          {
+            "bin": 5,
+            "trades": 10,
+            "wins": 6,
+            "mean_p": 0.5516642266428672,
+            "win_rate": 0.6,
+            "gap_realized_minus_predicted": 0.048335773357132794,
+            "wilson_95": [
+              0.3126737697336646,
+              0.8318196702937597
+            ]
+          },
+          {
+            "bin": 6,
+            "trades": 7,
+            "wins": 4,
+            "mean_p": 0.6462690068883594,
+            "win_rate": 0.5714285714285714,
+            "gap_realized_minus_predicted": -0.07484043545978802,
+            "wilson_95": [
+              0.2504583645276634,
+              0.8417801447485258
+            ]
+          }
+        ]
+      },
+      "flat_win_rate_binning_noise": {
+        "mean": 0.13169768518518518,
+        "sd": 0.04852098327205355,
+        "q025_q975": [
+          0.050925925925925916,
+          0.23622685185185022
+        ],
+        "prob_gt_gate_0_08": 0.8629,
+        "prob_ge_observed_ece": 0.608
+      },
+      "perfectly_calibrated_conditional_on_model_p": {
+        "mean": 0.1314028142888676,
+        "sd": 0.04813605201651787,
+        "q025_q975": [
+          0.054545540611116466,
+          0.22650970280000626
+        ],
+        "prob_gt_gate_0_08": 0.8973,
+        "prob_ge_observed_ece": 0.6253
+      }
+    },
+    "ridge_logistic_4f": {
+      "is": {
+        "trades": 44,
+        "ece": 0.1502755316339807,
+        "brier": 0.21049515874822164,
+        "log_loss": 0.6073520179684685,
+        "mean_p": 0.6136363636355088,
+        "win_rate": 0.6136363636363636,
+        "gap_realized_minus_predicted": 8.548717289613705e-13,
+        "prediction_sd": 0.14315847321790975,
+        "buckets": [
+          {
+            "bin": 2,
+            "trades": 1,
+            "wins": 0,
+            "mean_p": 0.27000869070560957,
+            "win_rate": 0.0,
+            "gap_realized_minus_predicted": -0.27000869070560957,
+            "wilson_95": [
+              0.0,
+              0.7934506856227534
+            ]
+          },
+          {
+            "bin": 3,
+            "trades": 1,
+            "wins": 1,
+            "mean_p": 0.3535209968062599,
+            "win_rate": 1.0,
+            "gap_realized_minus_predicted": 0.6464790031937401,
+            "wilson_95": [
+              0.20654931437724644,
+              0.9999999999999999
+            ]
+          },
+          {
+            "bin": 4,
+            "trades": 11,
+            "wins": 4,
+            "mean_p": 0.4684210717589753,
+            "win_rate": 0.36363636363636365,
+            "gap_realized_minus_predicted": -0.10478470812261165,
+            "wilson_95": [
+              0.1516647109536795,
+              0.6461988254921446
+            ]
+          },
+          {
+            "bin": 5,
+            "trades": 6,
+            "wins": 3,
+            "mean_p": 0.5342256079563853,
+            "win_rate": 0.5,
+            "gap_realized_minus_predicted": -0.034225607956385296,
+            "wilson_95": [
+              0.18761630648265576,
+              0.8123836935173443
+            ]
+          },
+          {
+            "bin": 6,
+            "trades": 12,
+            "wins": 10,
+            "mean_p": 0.6562190514536583,
+            "win_rate": 0.8333333333333334,
+            "gap_realized_minus_predicted": 0.17711428187967504,
+            "wilson_95": [
+              0.551969137747035,
+              0.9530348578161447
+            ]
+          },
+          {
+            "bin": 7,
+            "trades": 9,
+            "wins": 5,
+            "mean_p": 0.7420075075706799,
+            "win_rate": 0.5555555555555556,
+            "gap_realized_minus_predicted": -0.18645195201512432,
+            "wilson_95": [
+              0.26665129349549904,
+              0.8112214789023309
+            ]
+          },
+          {
+            "bin": 8,
+            "trades": 4,
+            "wins": 4,
+            "mean_p": 0.8664471724458651,
+            "win_rate": 1.0,
+            "gap_realized_minus_predicted": 0.1335528275541349,
+            "wilson_95": [
+              0.5101091635454165,
+              1.0
+            ]
+          }
+        ]
+      },
+      "oos": {
+        "trades": 36,
+        "ece": 0.09820412350330673,
+        "brier": 0.23158297610887418,
+        "log_loss": 0.6556572081202153,
+        "mean_p": 0.6484635630548881,
+        "win_rate": 0.5833333333333334,
+        "gap_realized_minus_predicted": -0.06513022972155469,
+        "prediction_sd": 0.14824432870981066,
+        "buckets": [
+          {
+            "bin": 1,
+            "trades": 1,
+            "wins": 0,
+            "mean_p": 0.10308180044114754,
+            "win_rate": 0.0,
+            "gap_realized_minus_predicted": -0.10308180044114754,
+            "wilson_95": [
+              0.0,
+              0.7934506856227534
+            ]
+          },
+          {
+            "bin": 3,
+            "trades": 1,
+            "wins": 0,
+            "mean_p": 0.38671757992492345,
+            "win_rate": 0.0,
+            "gap_realized_minus_predicted": -0.38671757992492345,
+            "wilson_95": [
+              0.0,
+              0.7934506856227534
+            ]
+          },
+          {
+            "bin": 5,
+            "trades": 10,
+            "wins": 6,
+            "mean_p": 0.5543152858620863,
+            "win_rate": 0.6,
+            "gap_realized_minus_predicted": 0.04568471413791364,
+            "wilson_95": [
+              0.3126737697336646,
+              0.8318196702937597
+            ]
+          },
+          {
+            "bin": 6,
+            "trades": 12,
+            "wins": 7,
+            "mean_p": 0.6388339117907962,
+            "win_rate": 0.5833333333333334,
+            "gap_realized_minus_predicted": -0.05550057845746281,
+            "wilson_95": [
+              0.3195113125495558,
+              0.8067396863412394
+            ]
+          },
+          {
+            "bin": 7,
+            "trades": 5,
+            "wins": 2,
+            "mean_p": 0.7568424072383759,
+            "win_rate": 0.4,
+            "gap_realized_minus_predicted": -0.3568424072383759,
+            "wilson_95": [
+              0.11762077423265177,
+              0.7692757187239805
+            ]
+          },
+          {
+            "bin": 8,
+            "trades": 7,
+            "wins": 6,
+            "mean_p": 0.8373595790439424,
+            "win_rate": 0.8571428571428571,
+            "gap_realized_minus_predicted": 0.01978327809891467,
+            "wilson_95": [
+              0.486872170725691,
+              0.9743203756552553
+            ]
+          }
+        ]
+      },
+      "flat_win_rate_binning_noise": {
+        "mean": 0.1507361111111111,
+        "sd": 0.04949706742466644,
+        "q025_q975": [
+          0.060185185185185196,
+          0.2546296296296296
+        ],
+        "prob_gt_gate_0_08": 0.9436,
+        "prob_ge_observed_ece": 0.8508
+      },
+      "perfectly_calibrated_conditional_on_model_p": {
+        "mean": 0.13386383396343915,
+        "sd": 0.04438614651341461,
+        "q025_q975": [
+          0.05703416919380591,
+          0.23216512770476033
+        ],
+        "prob_gt_gate_0_08": 0.8952,
+        "prob_ge_observed_ece": 0.7905
+      }
+    },
+    "historical_ridge_logistic_5f_control": {
+      "is": {
+        "trades": 44,
+        "ece": 0.07924464585462908,
+        "brier": 0.20658140382876689,
+        "log_loss": 0.5998392951788863,
+        "mean_p": 0.6136363682558992,
+        "win_rate": 0.6136363636363636,
+        "gap_realized_minus_predicted": -4.6195355318801035e-09,
+        "prediction_sd": 0.15289645989273096,
+        "buckets": [
+          {
+            "bin": 2,
+            "trades": 2,
+            "wins": 1,
+            "mean_p": 0.2687386785282352,
+            "win_rate": 0.5,
+            "gap_realized_minus_predicted": 0.2312613214717648,
+            "wilson_95": [
+              0.09453120573423457,
+              0.9054687942657654
+            ]
+          },
+          {
+            "bin": 3,
+            "trades": 3,
+            "wins": 0,
+            "mean_p": 0.3716639913499035,
+            "win_rate": 0.0,
+            "gap_realized_minus_predicted": -0.3716639913499035,
+            "wilson_95": [
+              0.0,
+              0.561497031755032
+            ]
+          },
+          {
+            "bin": 4,
+            "trades": 3,
+            "wins": 2,
+            "mean_p": 0.4637910953948546,
+            "win_rate": 0.6666666666666666,
+            "gap_realized_minus_predicted": 0.20287557127181205,
+            "wilson_95": [
+              0.20765960080205476,
+              0.9385080552796012
+            ]
+          },
+          {
+            "bin": 5,
+            "trades": 13,
+            "wins": 7,
+            "mean_p": 0.550371531875953,
+            "win_rate": 0.5384615384615384,
+            "gap_realized_minus_predicted": -0.011909993414414566,
+            "wilson_95": [
+              0.29143795714506554,
+              0.7679393219046122
+            ]
+          },
+          {
+            "bin": 6,
+            "trades": 10,
+            "wins": 6,
+            "mean_p": 0.6473560421994524,
+            "win_rate": 0.6,
+            "gap_realized_minus_predicted": -0.04735604219945244,
+            "wilson_95": [
+              0.3126737697336646,
+              0.8318196702937597
+            ]
+          },
+          {
+            "bin": 7,
+            "trades": 6,
+            "wins": 5,
+            "mean_p": 0.7490343657630391,
+            "win_rate": 0.8333333333333334,
+            "gap_realized_minus_predicted": 0.08429896757029431,
+            "wilson_95": [
+              0.43649717781353975,
+              0.9699466302516921
+            ]
+          },
+          {
+            "bin": 8,
+            "trades": 7,
+            "wins": 6,
+            "mean_p": 0.8333658650012394,
+            "win_rate": 0.8571428571428571,
+            "gap_realized_minus_predicted": 0.02377699214161766,
+            "wilson_95": [
+              0.486872170725691,
+              0.9743203756552553
+            ]
+          }
+        ]
+      },
+      "oos": {
+        "trades": 36,
+        "ece": 0.158134293870467,
+        "brier": 0.23383149905662093,
+        "log_loss": 0.6607592737400758,
+        "mean_p": 0.6334678116344278,
+        "win_rate": 0.5833333333333334,
+        "gap_realized_minus_predicted": -0.05013447830109441,
+        "prediction_sd": 0.14765881782533313,
+        "buckets": [
+          {
+            "bin": 1,
+            "trades": 1,
+            "wins": 0,
+            "mean_p": 0.105132506700421,
+            "win_rate": 0.0,
+            "gap_realized_minus_predicted": -0.105132506700421,
+            "wilson_95": [
+              0.0,
+              0.7934506856227534
+            ]
+          },
+          {
+            "bin": 3,
+            "trades": 1,
+            "wins": 0,
+            "mean_p": 0.31555438330921065,
+            "win_rate": 0.0,
+            "gap_realized_minus_predicted": -0.31555438330921065,
+            "wilson_95": [
+              0.0,
+              0.7934506856227534
+            ]
+          },
+          {
+            "bin": 4,
+            "trades": 2,
+            "wins": 0,
+            "mean_p": 0.47413923732283,
+            "win_rate": 0.0,
+            "gap_realized_minus_predicted": -0.47413923732283,
+            "wilson_95": [
+              0.0,
+              0.6576197724933345
+            ]
+          },
+          {
+            "bin": 5,
+            "trades": 9,
+            "wins": 7,
+            "mean_p": 0.5617781466390327,
+            "win_rate": 0.7777777777777778,
+            "gap_realized_minus_predicted": 0.2159996311387451,
+            "wilson_95": [
+              0.4525889691069974,
+              0.9367748928821512
+            ]
+          },
+          {
+            "bin": 6,
+            "trades": 12,
+            "wins": 7,
+            "mean_p": 0.6443124932540663,
+            "win_rate": 0.5833333333333334,
+            "gap_realized_minus_predicted": -0.060979159920732884,
+            "wilson_95": [
+              0.3195113125495558,
+              0.8067396863412394
+            ]
+          },
+          {
+            "bin": 7,
+            "trades": 7,
+            "wins": 4,
+            "mean_p": 0.7523046026225393,
+            "win_rate": 0.5714285714285714,
+            "gap_realized_minus_predicted": -0.1808760311939679,
+            "wilson_95": [
+              0.2504583645276634,
+              0.8417801447485258
+            ]
+          },
+          {
+            "bin": 8,
+            "trades": 4,
+            "wins": 3,
+            "mean_p": 0.8454975992565613,
+            "win_rate": 0.75,
+            "gap_realized_minus_predicted": -0.09549759925656132,
+            "wilson_95": [
+              0.30064184258241056,
+              0.9544127391902976
+            ]
+          }
+        ]
+      },
+      "flat_win_rate_binning_noise": {
+        "mean": 0.16447175925925925,
+        "sd": 0.048317661267793494,
+        "q025_q975": [
+          0.07870370370370372,
+          0.26851851851851843
+        ],
+        "prob_gt_gate_0_08": 0.9689,
+        "prob_ge_observed_ece": 0.5097
+      },
+      "perfectly_calibrated_conditional_on_model_p": {
+        "mean": 0.14418192532834367,
+        "sd": 0.04557208452151244,
+        "q025_q975": [
+          0.06503131363949897,
+          0.24244056705790537
+        ],
+        "prob_gt_gate_0_08": 0.9372,
+        "prob_ge_observed_ece": 0.3558
+      }
+    }
+  }
+}

@@ -1,72 +1,50 @@
 # RND report — rnd/alpha-evolve
 
-Worktree `/home/cayleb/open-kal-rnd`, branch `rnd/alpha-evolve`, based on origin/master `d9fd4ec`. Data: the frozen, hard-linked snapshot `data/frozen-cache/` (books from the 14:07 vintage; `SHA256SUMS.txt`), plus a copy of the live `ticks.npz` (16:20 vintage, hash appended). Nothing under `/home/cayleb/open-kal` was written, signalled or restarted. No `.env`, `keys/`, `canary.py --live` or `restart_flat.sh` was touched, and the prod DB was opened strictly read-only (`uri=True`, `?mode=ro`, `PRAGMA query_only=1`, indexed seeks only).
+Worktree `/home/cayleb/open-kal-rnd`, branch `rnd/alpha-evolve`. Frozen inputs are in `data/frozen-cache/`; current cache reads target `/home/cayleb/open-kal/data/evolve-cache/`. This shift did not modify production, read `.env` or `keys/`, restart a service, or trade. Publication uses private Git metadata at `data/overnight-rnd.git` because the linked worktree's normal index and refs live under production.
 
-## Overnight Quantitative R&D Shift — Full Schedule Execution (Latest)
+## Overnight quantitative R&D — 2026-11-18 EST
 
-### Executive Summary
+**No promotion.** Track 2B missed the frozen calibration bar and lost money on its already-spent forward look. LayaGate allowed no forward trades, so there is no filtered PF or calibration estimate. Track 2C had 16 of 24 qualifying BTC windows at preflight and remained sealed.
 
-| Track | Family | IS Status | OOS Status | Promotion Gate Verdict |
-|---|---|---|---|---|
-| **Track 1** | `final_120s_asian_pin` | 18-cell grid fails bar (best: 8 trades, net -$26.50, PF 0.77) | **Unspent** (preserved) | IS Fail |
-| **Track 2A** | `btc_lead_settle` | 72-cell grid fails trade bar (best: 4 trades, net +$85.04, PF ∞) | **Unspent** (preserved) | IS Fail (trade count < 30) |
-| **Track 2B** | `flow_student_t_settle` | Champion `h0.05_w5_15_th0.30_taker`: 44 trades, net +$333.25, PF 1.90, 4/4 lanes+ | **Scored (line 30)**: 36 trades, net +$229.38, PF 1.68, 3/4 lanes+ | **Economic Pass / Payoff-ECE Fail** (ECE 0.1581 > 0.08: Diagnosed as N=36 binning noise) |
-| **Track 3** | `layagate_filter` | Audited against `openkal-prod.db` (`ticks.gate`) across all 92 champion triggers | Live Verified on Forward Holdout (12/12 denied) | **Shielded -$99.54 in forward losses** (denied trades PF 0.47) |
-| **Track 2C** | `true_l2_settle` | 5-minute loop active (`scripts/overnight_rnd_loop.py`) | Waiting for ≥24 windows (currently **16/24**, 9.5M L2 rows) | Standby for 8 more windows |
+### 00:40–00:50 — Frozen Track 2B calibration
 
----
+`h0.05_w5_15_th0.30_taker`: IS 44 trades, 61.36% WR, +$333.25, PF 1.90, 4 profitable lanes. Frozen OOS: 36 trades, 21 wins (58.33%), +$229.38, PF 1.68, 3 profitable lanes, +$131.71 excluding XRP, zero crossed fills, max entry $0.57. This is a probability audit of existing `sim_core.py` fills, not a new scoring pass.
 
-### Step 1: Track 2B Calibration Diagnosis (`payoff-ECE = 0.1581`)
-- **Root Cause**: The 0.1581 payoff-ECE is driven by **finite-sample binning noise** on $N=36$ trades combined with over-dispersion from fitting 5 correlated features (`p_side`, `edge`, `secs_left`, `flow_fast`, `flow_slow`) on only 44 IS trades.
-- **Parametric Null Bootstrap (Perfect Calibration, $B=10,000$, $N=36$)**:
-  - Even if the model were 100% perfectly calibrated, the expected 10-bin ECE purely from Bernoulli finite-sample binning noise is **$0.1446 \pm 0.0456$** ($95\%$ CI: $[0.0660, 0.2429]$).
-  - The probability of a perfectly calibrated model producing ECE $\ge 0.1581$ is **$36.08\%$**.
-  - The probability of a perfectly calibrated model exceeding the strict gate threshold ($0.0800$) on 36 trades is **$93.72\%$**. The $0.08$ bar is virtually unreachable for small $N$ due to Jensen's inequality on $|\bar{p} - \bar{y}|$.
-- **Raw Student-t Probability ($p_{\text{side}}$)**:
-  - In-Sample: Mean predicted $p_{\text{side}} = 0.5077$, realized win rate $= 0.6136$ (Gap $-0.1060$).
-  - Out-of-Sample: Mean predicted $p_{\text{side}} = 0.5001$, realized win rate $= 0.5833$ (Gap $-0.0833$).
-  - Raw Student-t ECE on OOS: **$0.1149$** (trades occupy only 3 central bins $[0.4, 0.7]$).
-  - Verdict: The model is **conservative/underconfident**, not overconfident.
-- **Alternative IS Calibrations on OOS**:
-  - Platt (1D $\text{logit}(p_{\text{side}})$): OOS ECE $= 0.1073$.
-  - Isotonic regression ($p_{\text{side}}$): OOS ECE $= 0.1220$.
-  - Ridge logistic on $[p_{\text{side}}, \text{entry\_cost}]$ ($\lambda=1.0$): OOS ECE $= \mathbf{0.0890}$ (IS ECE $0.0730$). Reducing from 5 noisy features to 2 core structural features halves the calibration error.
+| Predictor (fit on IS only) | IS ECE | OOS ECE | OOS Brier | OOS log loss | OOS mean p |
+|---|---:|---:|---:|---:|---:|
+| Raw IS-fitted Student-t `p_side` | 0.1381 | 0.1149 | 0.2531 | 0.6993 | 0.5001 |
+| One-parameter Platt `sigmoid(1.339979 × logit(p_side))` | 0.1712 | 0.1125 | 0.2565 | 0.7063 | 0.4999 |
+| Four-feature ridge logistic `[p_side, p_side − trigger_cost, secs, abs_x]` | 0.1503 | **0.0982** | 0.2316 | 0.6557 | 0.6485 |
+| Historical five-feature control `[p_side, edge, secs, flow_fast, flow_slow]` | 0.0792 | **0.1581** | 0.2338 | 0.6608 | 0.6335 |
 
----
+The historical 0.1581 is from **five** features, not four. The requested four-feature comparator used the same ridge penalty (1.0); `abs_x` was recovered by inverting the lane's frozen Student-t CDF. An independent trailing-RTI calculation reproduced it on all 80 fills. Independent settlement counts in the three raw OOS bins were 11/19, 6/12, 4/5; the bucket check rejected both a flipped settlement and an altered count.
 
-### Step 2: Single-Shot Unseen Forward Holdout Evaluation & LayaGate Filter
-Evaluated on newly rebuilt cache `/home/cayleb/open-kal/data/evolve-cache/` (strictly read-only) across 39 distinct unseen windows closing after the frozen tape (`close > 1794943521.0`, spanning 16:30 EST to 02:10 EST). Logged to `data/oos-ledger.jsonl`.
+**10,000 draws of 36 outcomes, fixed 10-bin memberships.** At a flat true win rate of 21/36, the five-feature bucket layout alone produced mean ECE **0.1645**, central 95% simulated range **[0.0787, 0.2685]**; 50.97% of draws reached the observed ECE. Under a second null where every five-feature prediction was itself the true Bernoulli probability, mean ECE was **0.1442**, range **[0.0650, 0.2424]**; 35.58% reached the observed ECE and 93.72% exceeded 0.08. Both nulls assume independent outcomes, although the 36 fills span only 24 closes. Sampling noise is large enough to make 0.1581 unsurprising, but does not prove noise is the sole cause. Raw p underestimated the realized win rate by 8.33 points; the ridge models overestimated it by 6.51 and 5.01 points respectively. None passed the unchanged **0.08** gate.
 
-#### (a) Unfiltered Forward Holdout:
-- **Trades**: 15 (across 12 windows)
-- **Win Rate**: 26.67% (4 wins, 11 losses)
-- **Net PnL**: **-$110.54**
-- **Profit Factor**: **0.51**
-- **Payoff-ECE**: 0.2846 (Raw $p_{\text{side}}$ ECE: 0.1790)
-- **By Lane**:
-  - KXBTC15M: 4 trades, 0 wins, net -$83.82
-  - KXETH15M: 4 trades, 1 win, net -$30.32
-  - KXSOL15M: 2 trades, 1 win, net +$6.29
-  - KXXRP15M: 5 trades, 2 wins, net -$2.69
-- **Net ex-XRP**: -$107.85
-- **Max Entry Cost**: $0.52 (within $0.62 limit)
-- **Crossed Fills**: 0
+Reproducible input hashes, coefficients, bin counts, Wilson intervals, and per-model bootstrap results: [`data/track2b-calibration-audit.json`](data/track2b-calibration-audit.json).
 
-#### (b) LayaGate-Filtered Forward Holdout:
-- **Gate Coverage**: 12 of 15 trades occurred after 16:53 EST when `ticks.gate` was live in production; 3 trades occurred during pre-16:53 offline period.
-- **Verdicts**: **12 of 12 live trades were DENIED by LayaGate (`gate_allow == False`)**, with notes `"skip p=0.23"` to `"skip p=0.32"`. Zero trades allowed.
-- **Impact of LayaGate Denial**:
-  - The 12 trades rejected by LayaGate realized **3 wins / 9 losses (25.0% WR), net -$99.54, PF 0.47**.
-  - **LayaGate successfully shielded the portfolio from -$99.54 in net drawdowns**, accurately classifying that the retail flow signal had decayed in the post-16:30 regime.
-  - LayaGate-filtered net PnL: **$0.00** on 0 trades (vs. -$110.54 unfiltered).
+### 00:50–01:05 — Audit of the single forward holdout and LayaGate
 
----
+The 00:29 look was already recorded in `b91caf1`, [`data/oos-ledger.jsonl`](data/oos-ledger.jsonl) lines 31–32 (one set of fills, two summaries). It was **not replayed** or extended. Read-only market metadata at 01:00 showed **42** eligible settled closes per lane after the cutoff; **39** per lane within the recorded look, above the minimum 15. The exact `close > 1794943521.0` fence converts to **Nov 17 14:25:21 EST**, not 16:20 EST. The recorded closes span Nov 17 14:30 to Nov 18 00:00 EST. No recorded forward trade is in a frozen settled market; one BTC trigger occurred before the fence in the first close. This is therefore a close-defined holdout, not a strictly post-cutoff-trigger holdout.
 
-### Step 3: Track 2C & Overnight 5-Minute True-L2 Loop
-- **Script**: `scripts/track2c_true_l2_settle.py` updated with complete sweep across hurdles `[0.03, 0.05, 0.07]`, L2 OBI thresholds `[0.15, 0.30, 0.45]`, flow windows `[(5, 15), (10, 30)]`, and taker/maker styles.
-- **Monitoring Daemon**: `scripts/overnight_rnd_loop.py` running actively in background (task-186), checking every 300 seconds.
-- **Progress**: Currently **16 of 24 required settled windows** have accumulated (with **9,517,812 valid non-NaN L2 rows**).
-- Once 8 more windows accumulate (~2 hours, Session 1 tape export), the loop will automatically execute Track 2C, log the single sealed OOS look to `data/oos-ledger.jsonl`, update `NEXT.json` + `RND_REPORT.md`, and push to `origin/rnd/alpha-evolve`.
+| Saved forward fills | Trades | WR | Net | PF | Raw / IS Platt ECE | Net ex-XRP | Max entry | Crossed |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Unfiltered | 15 | 26.67% | **−$110.54** | 0.51 | 0.1790 / 0.1610 | −$107.85 | $0.52 | 0 |
+| LayaGate `allow == true` | 0 | — | $0.00 | — | — / — | $0.00 | — | 0 |
+| LayaGate denied | 12 | 25.00% | −$99.54 | 0.47 | 0.1983 / 0.1962 | −$116.17 | $0.52 | 0 |
+| Unlogged | 3 | 33.33% | −$11.00 | 0.71 | 0.1019 / 0.1745 | +$8.32 | $0.44 | 0 |
+
+Unfiltered lane results (trades / wins / net): BTC 4/0/−$83.82; ETH 4/1/−$30.32; SOL 2/1/+$6.29; XRP 5/2/−$2.69. Same-ticker cache snapshots at or before the trigger confirmed **all 15** recorded verdict labels: 12 denied, three unlogged, zero allowed. The realized loss of the denied subset is descriptive; rejecting all covered trades does not establish that LayaGate improves PF or calibration. Details: [`data/track2b-forward-holdout-audit.json`](data/track2b-forward-holdout-audit.json).
+
+**Isolation exception:** the production DB probe used a read-only filesystem bind, SQLite `?mode=ro` with `uri=True`, and `PRAGMA query_only=1`. It issued one `LIMIT 1` read whose plan scanned because the only ticks index is `(series, ts)`, not `(ticker, ts)`. That did not meet the seek-only rule. No result from that probe was used in the audit; no further production DB queries were made.
+
+### 01:15–06:00 — Track 2C true-L2 watcher
+
+The read-only preflight found **9,517,812** rows with both sizes and a valid microprice across **16/24** settled BTC closes (Nov 17 20:15 to Nov 18 00:00 EST). `scripts/overnight_rnd_loop.py` checks each wall-clock five-minute slot through 06:00 via `openkal-rnd-overnight-20261118.service`; its local log is `data/overnight-rnd-loop.log`.
+
+At 24 closes, `scripts/track2c_true_l2_settle.py` pins one cache snapshot and splits its closes chronologically 60/40 across all coins. It measures `z_l2_obi` against the prior 150 seconds of depth samples and uses a Student-t settlement probability with Asian-average variance scaling before the final minute. All fills use `sim_core.py`, entries $0.35–$0.60, settlement at $1 or $0. Only an IS-eligible champion can spend one OOS look; any result goes to the ledger and this report and is research-only. The watcher will not send a live order or promote a strategy.
+
+Verification at handoff: 33/33 canonical simulator tests (54 targeted tests total); a separate synthetic 24-window run exercised one OOS score, one ledger receipt pair, and refused replay. No real Track 2C OOS result at preflight.
 
 ---
 
@@ -104,7 +82,7 @@ Evaluated on newly rebuilt cache `/home/cayleb/open-kal/data/evolve-cache/` (str
   - Crossed Fills: **0** (pass).
   - Max Entry Cost: **$0.57** (`<= $0.62` pass).
   - Payoff-ECE: **0.1581** (gate threshold `<= 0.08` -> fail).
-  - **Verdict**: Exceptional economic edge across multiple lanes on completely unseen OOS tape; misses promotion solely on payoff calibration metric.
+  - **Verdict**: Profitable on this frozen OOS tape; misses promotion on calibration. The separately recorded forward look above did not replicate profitability.
 
 ---
 
@@ -115,11 +93,6 @@ Evaluated on newly rebuilt cache `/home/cayleb/open-kal/data/evolve-cache/` (str
 - **Coverage**: Exact **0.0%** coverage across all frozen candidate triggers. Zero trades filtered. Net PnL and Profit Factor before vs. after are identical. Data availability blocker confirmed.
 
 ---
-
-### Track 2C & Overnight 5-Minute True-L2 Loop
-- **Script**: `scripts/track2c_true_l2_settle.py` built to evaluate true L2 order book imbalance (`z_l2_obi`) + Student-t / Asian settlement fair value.
-- **Ingestion Daemon**: `scripts/overnight_rnd_loop.py` runs every 300 seconds, checking `/home/cayleb/open-kal/data/evolve-cache/book_KXBTC15M.npz` (`mode=ro`).
-- **Current State**: Cache currently contains 0 non-NaN depth rows (`valid_l2_rows = 0`, `windows_with_l2 = 0/24`). As soon as Session 1 exports ≥24 settled windows of true L2 depth, the loop automatically triggers Track 2C, logs single OOS look to `data/oos-ledger.jsonl`, updates records, and commits.
 
 ## Charter 3 — Track 1 `final_120s_asian_pin` (previous)
 

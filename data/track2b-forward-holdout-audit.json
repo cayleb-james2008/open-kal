@@ -1,0 +1,324 @@
+{
+  "status": "audited_existing_single_look_not_replayed",
+  "checked_at_utc": "2026-11-18T06:00:17.170657+00:00",
+  "prior_score_utc": "2026-11-18T05:29:15.187386+00:00",
+  "cutoff_close_ts": 1794943521.0,
+  "cutoff_in_est": "2026-11-17T14:25:21-05:00",
+  "historical_holdout": {
+    "start_close_ts": 1794943800.0,
+    "end_close_ts": 1794978000.0,
+    "distinct_windows": 39,
+    "reference_frozen_tape_max": 1794943521.0
+  },
+  "prior_ledger_lines": {
+    "flow_student_t_settle_forward_holdout": 31,
+    "flow_student_t_settle_forward_layagate": 32
+  },
+  "min_windows_per_lane": 15,
+  "settled_windows_by_lane_as_of_check": {
+    "KXBTC15M": 42,
+    "KXETH15M": 42,
+    "KXSOL15M": 42,
+    "KXXRP15M": 42
+  },
+  "settled_windows_by_lane_through_prior_horizon_from_current_market_metadata": {
+    "KXBTC15M": 39,
+    "KXETH15M": 39,
+    "KXSOL15M": 39,
+    "KXXRP15M": 39
+  },
+  "saved_fills_with_pre_cutoff_trigger": [
+    "KXBTC15M-26NOV171430-30"
+  ],
+  "source_sha256": {
+    "track2b-flow-student-t-forward-holdout.json": "ab94f125b61cdd0b0e91452995dced4bd52d0cbf96fbaa9e4af5105cd156a8b3",
+    "track2b-flow-student-t-forward-trades.jsonl": "8473dba93e3da9311985ef03d496e95658529fbfcd7e4e859f662c467faaa337",
+    "track2b-flow-student-t-is-trades.jsonl": "66abbe87114f001f19c451229601c702b5315ddf48df384568723e8012bced85",
+    "track2b-flow-student-t-is.json": "13f8983a96407e3c98be431bfd0683a840a46c0fa376bf894995eb8b4114a2a6",
+    "cache_markets.json": "cca090eefc601241b587dbc9690ffbcf802330589be7299ad79f10acb84efd26"
+  },
+  "platt_logit_slope_fit_on_is_only": 1.3399790845770405,
+  "unfiltered": {
+    "trades": 15,
+    "wins": 4,
+    "losses": 11,
+    "win_rate": 0.2667,
+    "net": -110.54,
+    "pf": 0.510126301794815,
+    "avg_pnl": -7.3693333333333335,
+    "max_entry_cost": 0.52,
+    "fees_entry": 12.54,
+    "fees_exit": 0.0,
+    "crossed_fills": 0,
+    "requotes": 0,
+    "profitable_lanes": 1,
+    "net_ex_best_lane": -116.83,
+    "net_ex_xrp": -107.85,
+    "net_ex_best_window": -141.22,
+    "windows": 12,
+    "by_lane": {
+      "KXBTC15M": {
+        "trades": 4,
+        "wins": 0,
+        "net": -83.82
+      },
+      "KXETH15M": {
+        "trades": 4,
+        "wins": 1,
+        "net": -30.32
+      },
+      "KXSOL15M": {
+        "trades": 2,
+        "wins": 1,
+        "net": 6.29
+      },
+      "KXXRP15M": {
+        "trades": 5,
+        "wins": 2,
+        "net": -2.69
+      }
+    },
+    "by_reason": {
+      "settle": {
+        "trades": 15,
+        "net": -110.54
+      }
+    },
+    "skips": {},
+    "raw_p_side_ece": 0.1790046019272607,
+    "platt_1p_ece": 0.16103055876348626
+  },
+  "layagate_allowed": {
+    "trades": 0,
+    "wins": 0,
+    "losses": 0,
+    "win_rate": null,
+    "net": 0.0,
+    "pf": null,
+    "avg_pnl": 0.0,
+    "max_entry_cost": null,
+    "fees_entry": 0.0,
+    "fees_exit": 0.0,
+    "crossed_fills": 0,
+    "requotes": 0,
+    "profitable_lanes": 0,
+    "net_ex_best_lane": 0.0,
+    "net_ex_xrp": 0.0,
+    "net_ex_best_window": 0.0,
+    "windows": 0,
+    "by_lane": {},
+    "by_reason": {},
+    "skips": {},
+    "raw_p_side_ece": null,
+    "platt_1p_ece": null
+  },
+  "layagate_denied": {
+    "trades": 12,
+    "wins": 3,
+    "losses": 9,
+    "win_rate": 0.25,
+    "net": -99.54,
+    "pf": 0.46917662116040953,
+    "avg_pnl": -8.295,
+    "max_entry_cost": 0.52,
+    "fees_entry": 10.04,
+    "fees_exit": 0.0,
+    "crossed_fills": 0,
+    "requotes": 0,
+    "profitable_lanes": 2,
+    "net_ex_best_lane": -116.17,
+    "net_ex_xrp": -116.17,
+    "net_ex_best_window": -130.22,
+    "windows": 9,
+    "by_lane": {
+      "KXBTC15M": {
+        "trades": 3,
+        "wins": 0,
+        "net": -65.01
+      },
+      "KXETH15M": {
+        "trades": 3,
+        "wins": 0,
+        "net": -57.45
+      },
+      "KXSOL15M": {
+        "trades": 2,
+        "wins": 1,
+        "net": 6.29
+      },
+      "KXXRP15M": {
+        "trades": 4,
+        "wins": 2,
+        "net": 16.63
+      }
+    },
+    "by_reason": {
+      "settle": {
+        "trades": 12,
+        "net": -99.54
+      }
+    },
+    "skips": {},
+    "raw_p_side_ece": 0.19827314423526604,
+    "platt_1p_ece": 0.19615162767966826
+  },
+  "unlogged": {
+    "trades": 3,
+    "wins": 1,
+    "losses": 2,
+    "win_rate": 0.3333,
+    "net": -11.0,
+    "pf": 0.7115132441646997,
+    "avg_pnl": -3.6666666666666665,
+    "max_entry_cost": 0.44,
+    "fees_entry": 2.5,
+    "fees_exit": 0.0,
+    "crossed_fills": 0,
+    "requotes": 0,
+    "profitable_lanes": 1,
+    "net_ex_best_lane": -38.13,
+    "net_ex_xrp": 8.32,
+    "net_ex_best_window": -38.13,
+    "windows": 3,
+    "by_lane": {
+      "KXBTC15M": {
+        "trades": 1,
+        "wins": 0,
+        "net": -18.81
+      },
+      "KXETH15M": {
+        "trades": 1,
+        "wins": 1,
+        "net": 27.13
+      },
+      "KXXRP15M": {
+        "trades": 1,
+        "wins": 0,
+        "net": -19.32
+      }
+    },
+    "by_reason": {
+      "settle": {
+        "trades": 3,
+        "net": -11.0
+      }
+    },
+    "skips": {},
+    "raw_p_side_ece": 0.10193043269523938,
+    "platt_1p_ece": 0.17449141096437293
+  },
+  "gate_counts": {
+    "allowed": 0,
+    "denied": 12,
+    "unlogged": 3
+  },
+  "gate_disagreements": 0,
+  "gate_source": "book_*.npz: latest same-ticker tick_tid/tick_ts <= trigger; gate_available=1; no DB re-query",
+  "gate_rows": [
+    {
+      "ticker": "KXBTC15M-26NOV171430-30",
+      "trigger_ts": 1794943148.0,
+      "gate_ts": 1794943147.88985,
+      "gate_allow": null,
+      "recorded_gate_allow": null
+    },
+    {
+      "ticker": "KXBTC15M-26NOV171800-00",
+      "trigger_ts": 1794955678.0,
+      "gate_ts": 1794955677.88039,
+      "gate_allow": false,
+      "recorded_gate_allow": false
+    },
+    {
+      "ticker": "KXBTC15M-26NOV171800-00",
+      "trigger_ts": 1794955786.0,
+      "gate_ts": 1794955785.8196146,
+      "gate_allow": false,
+      "recorded_gate_allow": false
+    },
+    {
+      "ticker": "KXBTC15M-26NOV172300-00",
+      "trigger_ts": 1794974126.0,
+      "gate_ts": 1794974125.8961833,
+      "gate_allow": false,
+      "recorded_gate_allow": false
+    },
+    {
+      "ticker": "KXETH15M-26NOV171515-15",
+      "trigger_ts": 1794945802.0,
+      "gate_ts": 1794945801.8381026,
+      "gate_allow": null,
+      "recorded_gate_allow": null
+    },
+    {
+      "ticker": "KXETH15M-26NOV171915-15",
+      "trigger_ts": 1794960262.0,
+      "gate_ts": 1794960261.8203797,
+      "gate_allow": false,
+      "recorded_gate_allow": false
+    },
+    {
+      "ticker": "KXETH15M-26NOV171915-15",
+      "trigger_ts": 1794960460.0,
+      "gate_ts": 1794960459.9082685,
+      "gate_allow": false,
+      "recorded_gate_allow": false
+    },
+    {
+      "ticker": "KXETH15M-26NOV180000-00",
+      "trigger_ts": 1794977232.0,
+      "gate_ts": 1794977231.8228867,
+      "gate_allow": false,
+      "recorded_gate_allow": false
+    },
+    {
+      "ticker": "KXSOL15M-26NOV171800-00",
+      "trigger_ts": 1794955870.0,
+      "gate_ts": 1794955869.777163,
+      "gate_allow": false,
+      "recorded_gate_allow": false
+    },
+    {
+      "ticker": "KXSOL15M-26NOV172030-30",
+      "trigger_ts": 1794964896.0,
+      "gate_ts": 1794964895.8229055,
+      "gate_allow": false,
+      "recorded_gate_allow": false
+    },
+    {
+      "ticker": "KXXRP15M-26NOV171445-45",
+      "trigger_ts": 1794944342.0,
+      "gate_ts": 1794944341.8198066,
+      "gate_allow": null,
+      "recorded_gate_allow": null
+    },
+    {
+      "ticker": "KXXRP15M-26NOV171715-15",
+      "trigger_ts": 1794953288.0,
+      "gate_ts": 1794953287.945346,
+      "gate_allow": false,
+      "recorded_gate_allow": false
+    },
+    {
+      "ticker": "KXXRP15M-26NOV171730-30",
+      "trigger_ts": 1794954238.0,
+      "gate_ts": 1794954237.9942696,
+      "gate_allow": false,
+      "recorded_gate_allow": false
+    },
+    {
+      "ticker": "KXXRP15M-26NOV171900-00",
+      "trigger_ts": 1794959424.0,
+      "gate_ts": 1794959423.9918203,
+      "gate_allow": false,
+      "recorded_gate_allow": false
+    },
+    {
+      "ticker": "KXXRP15M-26NOV172000-00",
+      "trigger_ts": 1794962826.0,
+      "gate_ts": 1794962825.8947732,
+      "gate_allow": false,
+      "recorded_gate_allow": false
+    }
+  ]
+}
