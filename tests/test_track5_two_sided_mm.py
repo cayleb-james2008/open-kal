@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from collections import Counter
@@ -15,6 +16,7 @@ import numpy as np
 from openkal import sim_core as S
 from scripts import track2c_true_l2_settle as C
 from scripts import track5_two_sided_mm as M
+from tests.test_sim_core import tape as sim_tape
 
 CLOSE, STRIKE, CUT = 2000.0, 100.0, 2900.0
 OPEN_CAPS = {"0.40": np.inf, "0.60": np.inf}
@@ -59,9 +61,34 @@ class Sampling(unittest.TestCase):
         lane, its, v = lane_of()
         self.assertEqual(len(M.collect(lane, its, v, CUT, "oos")["t"]), 0)
 
+    def test_the_spread_funnel_counts_rows_at_each_minimum(self):
+        pack = {"bid": np.array([0.50, 0.48, 0.47, 0.45]), "ask": np.array([0.51, 0.51, 0.51, 0.50])}
+        got = M.spread_funnel(pack)
+        self.assertEqual((got["spread_ge_3c"], got["spread_ge_4c"], got["spread_ge_5c"]), (3, 2, 1))
+        self.assertAlmostEqual(got["median_spread"], 0.035)
+        text = M.funnel_text({"sampling": {"KXBTC15M": {**got, "decision_rows": 4}},
+                              "configs": {"c": {"is": {"skips": {"spread": 7}}}}})
+        self.assertIn("BTC 3/2/1 of 4", text)
+        self.assertIn("7 attempts", text)
+
     def test_vol_caps_are_the_is_quantiles(self):
         sigma = np.arange(1.0, 101.0)
         self.assertEqual(M.vol_caps(sigma), {"0.40": float(np.quantile(sigma, 0.4)), "0.60": float(np.quantile(sigma, 0.6))})
+
+
+class Champion(unittest.TestCase):
+    @staticmethod
+    def cfg(trades, net, pf=0.5, lanes=1):
+        return {"is": {"trades": trades, "net": net, "pf": pf, "profitable_lanes": lanes, "crossed_fills": 0}}
+
+    def test_a_config_that_never_traded_is_not_the_best_of_the_losers(self):
+        got = M.pick_champion({"idle": self.cfg(0, 0.0), "loser": self.cfg(10, -3.3), "worse": self.cfg(9, -4.8)})
+        self.assertEqual((got["config"], got["is_eligible"]), ("loser", False))
+
+    def test_an_eligible_config_still_wins_and_all_idle_still_returns_something(self):
+        got = M.pick_champion({"ok": self.cfg(40, 5.0, pf=1.4, lanes=3), "loser": self.cfg(10, -3.3)})
+        self.assertEqual((got["config"], got["is_eligible"]), ("ok", True))
+        self.assertEqual(M.pick_champion({"a": self.cfg(0, 0.0)})["config"], "a")
 
 
 class Triggers(unittest.TestCase):
@@ -114,7 +141,52 @@ class Trades(unittest.TestCase):
         self.assertEqual(row["reason"], "spot_breach")
 
 
+class Overlap(unittest.TestCase):
+    def test_open_until_for_each_outcome(self):
+        book, prints = [(990.0, 0.48, 0.53)], [(1002.0, 0.48, 50, 0), (1004.0, 0.53, 50, 1)]
+        pair = S.run_two_sided_mm(sim_tape(book, prints), trigger_ts=1000.0, qty=10, hedge_timeout_s=15.0)
+        self.assertEqual((pair.reason, M.open_until(1000.0, pair)), ("pair", 1004.0))
+        self.assertEqual(M.open_until(1000.0, S.Skip("unfilled")), 1000.0 + S.LAG_S + M.PATIENCE_S)
+        self.assertEqual(M.open_until(1000.0, S.Skip("spread")), 1000.0 + S.LAG_S)
+
+    def test_overlapping_attempts_in_one_window_are_refused_loudly(self):
+        pack, its_v = pack_of(prints=[(CLOSE - 718.0, 0.48, 50, 0)])
+        out = M.new_out()
+        with patch.object(M, "triggers", return_value=[0, 5]):     # two attempts 10s apart: the first is still open
+            with self.assertRaises(RuntimeError):
+                M.run_config(pack, its_v, OPEN_CAPS, 0.03, 0.40, 15.0, out)
+
+
 class Sealed(unittest.TestCase):
+    def test_an_eligible_champion_still_needs_the_lead_seal(self):
+        with tempfile.TemporaryDirectory() as dd:
+            d = Path(dd)
+            (d / "is.jsonl").write_text("")
+            (d / "r.json").write_text(json.dumps({"frozen_input_sha256": {"x": "1"}, "oos_scored": None, "cut": 1.0,
+                                                  "vol_caps_by_lane": {}, "configs": {"c": {"min_spread": .03, "vol_quantile": .4, "hedge_timeout_s": 15.0}},
+                                                  "champion": {"config": "c", "is_eligible": True}}))
+            with patch.object(M, "OUT", d / "r.json"), patch.object(M, "IS_TRADES", d / "is.jsonl"), \
+                    patch.object(C, "LEDGER", d / "ledger.jsonl"), patch.object(M.RC, "LEDGER", d / "ledger.jsonl"), \
+                    patch.object(M.T, "pin_tape", return_value={"sha256": {"x": "1"}}), \
+                    patch.dict("os.environ", {}, clear=False):
+                os.environ.pop("RND_OOS_UNSEAL", None)
+                with self.assertRaisesRegex(RuntimeError, "sealed"):
+                    M.score_oos()
+            self.assertFalse((d / "ledger.jsonl").exists())
+
+    def test_an_is_rerun_is_refused_once_the_family_has_a_ledger_line_or_a_scored_receipt(self):
+        with tempfile.TemporaryDirectory() as dd:
+            d = Path(dd)
+            with patch.object(C, "LEDGER", d / "ledger.jsonl"):
+                M.T.refuse_if_spent(M.FAMILY, d / "r.json")                         # nothing yet: allowed
+                (d / "r.json").write_text(json.dumps({"oos_scored": {"x": 1}}))
+                with self.assertRaises(RuntimeError):
+                    M.T.refuse_if_spent(M.FAMILY, d / "r.json")
+                (d / "r.json").write_text(json.dumps({"oos_scored": None}))
+                (d / "ledger.jsonl").write_text(json.dumps({"family": "other"}) + "\n" + json.dumps({"family": M.FAMILY}) + "\n")
+                with self.assertRaises(RuntimeError):
+                    M.T.refuse_if_spent(M.FAMILY, d / "r.json")
+
     def test_an_ineligible_champion_never_touches_the_ledger(self):
         with tempfile.TemporaryDirectory() as dd:
             out, ledger = Path(dd) / "r.json", Path(dd) / "ledger.jsonl"

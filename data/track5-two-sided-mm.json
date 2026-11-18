@@ -1,0 +1,632 @@
+{
+  "family": "two_sided_spread_mm",
+  "split": "first 60% / last 40% of distinct window closes, all four lanes",
+  "cut": 1794908700.0,
+  "windows": 217,
+  "is_windows": 130,
+  "oos_windows": 87,
+  "frozen_input_sha256": {
+    "markets.json": "1838ab92847e79247b72092784bfae719915f5985b219caa0fdff253972075da",
+    "book_KXBTC15M.npz": "b510e280c6a713be9ea9a8638d3a12760017fd73653e2573f6f2533b6b8fc7b4",
+    "book_KXETH15M.npz": "1d61fe463f742a78b4b40d0e0324bd643c5e2d97dc8fbb6be9c909d00f0fe839",
+    "book_KXSOL15M.npz": "49c0fe013ebc092c0d06b92fdd94ff1db05b034f2b6cc5c26534d468d0f1e2f4",
+    "book_KXXRP15M.npz": "332bb4dc7cf1aa28a1b73f306a536fae57078ae3e3270116aa0c7b4131c429c8",
+    "index_BRTI.npz": "0f6d9e245cd4f9e0fc02796a0ea3884ce707c86715eedf1759aa5ad1241f1633",
+    "index_ETHUSD_RTI.npz": "b3461253d84cdd057994f5a249b0b33f527ebee9359b8b1d7c60ff2fca31362a",
+    "index_SOLUSD_RTI.npz": "c7c96424d733f92ffe31baf8ac151936c4b30249d6916aa9215784f2e4f750aa",
+    "index_XRPUSD_RTI.npz": "524871c8df1480d66731322a480a9e24a224eaee2d6cbf0357d5a8ef01689a9e"
+  },
+  "rule": {
+    "secs_left": [
+      240.0,
+      720.0
+    ],
+    "patience_s": 15.0,
+    "adverse_spot_bps": 6.0,
+    "cap": 0.62,
+    "max_pair_cost": 0.97,
+    "exit": "taker cross of a lone leg",
+    "min_spreads": [
+      0.03,
+      0.04,
+      0.05
+    ],
+    "vol_max_quantiles": [
+      0.4,
+      0.6
+    ],
+    "hedge_timeouts_s": [
+      15.0,
+      30.0
+    ]
+  },
+  "vol_caps_by_lane": {
+    "KXBTC15M": {
+      "0.40": 5.6423186161984094e-05,
+      "0.60": 6.304254471851026e-05
+    },
+    "KXETH15M": {
+      "0.40": 9.69450533507032e-05,
+      "0.60": 0.00010853300660929726
+    },
+    "KXSOL15M": {
+      "0.40": 0.0001566860052151312,
+      "0.60": 0.00016837270972637808
+    },
+    "KXXRP15M": {
+      "0.40": 8.857081605592688e-05,
+      "0.60": 0.00010033799107562472
+    }
+  },
+  "sampling": {
+    "KXBTC15M": {
+      "windows": 130,
+      "decision_rows": 27328,
+      "spread_ge_3c": 1,
+      "spread_ge_4c": 0,
+      "spread_ge_5c": 0,
+      "median_spread": 0.009999990463256836,
+      "skips": {
+        "no_spot": 2735,
+        "quote_crossed": 1267
+      }
+    },
+    "KXETH15M": {
+      "windows": 130,
+      "decision_rows": 28540,
+      "spread_ge_3c": 73,
+      "spread_ge_4c": 2,
+      "spread_ge_5c": 0,
+      "median_spread": 0.009999990463256836,
+      "skips": {
+        "no_spot": 2735,
+        "quote_crossed": 55
+      }
+    },
+    "KXSOL15M": {
+      "windows": 130,
+      "decision_rows": 28504,
+      "spread_ge_3c": 506,
+      "spread_ge_4c": 2,
+      "spread_ge_5c": 1,
+      "median_spread": 0.009999990463256836,
+      "skips": {
+        "no_spot": 2735,
+        "quote_crossed": 91
+      }
+    },
+    "KXXRP15M": {
+      "windows": 130,
+      "decision_rows": 28573,
+      "spread_ge_3c": 353,
+      "spread_ge_4c": 8,
+      "spread_ge_5c": 1,
+      "median_spread": 0.009999990463256836,
+      "skips": {
+        "no_spot": 2735,
+        "quote_crossed": 22
+      }
+    }
+  },
+  "configs": {
+    "s0.03_q0.40_t15": {
+      "family": "two_sided_spread_mm",
+      "min_spread": 0.03,
+      "vol_quantile": 0.4,
+      "hedge_timeout_s": 15.0,
+      "is": {
+        "trades": 9,
+        "wins": 5,
+        "losses": 4,
+        "win_rate": 0.5556,
+        "net": -4.76,
+        "pf": 0.5817223198594025,
+        "avg_pnl": -0.5288888888888889,
+        "max_entry_cost": 0.62,
+        "fees_entry": 0.0,
+        "fees_exit": 4.26,
+        "crossed_fills": 0,
+        "requotes": 0,
+        "profitable_lanes": 1,
+        "net_ex_best_lane": -7.4,
+        "net_ex_xrp": -2.23,
+        "net_ex_best_window": -6.26,
+        "windows": 8,
+        "by_lane": {
+          "KXETH15M": {
+            "trades": 1,
+            "wins": 0,
+            "net": -4.87
+          },
+          "KXSOL15M": {
+            "trades": 4,
+            "wins": 3,
+            "net": 2.64
+          },
+          "KXXRP15M": {
+            "trades": 4,
+            "wins": 2,
+            "net": -2.53
+          }
+        },
+        "by_reason": {
+          "hedge_timeout": {
+            "trades": 5,
+            "net": -10.76
+          },
+          "pair": {
+            "trades": 4,
+            "net": 6.0
+          }
+        },
+        "skips": {
+          "spread": 97,
+          "unfilled": 1
+        }
+      }
+    },
+    "s0.03_q0.40_t30": {
+      "family": "two_sided_spread_mm",
+      "min_spread": 0.03,
+      "vol_quantile": 0.4,
+      "hedge_timeout_s": 30.0,
+      "is": {
+        "trades": 9,
+        "wins": 6,
+        "losses": 3,
+        "win_rate": 0.6667,
+        "net": -11.9,
+        "pf": 0.430622009569378,
+        "avg_pnl": -1.3222222222222222,
+        "max_entry_cost": 0.62,
+        "fees_entry": 0.0,
+        "fees_exit": 2.4,
+        "crossed_fills": 0,
+        "requotes": 0,
+        "profitable_lanes": 1,
+        "net_ex_best_lane": -17.9,
+        "net_ex_xrp": -5.35,
+        "net_ex_best_window": -13.4,
+        "windows": 8,
+        "by_lane": {
+          "KXETH15M": {
+            "trades": 1,
+            "wins": 0,
+            "net": -11.35
+          },
+          "KXSOL15M": {
+            "trades": 4,
+            "wins": 4,
+            "net": 6.0
+          },
+          "KXXRP15M": {
+            "trades": 4,
+            "wins": 2,
+            "net": -6.55
+          }
+        },
+        "by_reason": {
+          "hedge_timeout": {
+            "trades": 3,
+            "net": -20.9
+          },
+          "pair": {
+            "trades": 6,
+            "net": 9.0
+          }
+        },
+        "skips": {
+          "spread": 97,
+          "unfilled": 1
+        }
+      }
+    },
+    "s0.03_q0.60_t15": {
+      "family": "two_sided_spread_mm",
+      "min_spread": 0.03,
+      "vol_quantile": 0.6,
+      "hedge_timeout_s": 15.0,
+      "is": {
+        "trades": 10,
+        "wins": 6,
+        "losses": 4,
+        "win_rate": 0.6,
+        "net": -3.26,
+        "pf": 0.7135325131810193,
+        "avg_pnl": -0.326,
+        "max_entry_cost": 0.62,
+        "fees_entry": 0.0,
+        "fees_exit": 4.26,
+        "crossed_fills": 0,
+        "requotes": 0,
+        "profitable_lanes": 1,
+        "net_ex_best_lane": -7.4,
+        "net_ex_xrp": -0.73,
+        "net_ex_best_window": -4.76,
+        "windows": 9,
+        "by_lane": {
+          "KXETH15M": {
+            "trades": 1,
+            "wins": 0,
+            "net": -4.87
+          },
+          "KXSOL15M": {
+            "trades": 5,
+            "wins": 4,
+            "net": 4.14
+          },
+          "KXXRP15M": {
+            "trades": 4,
+            "wins": 2,
+            "net": -2.53
+          }
+        },
+        "by_reason": {
+          "hedge_timeout": {
+            "trades": 5,
+            "net": -10.76
+          },
+          "pair": {
+            "trades": 5,
+            "net": 7.5
+          }
+        },
+        "skips": {
+          "spread": 130,
+          "unfilled": 1
+        }
+      }
+    },
+    "s0.03_q0.60_t30": {
+      "family": "two_sided_spread_mm",
+      "min_spread": 0.03,
+      "vol_quantile": 0.6,
+      "hedge_timeout_s": 30.0,
+      "is": {
+        "trades": 10,
+        "wins": 7,
+        "losses": 3,
+        "win_rate": 0.7,
+        "net": -10.4,
+        "pf": 0.5023923444976076,
+        "avg_pnl": -1.04,
+        "max_entry_cost": 0.62,
+        "fees_entry": 0.0,
+        "fees_exit": 2.4,
+        "crossed_fills": 0,
+        "requotes": 0,
+        "profitable_lanes": 1,
+        "net_ex_best_lane": -17.9,
+        "net_ex_xrp": -3.85,
+        "net_ex_best_window": -11.9,
+        "windows": 9,
+        "by_lane": {
+          "KXETH15M": {
+            "trades": 1,
+            "wins": 0,
+            "net": -11.35
+          },
+          "KXSOL15M": {
+            "trades": 5,
+            "wins": 5,
+            "net": 7.5
+          },
+          "KXXRP15M": {
+            "trades": 4,
+            "wins": 2,
+            "net": -6.55
+          }
+        },
+        "by_reason": {
+          "hedge_timeout": {
+            "trades": 3,
+            "net": -20.9
+          },
+          "pair": {
+            "trades": 7,
+            "net": 10.5
+          }
+        },
+        "skips": {
+          "spread": 130,
+          "unfilled": 1
+        }
+      }
+    },
+    "s0.04_q0.40_t15": {
+      "family": "two_sided_spread_mm",
+      "min_spread": 0.04,
+      "vol_quantile": 0.4,
+      "hedge_timeout_s": 15.0,
+      "is": {
+        "trades": 0,
+        "wins": 0,
+        "losses": 0,
+        "win_rate": 0.0,
+        "net": 0.0,
+        "pf": 0.0,
+        "avg_pnl": 0.0,
+        "max_entry_cost": 0.0,
+        "fees_entry": 0.0,
+        "fees_exit": 0.0,
+        "crossed_fills": 0,
+        "requotes": 0,
+        "profitable_lanes": 0,
+        "net_ex_best_lane": 0.0,
+        "net_ex_xrp": 0.0,
+        "net_ex_best_window": 0.0,
+        "windows": 0,
+        "by_lane": {},
+        "by_reason": {},
+        "skips": {
+          "spread": 4
+        }
+      }
+    },
+    "s0.04_q0.40_t30": {
+      "family": "two_sided_spread_mm",
+      "min_spread": 0.04,
+      "vol_quantile": 0.4,
+      "hedge_timeout_s": 30.0,
+      "is": {
+        "trades": 0,
+        "wins": 0,
+        "losses": 0,
+        "win_rate": 0.0,
+        "net": 0.0,
+        "pf": 0.0,
+        "avg_pnl": 0.0,
+        "max_entry_cost": 0.0,
+        "fees_entry": 0.0,
+        "fees_exit": 0.0,
+        "crossed_fills": 0,
+        "requotes": 0,
+        "profitable_lanes": 0,
+        "net_ex_best_lane": 0.0,
+        "net_ex_xrp": 0.0,
+        "net_ex_best_window": 0.0,
+        "windows": 0,
+        "by_lane": {},
+        "by_reason": {},
+        "skips": {
+          "spread": 4
+        }
+      }
+    },
+    "s0.04_q0.60_t15": {
+      "family": "two_sided_spread_mm",
+      "min_spread": 0.04,
+      "vol_quantile": 0.6,
+      "hedge_timeout_s": 15.0,
+      "is": {
+        "trades": 0,
+        "wins": 0,
+        "losses": 0,
+        "win_rate": 0.0,
+        "net": 0.0,
+        "pf": 0.0,
+        "avg_pnl": 0.0,
+        "max_entry_cost": 0.0,
+        "fees_entry": 0.0,
+        "fees_exit": 0.0,
+        "crossed_fills": 0,
+        "requotes": 0,
+        "profitable_lanes": 0,
+        "net_ex_best_lane": 0.0,
+        "net_ex_xrp": 0.0,
+        "net_ex_best_window": 0.0,
+        "windows": 0,
+        "by_lane": {},
+        "by_reason": {},
+        "skips": {
+          "spread": 4
+        }
+      }
+    },
+    "s0.04_q0.60_t30": {
+      "family": "two_sided_spread_mm",
+      "min_spread": 0.04,
+      "vol_quantile": 0.6,
+      "hedge_timeout_s": 30.0,
+      "is": {
+        "trades": 0,
+        "wins": 0,
+        "losses": 0,
+        "win_rate": 0.0,
+        "net": 0.0,
+        "pf": 0.0,
+        "avg_pnl": 0.0,
+        "max_entry_cost": 0.0,
+        "fees_entry": 0.0,
+        "fees_exit": 0.0,
+        "crossed_fills": 0,
+        "requotes": 0,
+        "profitable_lanes": 0,
+        "net_ex_best_lane": 0.0,
+        "net_ex_xrp": 0.0,
+        "net_ex_best_window": 0.0,
+        "windows": 0,
+        "by_lane": {},
+        "by_reason": {},
+        "skips": {
+          "spread": 4
+        }
+      }
+    },
+    "s0.05_q0.40_t15": {
+      "family": "two_sided_spread_mm",
+      "min_spread": 0.05,
+      "vol_quantile": 0.4,
+      "hedge_timeout_s": 15.0,
+      "is": {
+        "trades": 0,
+        "wins": 0,
+        "losses": 0,
+        "win_rate": 0.0,
+        "net": 0.0,
+        "pf": 0.0,
+        "avg_pnl": 0.0,
+        "max_entry_cost": 0.0,
+        "fees_entry": 0.0,
+        "fees_exit": 0.0,
+        "crossed_fills": 0,
+        "requotes": 0,
+        "profitable_lanes": 0,
+        "net_ex_best_lane": 0.0,
+        "net_ex_xrp": 0.0,
+        "net_ex_best_window": 0.0,
+        "windows": 0,
+        "by_lane": {},
+        "by_reason": {},
+        "skips": {
+          "spread": 2
+        }
+      }
+    },
+    "s0.05_q0.40_t30": {
+      "family": "two_sided_spread_mm",
+      "min_spread": 0.05,
+      "vol_quantile": 0.4,
+      "hedge_timeout_s": 30.0,
+      "is": {
+        "trades": 0,
+        "wins": 0,
+        "losses": 0,
+        "win_rate": 0.0,
+        "net": 0.0,
+        "pf": 0.0,
+        "avg_pnl": 0.0,
+        "max_entry_cost": 0.0,
+        "fees_entry": 0.0,
+        "fees_exit": 0.0,
+        "crossed_fills": 0,
+        "requotes": 0,
+        "profitable_lanes": 0,
+        "net_ex_best_lane": 0.0,
+        "net_ex_xrp": 0.0,
+        "net_ex_best_window": 0.0,
+        "windows": 0,
+        "by_lane": {},
+        "by_reason": {},
+        "skips": {
+          "spread": 2
+        }
+      }
+    },
+    "s0.05_q0.60_t15": {
+      "family": "two_sided_spread_mm",
+      "min_spread": 0.05,
+      "vol_quantile": 0.6,
+      "hedge_timeout_s": 15.0,
+      "is": {
+        "trades": 0,
+        "wins": 0,
+        "losses": 0,
+        "win_rate": 0.0,
+        "net": 0.0,
+        "pf": 0.0,
+        "avg_pnl": 0.0,
+        "max_entry_cost": 0.0,
+        "fees_entry": 0.0,
+        "fees_exit": 0.0,
+        "crossed_fills": 0,
+        "requotes": 0,
+        "profitable_lanes": 0,
+        "net_ex_best_lane": 0.0,
+        "net_ex_xrp": 0.0,
+        "net_ex_best_window": 0.0,
+        "windows": 0,
+        "by_lane": {},
+        "by_reason": {},
+        "skips": {
+          "spread": 2
+        }
+      }
+    },
+    "s0.05_q0.60_t30": {
+      "family": "two_sided_spread_mm",
+      "min_spread": 0.05,
+      "vol_quantile": 0.6,
+      "hedge_timeout_s": 30.0,
+      "is": {
+        "trades": 0,
+        "wins": 0,
+        "losses": 0,
+        "win_rate": 0.0,
+        "net": 0.0,
+        "pf": 0.0,
+        "avg_pnl": 0.0,
+        "max_entry_cost": 0.0,
+        "fees_entry": 0.0,
+        "fees_exit": 0.0,
+        "crossed_fills": 0,
+        "requotes": 0,
+        "profitable_lanes": 0,
+        "net_ex_best_lane": 0.0,
+        "net_ex_xrp": 0.0,
+        "net_ex_best_window": 0.0,
+        "windows": 0,
+        "by_lane": {},
+        "by_reason": {},
+        "skips": {
+          "spread": 2
+        }
+      }
+    }
+  },
+  "champion": {
+    "config": "s0.03_q0.60_t15",
+    "is_eligible": false,
+    "is": {
+      "trades": 10,
+      "wins": 6,
+      "losses": 4,
+      "win_rate": 0.6,
+      "net": -3.26,
+      "pf": 0.7135325131810193,
+      "avg_pnl": -0.326,
+      "max_entry_cost": 0.62,
+      "fees_entry": 0.0,
+      "fees_exit": 4.26,
+      "crossed_fills": 0,
+      "requotes": 0,
+      "profitable_lanes": 1,
+      "net_ex_best_lane": -7.4,
+      "net_ex_xrp": -0.73,
+      "net_ex_best_window": -4.76,
+      "windows": 9,
+      "by_lane": {
+        "KXETH15M": {
+          "trades": 1,
+          "wins": 0,
+          "net": -4.87
+        },
+        "KXSOL15M": {
+          "trades": 5,
+          "wins": 4,
+          "net": 4.14
+        },
+        "KXXRP15M": {
+          "trades": 4,
+          "wins": 2,
+          "net": -2.53
+        }
+      },
+      "by_reason": {
+        "hedge_timeout": {
+          "trades": 5,
+          "net": -10.76
+        },
+        "pair": {
+          "trades": 5,
+          "net": 7.5
+        }
+      },
+      "skips": {
+        "spread": 130,
+        "unfilled": 1
+      }
+    }
+  },
+  "oos_scored": null
+}

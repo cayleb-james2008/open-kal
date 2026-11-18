@@ -273,11 +273,23 @@ class TwoSidedMM(unittest.TestCase):
         tr = self._run([self.YES_FILL], spot=down)
         self.assertEqual((tr.side, tr.reason), (S.YES, "spot_breach"))
 
-    def test_the_second_leg_can_still_fill_until_the_cancel_arrives(self):
-        late = (T0 + 2.0 + 15.0 + S.LAG_S - 0.5, 0.53, 50, 1)                # before the cancel lands
-        self.assertEqual(self._run([self.YES_FILL, late]).reason, "pair")
-        later = (T0 + 2.0 + 15.0 + S.LAG_S + 0.5, 0.53, 50, 1)               # after: the lone leg already left
-        self.assertEqual(self._run([self.YES_FILL, later]).reason, "hedge_timeout")
+    def test_the_second_leg_must_fill_by_the_hedge_decision_not_during_the_cancel_lag(self):
+        timeout = T0 + 2.0 + 15.0                                             # first fill + hedge_timeout_s
+        self.assertEqual(self._run([self.YES_FILL, (timeout - 0.5, 0.53, 50, 1)]).reason, "pair")
+        self.assertEqual(self._run([self.YES_FILL, (timeout, 0.53, 50, 1)]).reason, "pair")
+        late = self._run([self.YES_FILL, (timeout + 0.5, 0.53, 50, 1)])       # the cancel has not landed yet: not counted
+        self.assertEqual((late.reason, late.exit_ts), ("hedge_timeout", timeout + S.LAG_S))
+
+    def test_a_stale_spot_reference_cannot_arm_the_adverse_exit(self):
+        stale = (np.array([T0 - 100.0, T0 + 3.0]), np.array([10000.0, 9990.0]))     # last print before the fill is 102s old
+        self.assertEqual(self._run([self.YES_FILL], spot=stale).reason, "hedge_timeout")
+        fresh = (np.array([T0 + 1.0, T0 + 3.0]), np.array([10000.0, 9990.0]))
+        self.assertEqual(self._run([self.YES_FILL], spot=fresh).reason, "spot_breach")
+
+    def test_an_exit_into_a_crossed_book_waits_for_the_first_valid_row(self):
+        book = self.BOOK + [(T0 + 15.0, 0.55, 0.50), (T0 + 40.0, 0.45, 0.50)]    # crossed from T0+15 to T0+40
+        tr = self._run([self.YES_FILL], book=book)
+        self.assertEqual((tr.reason, tr.exit_ts, tr.requotes, tr.exit_value), ("hedge_timeout", T0 + 40.0, 1, D("0.45")))
 
     def test_the_first_fill_must_come_inside_the_patience_window(self):
         self.assertEqual(self._run([(T0 + 17.0, 0.48, 50, 0)]), S.Skip("unfilled"))

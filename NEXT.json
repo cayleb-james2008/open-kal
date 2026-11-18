@@ -366,6 +366,67 @@
    "gate": null,
    "result_artifact": "data/track4a-empirical-settle.json",
    "note": "Research only; no live promotion or trading."
+  },
+  "track5_two_sided_spread_mm": {
+   "status": "IS fail; OOS unspent",
+   "champion": "s0.03_q0.60_t15",
+   "is": {
+    "trades": 10,
+    "wins": 6,
+    "losses": 4,
+    "win_rate": 0.6,
+    "net": -3.26,
+    "pf": 0.7135325131810193,
+    "avg_pnl": -0.326,
+    "max_entry_cost": 0.62,
+    "fees_entry": 0.0,
+    "fees_exit": 4.26,
+    "crossed_fills": 0,
+    "requotes": 0,
+    "profitable_lanes": 1,
+    "net_ex_best_lane": -7.4,
+    "net_ex_xrp": -0.73,
+    "net_ex_best_window": -4.76,
+    "windows": 9,
+    "by_lane": {
+     "KXETH15M": {
+      "trades": 1,
+      "wins": 0,
+      "net": -4.87
+     },
+     "KXSOL15M": {
+      "trades": 5,
+      "wins": 4,
+      "net": 4.14
+     },
+     "KXXRP15M": {
+      "trades": 4,
+      "wins": 2,
+      "net": -2.53
+     }
+    },
+    "by_reason": {
+     "hedge_timeout": {
+      "trades": 5,
+      "net": -10.76
+     },
+     "pair": {
+      "trades": 5,
+      "net": 7.5
+     }
+    },
+    "skips": {
+     "spread": 130,
+     "unfilled": 1
+    }
+   },
+   "is_eligible": false,
+   "oos_spent": false,
+   "oos": null,
+   "payoff_ece": null,
+   "gate": null,
+   "result_artifact": "data/track5-two-sided-mm.json",
+   "note": "Research only; no live promotion or trading."
   }
  },
  "state": {

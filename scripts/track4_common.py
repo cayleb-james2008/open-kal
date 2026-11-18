@@ -33,6 +33,15 @@ def pin_tape() -> dict:
     return pin
 
 
+def refuse_if_spent(family: str, out: Path) -> None:
+    """An IS run rewrites the receipt: never after the family has an OOS ledger line or a scored receipt."""
+    if C.LEDGER.exists() and any(json.loads(line)["family"] == family
+                                 for line in C.LEDGER.read_text().splitlines() if line.strip()):
+        raise RuntimeError(f"{family} already has an OOS ledger entry; its IS receipt is frozen")
+    if out.exists() and json.loads(out.read_text()).get("oos_scored") is not None:
+        raise RuntimeError(f"{family} receipt already holds a scored OOS look; refusing to rewrite it")
+
+
 def window_closes() -> list[float]:
     """Distinct settled window closes across the four lanes, sorted."""
     meta = json.loads((TAPE / "markets.json").read_text())

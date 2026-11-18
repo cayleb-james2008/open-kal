@@ -308,6 +308,7 @@ def score_is(packs: dict, get_lane, model: dict, oof: dict) -> tuple[dict, dict]
 
 
 def run_is() -> dict:
+    T.refuse_if_spent(FAMILY, OUT)
     pin = T.pin_tape()
     closes = T.window_closes()
     if len(closes) != T.MIN_WINDOWS:

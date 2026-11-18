@@ -122,6 +122,7 @@ def asian_model(lane) -> AsianRTI:
 
 
 def run_is() -> dict:
+    T.refuse_if_spent(FAMILY, OUT)
     pin = T.pin_tape()
     closes = T.window_closes()
     if len(closes) != T.MIN_WINDOWS:

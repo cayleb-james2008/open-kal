@@ -528,3 +528,10 @@ OOS, the four champions made 0–3 trades each, net −$14.29 to $0.00 (ledger a
 - IS bar missed; OOS left sealed, no ledger entry.
 - The 'sealed' OOS slice is sealed per family in the ledger only: earlier families on this tape (Tracks 2B-2D, F2 variants) already looked at overlapping late windows.
 - Receipt: `data/track4a-empirical-settle.json`; no live promotion.
+
+### Track 5 — two-sided spread market making
+- 217 windows (130 IS / 87 OOS), cut `1794908700.0`; secs_left 240-720, both legs <= $0.62, pair cost <= $0.97, 15s to first fill, lone leg crossed out at the hedge timeout or a 6 bps adverse spot move; vol cap = IS per-lane sigma quantile.
+- No IS config met the bar; best by net `s0.03_q0.60_t15`: 10 trades, win 0.600, net $-3.26, PF 0.714, 1 profitable lanes, ex-XRP $-0.73, max entry $0.62, 0 crossed fills. Exits: hedge_timeout 5 ($-10.76), pair 5 ($+7.50). IS decision rows with spread >= 3c/4c/5c: BTC 1/0/0 of 27328 (median 0.01); ETH 73/2/0 of 28540 (median 0.01); SOL 506/2/1 of 28504 (median 0.01); XRP 353/8/1 of 28573 (median 0.01). 478 attempts across the grid met a spread under the minimum one second later.
+- IS bar missed; OOS left sealed, no ledger entry.
+- The 'sealed' OOS slice is sealed per family in the ledger only: earlier families on this tape (Tracks 2B-2D, F2 variants) already looked at overlapping late windows.
+- Receipt: `data/track5-two-sided-mm.json`; no live promotion.

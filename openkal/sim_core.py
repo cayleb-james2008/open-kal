@@ -471,11 +471,14 @@ def run_two_sided_mm(tape: Tape, *, trigger_ts: float, qty: int, hedge_timeout_s
     print-through (`min_print`); the first fill must come within `patience_s`, else nothing trades.
       * both fill: the pair is locked, holds to settlement and pays the spread (pair cost <= `max_pair_cost`);
       * one fills: the other leg gets `hedge_timeout_s` from that fill, or until `spot` (an index
-        tape `(ts, value)`) has moved `adverse_bps` against the filled leg, whichever comes first. One
-        `lag_s` later the second leg is cancelled and the lone leg crosses out as a taker (exact
-        Decimal fee); the second leg can still fill until that cancel arrives, which locks the pair.
-    A lone leg is never left to settle unless no exit can be placed before the last order second
-    (reason "carried"). `Trade.entry` is the dearer leg: the $0.62 cap bounds each contract held.
+        tape `(ts, value)`) has moved `adverse_bps` against the filled leg, whichever comes first;
+        a second fill by then locks the pair. If it has not filled, the cancel and the exit order
+        land `lag_s` later and the lone leg crosses out as a taker (exact Decimal fee). A second-leg
+        fill inside that one-lag window is not counted: the pessimistic reading of the race.
+    The exit waits forward for the first valid book row if the arrival book is crossed or empty
+    (`requotes`). A lone leg is never left to settle unless no exit can be placed before the last
+    order second (reason "carried"). `Trade.entry` is the held leg's cost for a lone leg and the
+    dearer leg for a pair: the $0.62 cap bounds each contract held.
     """
     if lag_s < LAG_S - EPS:
         raise ValueError(f"arrival lag {lag_s}s is below the {LAG_S:g}s floor")
@@ -519,8 +522,8 @@ def run_two_sided_mm(tape: Tape, *, trigger_ts: float, qty: int, hedge_timeout_s
     breach_ts = _adverse_spot(spot, first, t1, timeout_ts, adverse_bps)
     event_ts = timeout_ts if breach_ts is None else breach_ts
     reason = "hedge_timeout" if breach_ts is None else "spot_breach"
-    arrive = event_ts + lag_s                       # the cancel and the exit order both land one lag later
-    t2 = tape.print_fill(order_ts, min(arrive, last_ts), other, BUY, cost[other], need=min_print)
+    arrive = event_ts + lag_s                       # the cancel and the exit order land one lag after the decision
+    t2 = tape.print_fill(order_ts, min(event_ts, last_ts), other, BUY, cost[other], need=min_print)
     legs = [Leg("entry", first, BUY, MAKER, cost[first], qty, t1, ZERO)]
     entry = max(cost.values())
     if t2 is not None:

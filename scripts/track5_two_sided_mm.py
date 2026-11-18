@@ -49,7 +49,7 @@ HEDGE_TIMEOUTS = (15.0, 30.0)
 SECS_GRID = np.arange(720.0, 239.0, -2.0)          # secs_left 720..240
 PATIENCE_S, ADVERSE_BPS = 15.0, 6.0
 CAP = float(S.CAP)
-COOLDOWN, PER_WINDOW = 60.0, 2                      # a pair attempt lasts at most ~47s: attempts never overlap
+COOLDOWN, PER_WINDOW = 60.0, 2     # an attempt rests <= 1s + 15s, then <= 30s: <= 47s, so 60s apart never overlap
 
 
 def config_name(min_spread: float, quantile: float, timeout: float) -> str:
@@ -93,6 +93,13 @@ def collect(lane, its: np.ndarray, v: np.ndarray, cut: float, split: str) -> dic
     return pack
 
 
+def spread_funnel(pack: dict) -> dict:
+    """How often the quote is wide enough at all: decision rows at each minimum spread, and the median spread."""
+    spread = pack["ask"] - pack["bid"]
+    return {**{f"spread_ge_{int(ms * 100)}c": int((spread >= ms - 1e-9).sum()) for ms in MIN_SPREADS},
+            "median_spread": float(np.median(spread)) if len(spread) else None}
+
+
 def vol_caps(sigma: np.ndarray) -> dict[str, float]:
     """The IS sigma at each `vol_max_quantile`, from one lane's IS decision rows."""
     return {f"{q:.2f}": float(np.quantile(sigma, q)) for q in VOL_QUANTILES}
@@ -104,13 +111,24 @@ def triggers(pack: dict, min_spread: float, cap: float) -> list[int]:
     return BS.pick({"tid": pack["tid"], "ts": pack["t"]}, ok, cooldown=COOLDOWN, per_window=PER_WINDOW)
 
 
+def open_until(trigger_ts: float, res) -> float:
+    """When an attempt stops holding or resting anything: a lone leg's exit, a pair's second fill, a skip's last rest."""
+    if isinstance(res, S.Skip):
+        return trigger_ts + S.LAG_S + (PATIENCE_S if res.reason == "unfilled" else 0.0)
+    return max(leg.ts for leg in res.legs if leg.role == "entry") if res.reason == "pair" else res.exit_ts
+
+
 def run_config(pack: dict, spot: tuple, caps: dict, min_spread: float, quantile: float, timeout: float, out: dict) -> None:
     lane, name = pack["lane"], config_name(min_spread, quantile, timeout)
+    busy: dict[int, float] = {}
     for i in triggers(pack, min_spread, caps[f"{quantile:.2f}"]):
         tid, t = int(pack["tid"][i]), float(pack["t"][i])
+        if t < busy.get(tid, -math.inf):         # an exit waits only for the first valid book row, so this cannot happen
+            raise RuntimeError("two-sided attempts overlap inside one window")
         res = S.run_two_sided_mm(RC.tape(lane, tid), trigger_ts=t, qty=S.MAX_QTY, hedge_timeout_s=timeout,
                                  min_spread=Decimal(str(min_spread)), spot=spot, adverse_bps=ADVERSE_BPS,
                                  patience_s=PATIENCE_S)
+        busy[tid] = open_until(t, res)
         if isinstance(res, S.Skip):
             out[name]["skips"][res.reason] += 1
             continue
@@ -130,7 +148,15 @@ def lane_inputs(name: str):
     return lane, KF.clean_index(lane.index)
 
 
+def pick_champion(configs: dict) -> dict:
+    """The eligible config with the best net; with none eligible, the best of those that traded at all.
+
+    A config that never traded ties at $0.00 net and would otherwise be named as the best one."""
+    return C.pick_champion({c: v for c, v in configs.items() if v["is"]["trades"]} or configs)
+
+
 def run_is() -> dict:
+    T.refuse_if_spent(FAMILY, OUT)
     pin = T.pin_tape()
     closes = T.window_closes()
     if len(closes) != T.MIN_WINDOWS:
@@ -141,14 +167,15 @@ def run_is() -> dict:
         lane, spot = lane_inputs(name)
         pack = collect(lane, *spot, cut, "is")
         caps[name] = vol_caps(pack["sigma"])
-        sampling[name] = {"windows": pack["windows"], "decision_rows": int(len(pack["t"])), "skips": dict(pack["skips"])}
+        sampling[name] = {"windows": pack["windows"], "decision_rows": int(len(pack["t"])), **spread_funnel(pack),
+                             "skips": dict(pack["skips"])}
         for g in grid():
             run_config(pack, spot, caps[name], *g, out)
         del lane, pack
     configs = {config_name(*g): {"family": FAMILY, "min_spread": g[0], "vol_quantile": g[1], "hedge_timeout_s": g[2],
                                  "is": RC.summarize(out[config_name(*g)]["rows"], dict(out[config_name(*g)]["skips"]))}
                for g in grid()}
-    champion = C.pick_champion(configs)
+    champion = pick_champion(configs)
     C.atomic_text(IS_TRADES, "".join(json.dumps(r, default=RC._json_default) + "\n" for r in out[champion["config"]]["rows"]))
     obj = {"family": FAMILY, "split": "first 60% / last 40% of distinct window closes, all four lanes", "cut": cut,
            "windows": len(closes), "is_windows": sum(c < cut for c in closes), "oos_windows": sum(c >= cut for c in closes),
@@ -194,6 +221,16 @@ def score_oos() -> dict:
     return obj
 
 
+def funnel_text(obj: dict) -> str:
+    """Why so few trades: wide quotes are rare, and a one-second arrival lag finds most of them gone."""
+    lanes = obj["sampling"]
+    rows = "; ".join(f"{n[2:5]} {c['spread_ge_3c']}/{c['spread_ge_4c']}/{c['spread_ge_5c']} of {c['decision_rows']}"
+                     f" (median {c['median_spread']:.2f})" for n, c in lanes.items())
+    lost = sum(c["is"]["skips"].get("spread", 0) for c in obj["configs"].values())
+    return (f"IS decision rows with spread >= 3c/4c/5c: {rows}. "
+            f"{lost} attempts across the grid met a spread under the minimum one second later.")
+
+
 def reasons(s: dict) -> str:
     return ", ".join(f"{k} {v['trades']} (${v['net']:+.2f})" for k, v in s["by_reason"].items()) or "none"
 
@@ -209,7 +246,9 @@ def hand_off(obj: dict) -> None:
     lines = [f"- {obj['windows']} windows ({obj['is_windows']} IS / {obj['oos_windows']} OOS), cut `{obj['cut']}`; secs_left 240-720, "
              f"both legs <= $0.62, pair cost <= $0.97, {int(PATIENCE_S)}s to first fill, lone leg crossed out at the hedge timeout or a "
              f"{ADVERSE_BPS:g} bps adverse spot move; vol cap = IS per-lane sigma quantile.",
-             f"- IS champion `{obj['champion']['config']}`: {T.scorecard(best)}; eligible: {eligible}. Exits: {reasons(best)}.",
+             (f"- IS champion `{obj['champion']['config']}`: {T.scorecard(best)}. Exits: {reasons(best)}." if eligible else
+              f"- No IS config met the bar; best by net `{obj['champion']['config']}`: {T.scorecard(best)}. "
+              f"Exits: {reasons(best)}. {funnel_text(obj)}"),
              (f"- One sealed OOS look: {T.scorecard(score['oos'])}; payoff-ECE {score['payoff_ece']}; gate pass: {score['gate']['pass']}. "
               f"Exits: {reasons(score['oos'])}." if score else "- IS bar missed; OOS left sealed, no ledger entry."),
              T.SHARED_TAPE_NOTE, f"- Receipt: `{OUT.relative_to(ROOT)}`; no live promotion."]
