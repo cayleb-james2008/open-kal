@@ -215,7 +215,8 @@ def append_report(progress: dict, commits: list[str], sha: str) -> None:
 CACHE_LOG = ROOT / "data" / "book-cache.log"
 
 
-def start_cache_export(lanes: list[str]) -> subprocess.Popen | None:
+def start_cache_export(lanes: list[str], limit: int = 0,
+                       out: str = "") -> subprocess.Popen | None:
     """Start the cache export in its own process.
 
     A full export of the 26 GB tape takes minutes; running it inline stopped the
@@ -224,7 +225,8 @@ def start_cache_export(lanes: list[str]) -> subprocess.Popen | None:
     detached instead, and each cycle polls it.
     """
     cmd = [str(ROOT / ".venv/bin/python"), str(ROOT / "scripts" / "book_cache.py"),
-           "--force", *lanes]
+           "--force", *(["--out", out] if out else []),
+           *(["--limit", str(limit)] if limit else []), *lanes]
     log(f"2-hour block: starting the L2 cache export ({', '.join(lanes) or 'all lanes'})")
     try:
         with CACHE_LOG.open("a") as fh:
@@ -237,21 +239,29 @@ def start_cache_export(lanes: list[str]) -> subprocess.Popen | None:
         return None
 
 
-def finish_cache_export(proc: subprocess.Popen, progress: dict, started: float) -> bool:
+def finish_cache_export(proc: subprocess.Popen, progress: dict, started: float,
+                        cache_dir: Path) -> bool:
     rc = proc.poll()
     if rc is None:
         return False
+    files = {path.name: digest(path)
+             for path in sorted(cache_dir.glob("book_*.npz"))[:4]}
     progress["cache"] = {
         "started_at": progress.get("cache", {}).get("started_at"),
         "finished_at": now().isoformat(timespec="seconds"),
         "duration_s": round(time.time() - started, 1),
         "rc": rc,
-        "file": digest(ROOT / "data" / "evolve-cache" / "book_KXBTC15M.npz"),
+        "dir": str(cache_dir),
+        "files": files,
     }
     progress["last_cache_export"] = progress["cache"]["finished_at"]
     progress["cache_ok"] = rc == 0
     log(f"cache export finished rc={rc} in {progress['cache']['duration_s']}s "
-        f"(book_KXBTC15M.npz {progress['cache']['file'].get('bytes')} bytes)")
+        f"({len(progress['cache'].get('files') or {})} npz file(s))")
+    if rc != 0:
+        detail = CACHE_LOG.read_text(errors="ignore").strip().splitlines()[-3:] if CACHE_LOG.exists() else []
+        for line in detail:
+            log(f"  cache log: {line}")
     return True
 
 
@@ -319,14 +329,21 @@ def main() -> int:
     ap.add_argument("--cache-now", action="store_true", help="export the cache this cycle")
     ap.add_argument("--cache-lanes", default="",
                     help="space/comma separated lanes to export (default: all)")
+    ap.add_argument("--cache-limit", type=int, default=0,
+                    help="tickers per lane for a bounded proof export (0 = all)")
+    ap.add_argument("--cache-out", default="",
+                    help="cache directory for a proof export (default: the live cache)")
+    ap.add_argument("--progress", default=str(PROGRESS),
+                    help="progress file (default: data/overnight-l2-progress.json)")
     ap.add_argument("--cache-timeout", type=float, default=7200.0)
     ap.add_argument("--cache-only", action="store_true",
                     help="run one cache export, wait for it, log it, and exit")
     args = ap.parse_args()
     cache_lanes = [tok for tok in args.cache_lanes.replace(",", " ").split() if tok]
+    cache_dir = Path(args.cache_out) if args.cache_out else ROOT / "data" / "evolve-cache"
 
     if args.cache_only:
-        proc = start_cache_export(cache_lanes)
+        proc = start_cache_export(cache_lanes, args.cache_limit, args.cache_out)
         started = time.time()
         while proc is not None and proc.poll() is None and time.time() - started < args.cache_timeout:
             time.sleep(2)
@@ -344,9 +361,10 @@ def main() -> int:
     if until is not None and until < now():
         until = until + timedelta(days=1)
 
+    progress_path = Path(args.progress)
     prior: dict = {}
     try:
-        prior = json.loads(PROGRESS.read_text())
+        prior = json.loads(progress_path.read_text())
     except (OSError, ValueError):
         prior = {}
     # A resumable run continues from its cursors. A fresh one starts at the current
@@ -411,13 +429,13 @@ def main() -> int:
                 f"cum_sized={record['cumulative']['new_sized_rows']} "
                 f"cum_gates={record['cumulative']['gate_verdicts']}"
                 + (f" errors={record['errors']}" if record["errors"] else ""))
-            write_json(PROGRESS, progress)
+            write_json(progress_path, progress)
         except Exception as exc:  # noqa: BLE001 - containment is the point
             detail = f"cycle crashed: {type(exc).__name__}: {exc}"
             progress["errors"] = (progress["errors"] + [detail])[-20:]
             log(detail)
             log(traceback.format_exc(limit=1).strip().replace("\n", " | "))
-            write_json(PROGRESS, progress)
+            write_json(progress_path, progress)
 
         if time.time() >= next_rnd:
             info = rnd_discoveries(progress.get("rnd_head"))
@@ -429,14 +447,14 @@ def main() -> int:
             progress["last_rnd"] = {"ts": now().isoformat(timespec="seconds"),
                                     "head": info["head"], "new_commits": len(info["commits"]),
                                     "note": info["note"]}
-            write_json(PROGRESS, progress)
+            write_json(progress_path, progress)
             next_rnd = time.time() + args.rnd_every
 
         if cache_proc is not None:
             # Detached: polled every cycle, so supervision keeps its cadence while a
             # six-minute export runs beside it.
-            if finish_cache_export(cache_proc, progress, cache_started):
-                write_json(PROGRESS, progress)
+            if finish_cache_export(cache_proc, progress, cache_started, cache_dir):
+                write_json(progress_path, progress)
                 cache_proc = None
             elif time.time() - cache_started > args.cache_timeout:
                 cache_proc.terminate()
@@ -444,7 +462,7 @@ def main() -> int:
                 progress["cache"] = {"finished_at": now().isoformat(timespec="seconds"),
                                     "rc": None, "note": "timeout"}
                 progress["cache_ok"] = False
-                write_json(PROGRESS, progress)
+                write_json(progress_path, progress)
                 cache_proc = None
 
         if time.time() >= next_cache:
@@ -453,9 +471,10 @@ def main() -> int:
             else:
                 progress["cache"] = {"started_at": now().isoformat(timespec="seconds"),
                                      "lanes": cache_lanes or "all"}
-                cache_proc = start_cache_export(cache_lanes)
+                cache_proc = start_cache_export(cache_lanes, args.cache_limit,
+                                                args.cache_out)
                 cache_started = time.time()
-                write_json(PROGRESS, progress)
+                write_json(progress_path, progress)
             next_cache = time.time() + args.cache_every
 
         run_cycles += 1
@@ -466,11 +485,21 @@ def main() -> int:
             log("overnight supervisor finished its window")
             break
 
-        # Sleep to the next interval boundary, never past the stop time.
+        # Sleep to the next interval boundary, never past the stop time -- while
+        # polling the detached export, so its completion (and true duration) is
+        # recorded when it happens rather than up to a cycle later.
         target = started + args.interval
         if until is not None:
             target = min(target, until.timestamp())
-        time.sleep(max(1.0, target - time.time()))
+        while True:
+            remaining = target - time.time()
+            if remaining <= 0:
+                break
+            time.sleep(min(5.0, remaining))
+            if cache_proc is not None and cache_proc.poll() is not None:
+                finish_cache_export(cache_proc, progress, cache_started, cache_dir)
+                write_json(progress_path, progress)
+                cache_proc = None
 
     # Never leave an export orphaned: its result is part of the night's evidence, so
     # the last thing this process does is record how it finished.
@@ -483,8 +512,8 @@ def main() -> int:
             log(f"cache export exceeded {args.cache_timeout:.0f}s; terminated")
             cache_proc = None
         else:
-            finish_cache_export(cache_proc, progress, cache_started)
-        write_json(PROGRESS, progress)
+            finish_cache_export(cache_proc, progress, cache_started, cache_dir)
+        write_json(progress_path, progress)
     return 0
 
 

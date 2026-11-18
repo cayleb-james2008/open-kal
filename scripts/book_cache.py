@@ -91,8 +91,12 @@ def _gate(raw) -> tuple[int, float, float, int, str]:
             str(verdict.get("note") or "")[:GATE_NOTE_CHARS])
 
 
-def build(only: list[str] | None = None, force: bool = False) -> None:
-    CACHE.mkdir(parents=True, exist_ok=True)
+def build(only: list[str] | None = None, force: bool = False, limit: int = 0,
+          out: Path | None = None) -> None:
+    # `out` exists so a bounded proof build can run the same SQL and the same atomic
+    # rename without replacing the production cache with a ten-ticker file.
+    cache = out or CACHE
+    cache.mkdir(parents=True, exist_ok=True)
     db = connect()
     markets = {}
     for m in json.loads(MARKETS.read_text()):
@@ -114,10 +118,21 @@ def build(only: list[str] | None = None, force: bool = False) -> None:
     for lane in LANES:
         if only and lane not in only:
             continue
-        if not force and (CACHE / f"book_{lane}.npz").exists():
+        if not force and (cache / f"book_{lane}.npz").exists():
             print(f"{lane}: cache exists, skipping", flush=True)
             continue
         names = sorted(t for t in tickers if t.startswith(lane + "-") and t in markets)
+        if not names:
+            # A lane with no settled market on the tape has nothing to export. This
+            # used to reach np.concatenate([]) and kill the whole build, so the three
+            # healthy lanes behind it were never written.
+            print(f"{lane}: no settled tickers in the tape, skipping", flush=True)
+            continue
+        if limit:
+            # A bounded build for proving the export path on a 26 GB tape: the SQL,
+            # the atomic rename and the digests are identical, only the ticker count
+            # is smaller. The scheduled production export passes no limit.
+            names = names[:limit]
         rows_ts: list[np.ndarray] = []
         rows_bid: list[np.ndarray] = []
         rows_ask: list[np.ndarray] = []
@@ -175,6 +190,13 @@ def build(only: list[str] | None = None, force: bool = False) -> None:
                 tr_tid.append(np.full(len(trades), i, dtype=np.int16))
             if i % 10 == 0:
                 print(f"{lane}: {i}/{len(names)} tickers", flush=True)
+        if not rows_ts:
+            # Settled markets exist but none has a book row on this tape (a bounded
+            # proof run can land on exactly such a slice). Skipping the lane keeps the
+            # lanes behind it exporting instead of dying on np.concatenate([]).
+            print(f"{lane}: {len(names)} settled ticker(s), no book rows, skipping",
+                  flush=True)
+            continue
         # Laya's shadow verdict lives on the 1 Hz decision log, not on the book, so
         # it is exported on its own time base with the ticker id it judged.
         tick_rows = db.execute(
@@ -195,8 +217,8 @@ def build(only: list[str] | None = None, force: bool = False) -> None:
         # halfway (a supervisor restart, a full disk) used to leave a truncated
         # book_<lane>.npz that the existence check then skipped forever, and the
         # rebuild that moved the old file aside first left no tape at all.
-        final = CACHE / f"book_{lane}.npz"
-        tmp = CACHE / f"book_{lane}.tmp.npz"
+        final = cache / f"book_{lane}.npz"
+        tmp = cache / f"book_{lane}.tmp.npz"
         np.savez_compressed(
             tmp,
             tickers=np.array(names),
@@ -229,6 +251,27 @@ def build(only: list[str] | None = None, force: bool = False) -> None:
 
 
 if __name__ == "__main__":
-    flags = [a for a in sys.argv[1:] if a.startswith("--")]
-    lanes = [a for a in sys.argv[1:] if not a.startswith("--")]
-    build(lanes or None, force="--force" in flags)
+    argv = sys.argv[1:]
+    lanes: list[str] = []
+    force = False
+    limit = 0
+    out: Path | None = None
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--force":
+            force = True
+        elif arg == "--limit" and i + 1 < len(argv):
+            limit = int(argv[i + 1])
+            i += 1
+        elif arg == "--out" and i + 1 < len(argv):
+            out = Path(argv[i + 1])
+            i += 1
+        elif arg.startswith("--out="):
+            out = Path(arg.split("=", 1)[1])
+        elif arg.startswith("--limit="):
+            limit = int(arg.split("=", 1)[1])
+        elif not arg.startswith("--"):
+            lanes.append(arg)
+        i += 1
+    build(lanes or None, force=force, limit=limit, out=out)
