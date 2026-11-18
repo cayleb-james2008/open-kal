@@ -242,6 +242,12 @@ def main() -> int:
     calib, test = items[:cut], items[cut:]
     a, b = fit_platt(ps[:cut], ys[:cut])
     rescaled = [apply_platt(p, a, b) for p in ps]
+    # Brier sits next to ECE because they fail differently: Platt scaling can
+    # improve the binned gap while making the per-item error worse, and the
+    # frozen slice is the only place that shows up.
+    brier_raw = features.brier(list(zip(ps, ys)))
+    brier_raw_test = features.brier(list(zip(ps[cut:], ys[cut:])))
+    brier_rescaled_test = features.brier(list(zip(rescaled[cut:], ys[cut:])))
     payload = {
         "generated_ts": time.time(),
         "model": str(MODEL),
@@ -253,6 +259,7 @@ def main() -> int:
         "raw": {
             "accuracy": round(sum(1 for p, y in zip(ps, ys) if (p >= 0.5) == bool(y)) / len(ys), 3),
             "ece": round(features.expected_calibration_error(list(zip(ps, ys))), 4),
+            "brier": round(brier_raw, 4),
             "mean_p": round(float(np.mean(ps)), 3),
         },
         "platt": {"a": round(a, 4), "b": round(b, 4)},
@@ -262,13 +269,16 @@ def main() -> int:
                                     if (p >= 0.5) == bool(y)) / max(1, len(test)), 3),
                 "ece": round(features.expected_calibration_error(
                     list(zip(ps[cut:], ys[cut:]))), 4),
+                "brier": round(brier_raw_test, 4),
                 "deciles": deciles(ps[cut:], test),
             },
             "rescaled": {
                 "ece": round(features.expected_calibration_error(
                     list(zip(rescaled[cut:], ys[cut:]))), 4),
+                "brier": round(brier_rescaled_test, 4),
                 "deciles": deciles(rescaled[cut:], test),
             },
+            "brier_lift": round(brier_raw_test - brier_rescaled_test, 4),
         },
         "verdict": None,
     }

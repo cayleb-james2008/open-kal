@@ -171,6 +171,14 @@ def net_edge(side_price: Decimal, contracts: int, p_model: float, maker: bool) -
 
 
 def brier(pairs: list[tuple[float, int]]) -> float:
+    """Mean squared error of a probability forecast: `mean((p - y) ** 2)`.
+
+    Reported next to `expected_calibration_error`, never instead of it: ECE is a
+    binned gap between average forecast and average outcome, so it is blind to a
+    forecast that is sharp and wrong inside a bin, and it moves with the binning.
+    Brier is per-item and bin-free, so a confident miss costs it a quarter of a
+    unit while a coin flip costs it 0.25 no matter which way the contract settled.
+    """
     if not pairs:
         return 0.0
     return sum((p - y) ** 2 for p, y in pairs) / len(pairs)

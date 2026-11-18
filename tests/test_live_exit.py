@@ -1559,6 +1559,72 @@ def control_settlement_parity() -> None:
 
 
 
+def control_brier_score() -> None:
+    """Brier is the per-item companion to ECE, and it has to disagree with it."""
+    check("brier: no pairs scores zero rather than raising",
+          features.brier([]) == 0.0, f"brier={features.brier([])}")
+    check("brier: a perfect forecast scores zero",
+          features.brier([(1.0, 1), (0.0, 0)]) == 0.0,
+          f"brier={features.brier([(1.0, 1), (0.0, 0)])}")
+    check("brier: a coin flip on a split outcome scores 0.25",
+          abs(features.brier([(0.5, 0), (0.5, 1)]) - 0.25) < 1e-12,
+          f"brier={features.brier([(0.5, 0), (0.5, 1)])}")
+    check("brier: it is the mean squared error, not the sum",
+          abs(features.brier([(0.9, 1), (0.1, 0)]) - 0.01) < 1e-12,
+          f"brier={features.brier([(0.9, 1), (0.1, 0)])}")
+    check("brier: a confident miss costs far more than a hedge",
+          features.brier([(0.01, 1)]) > features.brier([(0.5, 1)])
+          > features.brier([(0.99, 1)]),
+          f"{features.brier([(0.01, 1)]):.4f} > "
+          f"{features.brier([(0.5, 1)]):.4f} > {features.brier([(0.99, 1)]):.4f}")
+    check("brier: every forecast in [0, 1] scores inside [0, 1]",
+          all(0.0 <= features.brier([(p, y)]) <= 1.0
+              for p in (0.0, 0.3, 0.5, 0.8, 1.0) for y in (0, 1)),
+          "bounded by the unit interval")
+    # The reason both numbers are reported: a balanced coin-flip set has a perfect
+    # ECE and a 0.25 Brier, so ECE alone would call it a calibrated forecast.
+    pairs = [(0.5, 0), (0.5, 1)]
+    check("brier: it catches what a binned ECE cannot",
+          features.expected_calibration_error(pairs) == 0.0
+          and features.brier(pairs) > 0.2,
+          f"ece={features.expected_calibration_error(pairs)} "
+          f"brier={features.brier(pairs)}")
+
+
+def control_until_parse() -> None:
+    """A bare `--until 08:00` must not compare naive against aware and crash."""
+    import importlib.util
+    from datetime import datetime, timedelta
+
+    path = (Path(__file__).resolve().parent.parent
+            / "scripts" / "overnight_l2_supervisor.py")
+    spec = importlib.util.spec_from_file_location("overnight_l2_supervisor", path)
+    assert spec is not None and spec.loader is not None
+    sup = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sup)
+
+    check("supervisor: no --until means no deadline",
+          sup.parse_until(None) is None and sup.parse_until("") is None,
+          "None for an absent argument")
+    naive = sup.parse_until("2030-01-01T08:00:00")
+    check("supervisor: a bare clock time parses aware, in local time",
+          naive is not None and naive.tzinfo is not None
+          and naive.utcoffset() == datetime.now().astimezone().utcoffset(),
+          f"until={naive}")
+    check("supervisor: an explicit offset keeps its own zone",
+          sup.parse_until("2030-01-01T08:00:00-05:00").utcoffset()
+          == timedelta(hours=-5),
+          f"until={sup.parse_until('2030-01-01T08:00:00-05:00')}")
+    # The regression itself: a naive time already past rolls to tomorrow instead of
+    # raising TypeError on the `until < now()` comparison.
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
+    rolled = sup.parse_until(yesterday)
+    check("supervisor: a past naive time rolls forward a day and stays aware",
+          rolled is not None and rolled.tzinfo is not None
+          and abs((rolled - datetime.now().astimezone()).total_seconds()) < 120,
+          f"until={rolled}")
+
+
 def main() -> int:
     tp = Decision("exit_tp", "take-profit reached", side="NO", price=Decimal("0.88"))
 
@@ -1707,6 +1773,8 @@ def main() -> int:
     control_official_settlement()
     control_settlement_parity()
     control_settlement_program()
+    control_brier_score()
+    control_until_parse()
 
     width = max(len(n) for n, _, _ in RESULTS)
     failed = 0
