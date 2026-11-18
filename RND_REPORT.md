@@ -558,7 +558,7 @@ OOS, the four champions made 0–3 trades each, net −$14.29 to $0.00 (ledger a
 - Receipt: `data/track7-cross-lane-iv.json`; no live promotion.
 
 ### Track 8 — live-spot vs RTI settlement-average arbitrage
-- 229 windows (137 IS / 92 OOS), cut `1794915000.0`; secs_left 25-90; live spot (the engine's tick `spot`: latest Coinbase-or-Kraken print, venue not recorded) vs the RTI, |divergence| >= 8 bps, p - ask >= hurdle, taker T+1s, hold to settlement.
+- 229 windows (137 IS / 92 OOS), cut `1794915000.0`; secs_left 25-90; live spot (the engine's tick `spot`: latest Coinbase, Kraken or REST-backstop print, venue not recorded) vs the RTI, |divergence| >= 8 bps, p - ask >= hurdle, taker T+1s, hold to settlement.
 - Trigger funnel (IS): 12770 decision rows, 5 with |divergence| >= 8 bps in 3 lane-windows; rows also clearing each hurdle: h0.06 0, h0.09 0, h0.12 0.
 - No IS config made a single trade: the trigger never cleared its conditions (bar: >= 20 trades, PF >= 1.25, >= 2 lanes).
 - All configs: h0.06 0 trades, $+0.00; h0.09 0 trades, $+0.00; h0.12 0 trades, $+0.00.

@@ -35,7 +35,7 @@
     "entry": "taker, T+1s",
     "exit": "settle",
     "qty": 50,
-    "spot_source": "ticks.npz `spot`: the engine's latest print from the lane's feed venues (Coinbase or Kraken; venue not recorded)",
+    "spot_source": "ticks.npz `spot` = engine slot.spot: the latest print from Coinbase, Kraken or the REST backstop (never an index print); the venue is not recorded",
     "eligibility": [
       20,
       1.25,
