@@ -1,0 +1,27 @@
+[Unit]
+Description=Open-Kal 15-minute Kalshi engine (dashboard on 127.0.0.1:8787)
+Documentation=file:///home/cayleb/open-kal/README.md
+After=network-online.target
+Wants=network-online.target
+# A crash loop is stopped after five tries in five minutes rather than thrashing
+# the venue connection; `scripts/restart_flat.sh` resets the counter before an
+# operator-driven start, so a deliberate restart is never blocked by this.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/home/cayleb/open-kal
+# run.py already re-execs into .venv; naming the interpreter directly keeps the
+# MainPID the python process itself, which is what data/engine.pid records.
+ExecStart=/home/cayleb/open-kal/.venv/bin/python -u run.py --port 8787
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=45
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=append:/home/cayleb/open-kal/data/engine.log
+StandardError=append:/home/cayleb/open-kal/data/engine.log
+
+[Install]
+WantedBy=default.target

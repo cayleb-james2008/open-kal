@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import os
 import sys
 import threading
 import time
@@ -23,6 +24,12 @@ def _crash_log_path():
     from pathlib import Path
 
     return Path(__file__).resolve().parent.parent / "data" / "engine.log"
+
+
+def _pid_path():
+    from pathlib import Path
+
+    return Path(__file__).resolve().parent.parent / "data" / "engine.pid"
 
 
 def _write_traceback(header: str, exc, tb=None) -> None:
@@ -63,6 +70,13 @@ def _crash_handler(loop, context) -> None:
 
 
 async def _amain(args: argparse.Namespace) -> int:
+    # The engine records its own pid. Under `openkal-engine.service` systemd restarts
+    # this process by itself, so a pid file written only by `restart_flat.sh` would
+    # name the dead process after every automatic restart, and the supervisors read it.
+    try:
+        _pid_path().write_text(f"{os.getpid()}\n")
+    except OSError:
+        pass
     _install_crash_logging()
     asyncio.get_running_loop().set_exception_handler(_crash_handler)
     settings = load_settings()
