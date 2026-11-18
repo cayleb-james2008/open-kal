@@ -794,7 +794,7 @@
     "code": "afa18d2"
    },
    "receipt": "data/track10-rescore-1795017600.json",
-   "window_ledger": "data/track10-window-ledger.json",
+   "window_ledger": "data/track10-window-ledger-1795017600.json",
    "cells": {
     "F2_taker_1s@1s": {
      "post_trades": 41,
@@ -846,9 +846,45 @@
    "not_scored_reason": "sim_core refuses a cost ceiling above 0.62",
    "owner_questions": [
     "which family is the 'energy/opposite-side fade'? passive_mm_fade was assumed",
-    "may a diagnostic score the 0.62-0.84 band outside sim_core's ceiling?"
+    "may a diagnostic score the 0.62-0.84 band outside sim_core's ceiling?",
+    "should the live F2 calibrator be reproduced (it was fitted on the legacy simulator's trades) so the gated rule can be scored as it runs?"
    ],
-   "timestamp_note": "typed registration timestamps in Track 9 (all three) and Track 10 do not match their commits; commit times are authoritative (see the report)"
+   "timestamp_note": "typed registration timestamps in Track 9 (all three) and Track 10 do not match their commits; commit times are authoritative (see the report)",
+   "scope": "F2 scored ungated (no calibrated gate); the 'energy/opposite-side fade' is a guess (passive_mm_fade); XRP carry and 0.84 band not scored (0.62 ceiling)",
+   "trades": "data/track10-rescore-trades-1795017600.jsonl",
+   "f2_forward_look_note": "F2's forward look (forward_oos.py) is inferred to reach about 15:00, so up to 4 post-freeze windows were scored once for F2 before this run",
+   "readme_20_0_note": "the README's 20W/0L is forward_oos.py's forward-slice score under the legacy simulator, not live trading; the cause of the disagreement with sim_core is not shown; the registered spec's 'gap-rule' sentence is an unverified guess",
+   "exploratory_f2_gated": {
+    "receipt": "data/track10-f2-gated-exploratory.json",
+    "registered": false,
+    "outside_holm": true,
+    "gated_post": {
+     "1": {
+      "trades": 1,
+      "win_rate": 1.0,
+      "net": 1.63,
+      "pf": "inf"
+     },
+     "2": {
+      "trades": 1,
+      "win_rate": 1.0,
+      "net": 1.66,
+      "pf": "inf"
+     },
+     "5": {
+      "trades": 1,
+      "win_rate": 1.0,
+      "net": 25.62,
+      "pf": "inf"
+     }
+    },
+    "kept": {
+     "1": "1 of 41",
+     "2": "1 of 36",
+     "5": "1 of 38"
+    }
+   },
+   "tests": "tests/test_track10_rescore.py 39, tests/test_track10_f2_gated.py 10"
   },
   "track11_queue_short_favourite_bid": {
    "status": "pre-registered, scored in sample only: 10 fills, net -17.50, PF 0.87; bar missed; OOS sealed (oos_scored null)",
@@ -886,7 +922,9 @@
      "pf": 0.8111675126903554,
      "eligible": false
     }
-   }
+   },
+   "tests": "tests/test_track11_queue_maker.py 27; sim_core QueueModel 13 new (64 in test_sim_core)",
+   "oos_note": "sealed windows' metadata is read to define the 46 windows and an unused index sigma is computed for them; no sealed book row or print enters any rule or trade"
   }
  },
  "state": {
