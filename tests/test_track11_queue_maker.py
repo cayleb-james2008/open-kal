@@ -11,23 +11,26 @@ from scripts import rnd_common as RC
 
 ROOT = Path(__file__).resolve().parent.parent
 SPEC_PATH = ROOT / "scripts" / "track11_prereg.json"
-PREREG_SHA256 = "dfc85d2d0453f5bfa60109a2abac3a175767fe093a95fc7f52d097b3804e76f4"
+PREREG_SHA256 = "ed39fd6c19f604c129833374e0e8d60728a19d10833d7740424f2ebd0d6d45d4"
 SPEC = json.loads(SPEC_PATH.read_text())
 
 
 class Registration(unittest.TestCase):
     def test_the_registered_file_has_not_drifted(self):
         self.assertEqual(hashlib.sha256(SPEC_PATH.read_bytes()).hexdigest(), PREREG_SHA256)
-        self.assertEqual(SPEC["version"], 1)
+        self.assertEqual(SPEC["version"], 2)
         self.assertIsNone(SPEC["oos_scored"])
         self.assertIn("no trade of this track has been simulated", SPEC["status"])
+        (v2,) = SPEC["amendments"]
+        self.assertEqual((v2["version"], v2["supersedes_commit"], v2["changed"]), (2, "ab5ede3", ["split.oos", "status"]))
+        self.assertIn("no rule, number, window, split, bar or control", v2["not_changed"])
 
     def test_the_split_is_sixty_percent_of_the_46_l2_windows_and_the_rest_is_sealed(self):
         sp = SPEC["split"]
         self.assertEqual((sp["is_windows"], sp["oos_windows"], sp["is_windows"] + sp["oos_windows"]), (27, 19, 46))
         self.assertEqual(int(0.6 * 46), 27)
         self.assertIn("l2_closes[int(0.6 * 46)]", sp["rule"])
-        self.assertIn("never loaded, simulated or counted", sp["oos"])
+        self.assertIn("never indexed, built into a tape, simulated or counted", sp["oos"])
         self.assertEqual(sp["cut_epoch"], 1795001400.0)
 
     def test_the_rule_numbers_are_in_the_text_and_agree_with_the_canonical_simulator(self):

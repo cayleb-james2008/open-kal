@@ -1,8 +1,8 @@
 {
   "name": "queue_short_favourite_bid",
-  "version": 1,
+  "version": 2,
   "registered": "2026-11-18T12:18:14-05:00",
-  "status": "pre-registered; no trade of this track has been simulated and no price or outcome of the L2 windows has been read; only touch-size coverage and the size percentiles below were looked at",
+  "status": "pre-registered (v1, then one wording amendment before any simulation); no trade of this track has been simulated and no price or outcome of the L2 windows has been read; only touch-size coverage and the size percentiles below were looked at",
   "question": "Does a resting bid on the favourite side, joined only when the displayed queue ahead is short and filled only after that queue has printed, have a positive expectancy held to settlement?",
   "owner_request": "Pre-register one maker (resting-order) idea with an explicit queue-position model before touching data, then score it in-sample only. A null result is a success.",
   "why_this_idea": "Every maker result so far used sim_core's fill rule, which treats the order as first in line: it fills once 50 contracts print at or through the limit, whatever rests ahead of it. Touch sizes now exist, so that assumption can be replaced by first-in-first-out. A bid joined behind a deep queue fills only after a large sell flow, which is adverse; a bid joined behind a short queue fills on ordinary flow. The idea tests whether the short-queue favourite bid is worth resting once the queue is paid for. It is one rule, with no sweep.",
@@ -27,7 +27,7 @@
     "cut": "2026-11-18T06:30:00-05:00",
     "is_windows": 27,
     "oos_windows": 19,
-    "oos": "closes at or after the cut are never loaded, simulated or counted by this track; they stay sealed (oos_scored null) and nothing here spends a look"
+    "oos": "closes at or after the cut are never indexed, built into a tape, simulated or counted by this track; they stay sealed (oos_scored null) and nothing here spends a look. The book cache is one array per lane, so their rows sit in memory unread."
   },
   "rule": {
     "decision_points": "for every lane and every IS window, at 660, 540, 420 and 300 seconds before the close, in that order",
@@ -65,5 +65,19 @@
     "Track 6's L2 tree models and Tracks 2C and 2D scored the same L2 windows with different rules; their OOS slices are sealed and unread"
   ],
   "expected": "fewer than 30 fills in sample, so the bar is not cleared and the result is a null. Most decision points will skip on the queue cap or the band. If the primary does fill 30 or more and loses, the queue model has done its job; if it clears the bar, the next step is a pre-registered OOS design, not a look.",
-  "oos_scored": null
+  "oos_scored": null,
+  "amendments": [
+    {
+      "version": 2,
+      "date": "2026-11-18T12:19:17-05:00",
+      "supersedes_commit": "ab5ede3",
+      "reason": "v1 said the OOS windows are 'never loaded'. The cache holds each lane's book as one file, so the arrays are read into memory whole and the OOS rows are in memory, unread. The claim that matters is that no OOS window is indexed, built into a tape, simulated or counted, and the code and a test hold to that; the wording now says so.",
+      "made_before": "any simulation of this track and any read of an L2 price or outcome",
+      "changed": [
+        "split.oos",
+        "status"
+      ],
+      "not_changed": "no rule, number, window, split, bar or control"
+    }
+  ]
 }
