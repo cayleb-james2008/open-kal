@@ -1,0 +1,391 @@
+{
+  "family": "coinbase_rti_settle_arb",
+  "split": "first 60% / last 40% of the distinct settled window closes, all four lanes",
+  "cut": 1794915000.0,
+  "windows": 229,
+  "is_windows": 137,
+  "oos_windows": 92,
+  "frozen_input_sha256": {
+    "book_KXBTC15M.npz": "745cf933b570e957eba3aeb512d40c54acef407ba092d088e81c738f406cc14b",
+    "book_KXETH15M.npz": "02b29243878a70a8c1f6c6af31b8a66b5701626d2652be89481c2b85b3d4b756",
+    "book_KXSOL15M.npz": "098d5c13212c4b1a6d2bd29c253a167e0f9ada5deba93bfda182eddee9b9ec37",
+    "book_KXXRP15M.npz": "1e44749d63586d4725eed02d0f4bf78cd1b27b30ddc241f22a2146420d02516a",
+    "index_BRTI.npz": "601c800e0a5e5f91bacd6788198bf4f81b510eb971768148ddbcc121ce1c2864",
+    "index_ETHUSD_RTI.npz": "491e48319c4186cadad76d05ae2116288494b759228f8ca97bd1546275b09480",
+    "index_SOLUSD_RTI.npz": "ce141b05562243fb0d43032df7953dcfc39a5541a0d41e6fd25f2feca16af9d8",
+    "index_XRPUSD_RTI.npz": "053ec5d977016305400adde9958c4988a7ed4f400fd81ae11100232d23fbb5de",
+    "markets.json": "cba0d46107df0600b9fa4f0682e3543742d31c97319e0710e3337237bdf4231b",
+    "ticks.npz": "8aa777bfcbc91ce97ebd458d536a84a948be789021044b6e92324d05eb744cbd"
+  },
+  "rule": {
+    "secs_left": [
+      25.0,
+      90.0
+    ],
+    "divergence_bps": 8.0,
+    "hurdles": [
+      0.06,
+      0.09,
+      0.12
+    ],
+    "ask_band": [
+      0.35,
+      0.6
+    ],
+    "entry": "taker, T+1s",
+    "exit": "settle",
+    "qty": 50,
+    "spot_source": "ticks.npz `spot`: the engine's latest print from the lane's feed venues (Coinbase or Kraken; venue not recorded)",
+    "eligibility": [
+      20,
+      1.25,
+      2
+    ]
+  },
+  "funnel": {
+    "KXBTC15M": {
+      "windows": 137,
+      "rows": 2883,
+      "diverged_rows": 0,
+      "diverged_windows": 0,
+      "median_abs_div_bps": 0.5746952463336896,
+      "rows_clearing_hurdle": {
+        "h0.06": 0,
+        "h0.09": 0,
+        "h0.12": 0
+      },
+      "skips": {
+        "no_quote": 5827,
+        "no_live_spot": 32,
+        "no_rti_state": 131,
+        "stale_quote": 169
+      }
+    },
+    "KXETH15M": {
+      "windows": 137,
+      "rows": 3056,
+      "diverged_rows": 1,
+      "diverged_windows": 1,
+      "median_abs_div_bps": 1.327180378866144,
+      "rows_clearing_hurdle": {
+        "h0.06": 0,
+        "h0.09": 0,
+        "h0.12": 0
+      },
+      "skips": {
+        "no_quote": 5561,
+        "no_rti_state": 225,
+        "no_live_spot": 41,
+        "stale_quote": 159
+      }
+    },
+    "KXSOL15M": {
+      "windows": 137,
+      "rows": 3330,
+      "diverged_rows": 4,
+      "diverged_windows": 2,
+      "median_abs_div_bps": 1.4007564084606017,
+      "rows_clearing_hurdle": {
+        "h0.06": 0,
+        "h0.09": 0,
+        "h0.12": 0
+      },
+      "skips": {
+        "no_quote": 5206,
+        "no_rti_state": 235,
+        "no_live_spot": 112,
+        "stale_quote": 159
+      }
+    },
+    "KXXRP15M": {
+      "windows": 137,
+      "rows": 3501,
+      "diverged_rows": 0,
+      "diverged_windows": 0,
+      "median_abs_div_bps": 1.0448229025183942,
+      "rows_clearing_hurdle": {
+        "h0.06": 0,
+        "h0.09": 0,
+        "h0.12": 0
+      },
+      "skips": {
+        "no_quote": 5014,
+        "no_rti_state": 256,
+        "no_live_spot": 46,
+        "stale_quote": 225
+      }
+    }
+  },
+  "configs": {
+    "h0.06": {
+      "hurdle": 0.06,
+      "is": {
+        "trades": 0,
+        "wins": 0,
+        "losses": 0,
+        "win_rate": 0.0,
+        "net": 0.0,
+        "pf": 0.0,
+        "avg_pnl": 0.0,
+        "max_entry_cost": 0.0,
+        "fees_entry": 0.0,
+        "fees_exit": 0.0,
+        "crossed_fills": 0,
+        "requotes": 0,
+        "profitable_lanes": 0,
+        "net_ex_best_lane": 0.0,
+        "net_ex_xrp": 0.0,
+        "net_ex_best_window": 0.0,
+        "windows": 0,
+        "by_lane": {},
+        "by_reason": {},
+        "skips": {}
+      }
+    },
+    "h0.09": {
+      "hurdle": 0.09,
+      "is": {
+        "trades": 0,
+        "wins": 0,
+        "losses": 0,
+        "win_rate": 0.0,
+        "net": 0.0,
+        "pf": 0.0,
+        "avg_pnl": 0.0,
+        "max_entry_cost": 0.0,
+        "fees_entry": 0.0,
+        "fees_exit": 0.0,
+        "crossed_fills": 0,
+        "requotes": 0,
+        "profitable_lanes": 0,
+        "net_ex_best_lane": 0.0,
+        "net_ex_xrp": 0.0,
+        "net_ex_best_window": 0.0,
+        "windows": 0,
+        "by_lane": {},
+        "by_reason": {},
+        "skips": {}
+      }
+    },
+    "h0.12": {
+      "hurdle": 0.12,
+      "is": {
+        "trades": 0,
+        "wins": 0,
+        "losses": 0,
+        "win_rate": 0.0,
+        "net": 0.0,
+        "pf": 0.0,
+        "avg_pnl": 0.0,
+        "max_entry_cost": 0.0,
+        "fees_entry": 0.0,
+        "fees_exit": 0.0,
+        "crossed_fills": 0,
+        "requotes": 0,
+        "profitable_lanes": 0,
+        "net_ex_best_lane": 0.0,
+        "net_ex_xrp": 0.0,
+        "net_ex_best_window": 0.0,
+        "windows": 0,
+        "by_lane": {},
+        "by_reason": {},
+        "skips": {}
+      }
+    }
+  },
+  "controls_is": {
+    "control_h0.06_no_divergence_trigger": {
+      "trades": 45,
+      "wins": 17,
+      "losses": 28,
+      "win_rate": 0.3778,
+      "net": -253.38,
+      "pf": 0.6199090950002251,
+      "avg_pnl": -5.6306666666666665,
+      "max_entry_cost": 0.6,
+      "fees_entry": 38.88,
+      "fees_exit": 0.0,
+      "crossed_fills": 0,
+      "requotes": 0,
+      "profitable_lanes": 1,
+      "net_ex_best_lane": -291.13,
+      "net_ex_xrp": -182.12,
+      "net_ex_best_window": -299.63,
+      "windows": 33,
+      "by_lane": {
+        "KXBTC15M": {
+          "trades": 10,
+          "wins": 4,
+          "net": -54.63
+        },
+        "KXETH15M": {
+          "trades": 13,
+          "wins": 3,
+          "net": -165.24
+        },
+        "KXSOL15M": {
+          "trades": 9,
+          "wins": 5,
+          "net": 37.75
+        },
+        "KXXRP15M": {
+          "trades": 13,
+          "wins": 5,
+          "net": -71.26
+        }
+      },
+      "by_reason": {
+        "settle": {
+          "trades": 45,
+          "net": -253.38
+        }
+      },
+      "skips": {
+        "cost_band": 21
+      }
+    },
+    "control_h0.09_no_divergence_trigger": {
+      "trades": 40,
+      "wins": 13,
+      "losses": 27,
+      "win_rate": 0.325,
+      "net": -325.52,
+      "pf": 0.4919148404819879,
+      "avg_pnl": -8.138,
+      "max_entry_cost": 0.6,
+      "fees_entry": 34.52,
+      "fees_exit": 0.0,
+      "crossed_fills": 0,
+      "requotes": 0,
+      "profitable_lanes": 1,
+      "net_ex_best_lane": -332.59,
+      "net_ex_xrp": -260.82,
+      "net_ex_best_window": -370.27,
+      "windows": 32,
+      "by_lane": {
+        "KXBTC15M": {
+          "trades": 7,
+          "wins": 1,
+          "net": -126.05
+        },
+        "KXETH15M": {
+          "trades": 12,
+          "wins": 3,
+          "net": -141.84
+        },
+        "KXSOL15M": {
+          "trades": 8,
+          "wins": 4,
+          "net": 7.07
+        },
+        "KXXRP15M": {
+          "trades": 13,
+          "wins": 5,
+          "net": -64.7
+        }
+      },
+      "by_reason": {
+        "settle": {
+          "trades": 40,
+          "net": -325.52
+        }
+      },
+      "skips": {
+        "cost_band": 16
+      }
+    },
+    "control_h0.12_no_divergence_trigger": {
+      "trades": 38,
+      "wins": 15,
+      "losses": 23,
+      "win_rate": 0.3947,
+      "net": -175.8,
+      "pf": 0.6773009288153016,
+      "avg_pnl": -4.626315789473685,
+      "max_entry_cost": 0.6,
+      "fees_entry": 32.8,
+      "fees_exit": 0.0,
+      "crossed_fills": 0,
+      "requotes": 0,
+      "profitable_lanes": 1,
+      "net_ex_best_lane": -183.38,
+      "net_ex_xrp": -173.19,
+      "net_ex_best_window": -229.1,
+      "windows": 33,
+      "by_lane": {
+        "KXBTC15M": {
+          "trades": 6,
+          "wins": 2,
+          "net": -54.69
+        },
+        "KXETH15M": {
+          "trades": 11,
+          "wins": 3,
+          "net": -126.08
+        },
+        "KXSOL15M": {
+          "trades": 8,
+          "wins": 4,
+          "net": 7.58
+        },
+        "KXXRP15M": {
+          "trades": 13,
+          "wins": 6,
+          "net": -2.61
+        }
+      },
+      "by_reason": {
+        "settle": {
+          "trades": 38,
+          "net": -175.8
+        }
+      },
+      "skips": {
+        "cost_band": 16
+      }
+    }
+  },
+  "champion": {
+    "config": "h0.06",
+    "is_eligible": false,
+    "is": {
+      "trades": 0,
+      "wins": 0,
+      "losses": 0,
+      "win_rate": 0.0,
+      "net": 0.0,
+      "pf": 0.0,
+      "avg_pnl": 0.0,
+      "max_entry_cost": 0.0,
+      "fees_entry": 0.0,
+      "fees_exit": 0.0,
+      "crossed_fills": 0,
+      "requotes": 0,
+      "profitable_lanes": 0,
+      "net_ex_best_lane": 0.0,
+      "net_ex_xrp": 0.0,
+      "net_ex_best_window": 0.0,
+      "windows": 0,
+      "by_lane": {},
+      "by_reason": {},
+      "skips": {}
+    }
+  },
+  "brier_is": {
+    "all_in_band": {
+      "rows": 1622,
+      "cb": 0.24371152712302946,
+      "rti": 0.2485951835116262,
+      "ask": 0.2471643649815043,
+      "base_rate": 0.24947964258401362
+    },
+    "diverged_in_band": {
+      "rows": 0,
+      "cb": null,
+      "rti": null,
+      "ask": null,
+      "base_rate": null
+    }
+  },
+  "oos_scored": null
+}

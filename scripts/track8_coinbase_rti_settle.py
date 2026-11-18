@@ -287,6 +287,16 @@ def brier_text(label: str, b: dict) -> str:
             f"({b['rows']} side-rows)")
 
 
+def champion_text(obj: dict) -> str:
+    best = obj["champion"]["is"]
+    if obj["champion"]["is_eligible"]:
+        return f"- IS champion `{obj['champion']['config']}`: {T.scorecard(best)}."
+    if not best["trades"]:
+        return f"- No IS config made a single trade: the trigger never cleared its conditions (bar: >= {MIN_TRADES} trades, PF >= {MIN_PF}, >= {MIN_LANES} lanes)."
+    return (f"- No IS config met the bar (>= {MIN_TRADES} trades, PF >= {MIN_PF}, >= {MIN_LANES} lanes); best traded `{obj['champion']['config']}`: "
+            f"{T.scorecard(best)}.")
+
+
 def hand_off(obj: dict) -> None:
     best, score, ok = obj["champion"]["is"], obj["oos_scored"], obj["champion"]["is_eligible"]
     state = {"status": "OOS scored" if score else ("IS eligible; OOS pending" if ok else "IS fail; OOS unspent"),
@@ -303,9 +313,7 @@ def hand_off(obj: dict) -> None:
              f"- Trigger funnel (IS): {tot('rows')} decision rows, {tot('diverged_rows')} with |divergence| >= {DIVERGENCE_BPS:g} bps in "
              f"{tot('diverged_windows')} lane-windows; rows also clearing each hurdle: "
              + ", ".join(f"{h} {sum(v['rows_clearing_hurdle'][h] for v in f.values())}" for h in (config_name(x) for x in HURDLES)) + ".",
-             (f"- IS champion `{obj['champion']['config']}`: {T.scorecard(best)}." if ok else
-              f"- No IS config met the bar (>= {MIN_TRADES} trades, PF >= {MIN_PF}, >= {MIN_LANES} lanes); best traded `{obj['champion']['config']}`: "
-              f"{T.scorecard(best)}."),
+             champion_text(obj),
              "- All configs: " + "; ".join(f"{c} {v['is']['trades']} trades, ${v['is']['net']:+.2f}" for c, v in obj["configs"].items()) + ".",
              "- Controls (same rule with no divergence trigger, IS only, never eligible for OOS): "
              + "; ".join(f"{c} {v['trades']} trades, ${v['net']:+.2f}, PF {v['pf']:.2f}, {v['profitable_lanes']} lanes" for c, v in obj["controls_is"].items()) + ".",

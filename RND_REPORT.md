@@ -556,3 +556,14 @@ OOS, the four champions made 0–3 trades each, net −$14.29 to $0.00 (ledger a
 - IS bar missed; OOS left sealed, no ledger entry.
 - The 'sealed' OOS slice is sealed per family in the ledger only: earlier families on this tape (Tracks 2B-2D, F2 variants) already looked at overlapping late windows.
 - Receipt: `data/track7-cross-lane-iv.json`; no live promotion.
+
+### Track 8 — live-spot vs RTI settlement-average arbitrage
+- 229 windows (137 IS / 92 OOS), cut `1794915000.0`; secs_left 25-90; live spot (the engine's tick `spot`: latest Coinbase-or-Kraken print, venue not recorded) vs the RTI, |divergence| >= 8 bps, p - ask >= hurdle, taker T+1s, hold to settlement.
+- Trigger funnel (IS): 12770 decision rows, 5 with |divergence| >= 8 bps in 3 lane-windows; rows also clearing each hurdle: h0.06 0, h0.09 0, h0.12 0.
+- No IS config made a single trade: the trigger never cleared its conditions (bar: >= 20 trades, PF >= 1.25, >= 2 lanes).
+- All configs: h0.06 0 trades, $+0.00; h0.09 0 trades, $+0.00; h0.12 0 trades, $+0.00.
+- Controls (same rule with no divergence trigger, IS only, never eligible for OOS): control_h0.06_no_divergence_trigger 45 trades, $-253.38, PF 0.62, 1 lanes; control_h0.09_no_divergence_trigger 40 trades, $-325.52, PF 0.49, 1 lanes; control_h0.12_no_divergence_trigger 38 trades, $-175.80, PF 0.68, 1 lanes.
+- IS Brier: all in-band rows: live-spot 0.2437, RTI-spot 0.2486, side's ask 0.2472, base rate 0.2495 (1622 side-rows); divergent rows: no rows.
+- IS bar missed; OOS left sealed, no ledger entry.
+- The 'sealed' OOS slice is sealed per family in the ledger only: earlier families on this tape (Tracks 2B-2D, F2 variants) already looked at overlapping late windows.
+- Receipt: `data/track8-coinbase-rti-settle.json`; no live promotion.

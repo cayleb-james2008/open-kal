@@ -617,6 +617,131 @@
    "brier_oos": null,
    "result_artifact": "data/track7-cross-lane-iv.json",
    "note": "Research only; no live promotion or trading."
+  },
+  "track8_coinbase_rti_settle_arb": {
+   "status": "IS fail; OOS unspent",
+   "champion": "h0.06",
+   "is": {
+    "trades": 0,
+    "wins": 0,
+    "losses": 0,
+    "win_rate": 0.0,
+    "net": 0.0,
+    "pf": 0.0,
+    "avg_pnl": 0.0,
+    "max_entry_cost": 0.0,
+    "fees_entry": 0.0,
+    "fees_exit": 0.0,
+    "crossed_fills": 0,
+    "requotes": 0,
+    "profitable_lanes": 0,
+    "net_ex_best_lane": 0.0,
+    "net_ex_xrp": 0.0,
+    "net_ex_best_window": 0.0,
+    "windows": 0,
+    "by_lane": {},
+    "by_reason": {},
+    "skips": {}
+   },
+   "is_eligible": false,
+   "oos_spent": false,
+   "oos": null,
+   "payoff_ece": null,
+   "strict_gate": null,
+   "rolling_edge_bar": null,
+   "funnel": {
+    "KXBTC15M": {
+     "windows": 137,
+     "rows": 2883,
+     "diverged_rows": 0,
+     "diverged_windows": 0,
+     "median_abs_div_bps": 0.5746952463336896,
+     "rows_clearing_hurdle": {
+      "h0.06": 0,
+      "h0.09": 0,
+      "h0.12": 0
+     },
+     "skips": {
+      "no_quote": 5827,
+      "no_live_spot": 32,
+      "no_rti_state": 131,
+      "stale_quote": 169
+     }
+    },
+    "KXETH15M": {
+     "windows": 137,
+     "rows": 3056,
+     "diverged_rows": 1,
+     "diverged_windows": 1,
+     "median_abs_div_bps": 1.327180378866144,
+     "rows_clearing_hurdle": {
+      "h0.06": 0,
+      "h0.09": 0,
+      "h0.12": 0
+     },
+     "skips": {
+      "no_quote": 5561,
+      "no_rti_state": 225,
+      "no_live_spot": 41,
+      "stale_quote": 159
+     }
+    },
+    "KXSOL15M": {
+     "windows": 137,
+     "rows": 3330,
+     "diverged_rows": 4,
+     "diverged_windows": 2,
+     "median_abs_div_bps": 1.4007564084606017,
+     "rows_clearing_hurdle": {
+      "h0.06": 0,
+      "h0.09": 0,
+      "h0.12": 0
+     },
+     "skips": {
+      "no_quote": 5206,
+      "no_rti_state": 235,
+      "no_live_spot": 112,
+      "stale_quote": 159
+     }
+    },
+    "KXXRP15M": {
+     "windows": 137,
+     "rows": 3501,
+     "diverged_rows": 0,
+     "diverged_windows": 0,
+     "median_abs_div_bps": 1.0448229025183942,
+     "rows_clearing_hurdle": {
+      "h0.06": 0,
+      "h0.09": 0,
+      "h0.12": 0
+     },
+     "skips": {
+      "no_quote": 5014,
+      "no_rti_state": 256,
+      "no_live_spot": 46,
+      "stale_quote": 225
+     }
+    }
+   },
+   "brier_is": {
+    "all_in_band": {
+     "rows": 1622,
+     "cb": 0.24371152712302946,
+     "rti": 0.2485951835116262,
+     "ask": 0.2471643649815043,
+     "base_rate": 0.24947964258401362
+    },
+    "diverged_in_band": {
+     "rows": 0,
+     "cb": null,
+     "rti": null,
+     "ask": null,
+     "base_rate": null
+    }
+   },
+   "brier_oos": null,
+   "result_artifact": "data/track8-coinbase-rti-settle.json",
+   "note": "Research only; no live promotion or trading."
   }
  },
  "state": {

@@ -248,6 +248,15 @@ class Evaluation(unittest.TestCase):
         got = M.brier_rows({"A": pack}, lambda p: np.ones(2, bool))
         self.assertEqual(got["rows"], 2)                                                       # only row 0 (YES and NO sides)
 
+    def test_the_report_says_plainly_when_nothing_traded(self):
+        idle = {"trades": 0, "wins": 0, "losses": 0, "win_rate": 0.0, "net": 0.0, "pf": 0.0, "profitable_lanes": 0,
+                "net_ex_xrp": 0.0, "max_entry_cost": 0.0, "crossed_fills": 0}
+        text = M.champion_text({"champion": {"config": "h0.06", "is_eligible": False, "is": idle}})
+        self.assertIn("No IS config made a single trade", text)
+        self.assertNotIn("best traded", text)
+        some = M.champion_text({"champion": {"config": "h0.09", "is_eligible": False, "is": {**idle, "trades": 6, "net": -4.0, "pf": 0.5}}})
+        self.assertIn("best traded `h0.09`", some)
+
     def test_the_is_bar_is_twenty_trades_pf_and_two_lanes(self):
         ok = {"trades": 20, "pf": 1.25, "profitable_lanes": 2, "crossed_fills": 0}
         self.assertTrue(M.eligible(ok))
