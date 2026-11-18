@@ -88,9 +88,20 @@
     "3c1a1b6 Tracks 4A/4B: calibrated settlement logistic and final-minute Asian maker bid, with sim_core entry_limit"
    ],
    "note": "2 new commit(s)"
+  },
+  {
+   "at": "2026-11-18 07:51 EST",
+   "head": "068295cc4b64f4d7281db2721cb9024bc8f74bcb",
+   "new_commits": 3,
+   "commits": [
+    "068295c Track 5: compare prices on the 0.001 grid, not float32 differences",
+    "9914ed6 Track 5 IS result: two-sided spread market making fails the IS bar, OOS look unspent",
+    "d28f0ec Track 5: sim_core.run_two_sided_mm (two post-only legs, independent print-through, lone-leg taker exit) and the spread market-making sweep"
+   ],
+   "note": "3 new commit(s)"
   }
  ],
- "updated_at": "2026-11-18 07:16 EST",
- "head": "514b3fea6a9e67b7e1ed5d879e43e9d4b665cf4b",
+ "updated_at": "2026-11-18 07:51 EST",
+ "head": "068295cc4b64f4d7281db2721cb9024bc8f74bcb",
  "branch": "origin/rnd/alpha-evolve"
 }
