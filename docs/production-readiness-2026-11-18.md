@@ -51,10 +51,13 @@ path 0.0076ms, with the HTTP client booby-trapped to raise on construction.
   `allow == True` verdict in the recorded ticks.
 
 **The score on today's slice is 2 trades, -$38.13, and the gate fails on the
-20-trade floor.** The true-L2 depth exists in only 16–20 of the 81 forward
-windows per lane, so the sample is not there yet. Both triggers were denied by
-the recorded gate verdict — the same shield the R&D holdout measured (12/12
-losing trades denied, -$99.54).
+20-trade floor.** The true-L2 depth exists in only 16–22 of the 81 forward
+windows per lane, so the sample is not there yet.
+
+With `--gate-filter` the same two triggers are **denied by the recorded gate
+verdict** — 0 allowed, 2 denied, 0 without an opinion — and the filtered score
+is 0 trades. That is the same shield the R&D holdout measured (12/12 losing
+trades denied, -$99.54), reproduced on the settlement program.
 
 One correction worth recording: `bounded_sweep.summarize` reads a row's `entry`
 as the YES-side price, which is what the research sweeps write, while the

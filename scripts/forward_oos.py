@@ -597,7 +597,10 @@ def score_student_t_l2(since: float, until: float | None = None,
     windows: set[float] = set()
     pools_ok: dict[str, int] = {}
     events = 0
-    gate_counts = {"allowed": 0, "denied": 0, "no_opinion": 0}
+    # The gate's opinion on each trade is only read when the filter asks for it:
+    # an unfiltered score has no business scanning the recorded verdicts.
+    gate_counts: dict = {"evaluated": False} if not gate_filter else \
+        {"allowed": 0, "denied": 0, "no_opinion": 0}
     for name, lane in lanes.items():
         closes = {float(m["close"]) for m in lane.meta.values()
                   if float(m["close"]) >= since
@@ -617,10 +620,12 @@ def score_student_t_l2(since: float, until: float | None = None,
                 skips[res.reason] += 1
                 continue
             windows.add(float(trig["close"]))
-            allow = _gate_allow(by_ticker, by_series, name, str(trig["ticker"]),
-                                float(trig["ts"]), gate_min_confidence)
-            gate_counts["allowed" if allow is True else
-                        "denied" if allow is False else "no_opinion"] += 1
+            allow = None
+            if gate_filter:
+                allow = _gate_allow(by_ticker, by_series, name, str(trig["ticker"]),
+                                    float(trig["ts"]), gate_min_confidence)
+                gate_counts["allowed" if allow is True else
+                            "denied" if allow is False else "no_opinion"] += 1
             rows.append({
                 "lane": name, "ticker": trig["ticker"], "tid": trig["tid"],
                 "ts": float(res.order_ts), "fill_ts": float(res.legs[0].ts),
