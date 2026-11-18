@@ -6,7 +6,7 @@ set computed on a one-second grid. Replacing it means bumping VERSION; every can
 """
 from __future__ import annotations
 
-VERSION = "provisional-1"
+VERSION = "provisional-2"
 
 # name -> (signed, description)
 FEATURES: dict[str, tuple[bool, str]] = {
@@ -29,6 +29,7 @@ FEATURES: dict[str, tuple[bool, str]] = {
     "quote_age":  (False, "seconds since the book row in force was written"),
     "secs":       (False, "seconds left in the window"),
     "hod":        (False, "hour of day, fractional, local time"),
+    "lane":       (False, "0 BTC, 1 ETH, 2 SOL, 3 XRP"),
 }
 NAMES = list(FEATURES)
 SIGNED = [n for n, (s, _) in FEATURES.items() if s]

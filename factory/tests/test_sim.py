@@ -140,6 +140,18 @@ class Mechanics(unittest.TestCase):
         want = q * (0.50 - 0.43) - sim.fee(0.43, q) - sim.fee(0.50, q)                    # sold at the bid after the rally, though YES lost
         self.assertAlmostEqual(pnl[0], want, places=9)
 
+    def test_the_exit_price_is_the_book_a_latency_after_the_decision_not_at_the_decision(self):
+        n = 781
+        bid = np.full(n, 0.40); ask = np.full(n, 0.43)
+        bid[100] = 0.50                                                                   # a one-second spike that triggers the take-profit
+        bid[101:] = 0.46                                                                  # the price the exit order actually meets, five seconds on
+        ask = bid + 0.03
+        df = make_df(1, flat=(0.4, 0.43), y=0).with_columns(pl.Series("bid", bid), pl.Series("ask", ask), pl.lit(1.0).cast(pl.Float32).alias("sig"))
+        pnl, win, row, qty = sim.simulate(from_frame(df, NAMES), genome(secs_le=840.0, tp=0.05, stake=0.1))
+        q = int(qty[0])
+        cost = 0.43                                                                       # bid 0.40 + 0.03 at the arrival row
+        self.assertAlmostEqual(pnl[0], q * (0.46 - cost) - sim.fee(cost, q) - sim.fee(0.46, q), places=9)
+
     def test_stop_needs_two_confirming_seconds_and_a_single_wick_does_not_trigger_it(self):
         n = 781
         bid = np.full(n, 0.40); ask = np.full(n, 0.43)
