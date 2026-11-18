@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-18T13:00:19-05:00",
+ "updated": "2026-11-18T14:03:43-05:00",
  "goal": "24/7 forward-OOS gate, live compounding, trailing drawdown breaker.",
  "state": {
   "decision": "waiting",
@@ -20,11 +20,24 @@
  },
  "forward_oos": {
   "start_ts": 1794909600,
-  "trades": null,
-  "net": null,
-  "pf": null,
-  "payoff_ece": null,
-  "gate": null,
+  "trades": 69,
+  "net": -77.45,
+  "pf": 0.4931,
+  "payoff_ece": 0.3714,
+  "gate": {
+   "pass": false,
+   "reasons": [
+    "forward net $-77.45 <= 0",
+    "forward PF 0.493 < 1.15",
+    "payoff ECE 0.3714 > 0.08"
+   ],
+   "lanes_profitable": 2,
+   "mode": "frozen",
+   "min_trades": 20,
+   "required_pf": 1.15,
+   "required_ece": 0.08,
+   "min_lanes": 2
+  },
   "artifact": "data/forward-oos.json"
  },
  "afternoon_audit": {
