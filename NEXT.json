@@ -744,12 +744,13 @@
    "note": "Research only; no live promotion or trading."
   },
   "track9_coinbase_lead_lag_premise": {
-   "status": "pre-registered (v2); NOT RUN; waiting for >= 288 eligible windows (about 2026-11-21)",
+   "status": "pre-registered (v3); NOT RUN; no spot_ticks data read; waiting for >= 288 eligible windows (about 2026-11-21)",
    "spec": "scripts/track9_prereg.json",
-   "spec_sha256": "66bc153252603d9cb4d1aeb461c201ac8b6538e3c35fdc8044a6cb21d084354b",
+   "spec_sha256": "c4329276e95f6406e1bd0c92a1954b994cd5d4a60691139e3da4c3e69edf0758",
    "prereg_commits": {
     "v1": "81927da6aee5bdbaf0ecdc338f7f335102574285",
-    "v2_amendment": "b8ea5e0538144c64c280d81d401f354d6a17c5ce"
+    "v2_amendment": "b8ea5e0538144c64c280d81d401f354d6a17c5ce",
+    "v3_amendment_clock_basis": "6b236b9a4be6e841fd05ffe96c7b44f4bc9a97c2"
    },
    "run_when": "on or after 2026-11-21 (three full days of spot_ticks), then once",
    "steps": [
@@ -761,7 +762,21 @@
    "decision": "lead_lag AND funnel AND brier must all pass on IS; only then may a sweep be designed, on IS, with OOS sealed. Otherwise the premise is closed.",
    "prior_to_beat": "no taker edge at 5 s or longer delay (23.5k windows); market Brier 0.004 vs 0.039 for public feeds in the final 60 s",
    "note": "Premise test only, not a trading track. No spot_ticks data has been read.",
-   "RETENTION_RISK": "openkal Store.prune() (called only when the engine process shuts down) deletes spot_ticks rows older than 3 days. A restart on or after about 2026-11-21 deletes 2026-11-18's rows, and the 288-window gate becomes unreachable. The exporter therefore ACCUMULATES: each run appends only rows above its rowid watermark, so exported rows survive a later prune. Run it daily and before any engine restart, or ask Session 1 to raise keep_s for spot_ticks."
+   "RETENTION_RISK": "openkal Store.prune() (called only when the engine process shuts down) deletes spot_ticks rows older than 3 days. A restart on or after about 2026-11-21 deletes 2026-11-18's rows and the 288-window gate becomes unreachable. The exporter therefore ACCUMULATES: each run appends only rows above its rowid watermark, so exported rows survive a later prune. Run it daily and before any engine restart, or ask Session 1 to raise keep_s for spot_ticks. The archive then holds the only copy of pruned rows, in a directory Session 1 rebuilds.",
+   "clock_basis": "spot_ticks.ts = host time.time() at the Coinbase print callback; index ts = Kalshi frame received_at (Kalshi-side clock) else host time. A pass means Coinbase as our host saw it leads the RTI as Kalshi stamped it.",
+   "exporter_scale": "synthetic 3,000,000-row WAL table: 10 s, 1.07 GB peak, 1 s for a run with nothing new. Not measured on the real table.",
+   "owner_may_veto_before_data": [
+    "Brier as a third gate (the brief asked for lead-lag plus funnel)",
+    "thresholds: S >= 0.10, 3 of 4 lanes, 100 events in 40 windows",
+    "primary S = A_1 + A_2, so a pure 3 s lag is invisible",
+    "Brier uses two-sided-quote rows only, so it is not comparable with the 0.004 vs 0.039 prior"
+   ],
+   "in_code_not_in_the_registered_file": [
+    "window edges count as gaps in the eligibility rule",
+    "validity guard: fewer than 30 bootstrap blocks or windows never passes",
+    "one run at a time (lock)"
+   ],
+   "unverified": "whether 288 eligible windows is reachable: every lane needs >= 30 Coinbase prints with no gap over 3 s in the last 150 s of each window; --check-only will show it"
   }
  },
  "state": {
