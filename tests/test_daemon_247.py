@@ -148,6 +148,21 @@ class GitSyncTests(unittest.TestCase):
                         "working tree untouched")
 
 
+class EvaluateSlotTests(unittest.TestCase):
+    def test_a_spent_slot_is_not_retried_on_every_loop(self) -> None:
+        # A restart mid-check leaves slot_attempt set and last_eval_slot behind; the
+        # old early return left the hourly branch looking due forever, so every 30s
+        # loop republished "no artifact" and its report commit.
+        slot = datetime(2026, 11, 18, 12, 0)
+        state = {"slot_attempt": {"slot": slot.isoformat()}, "events": []}
+        with mock.patch.object(D, "live_position_open", return_value=False), \
+                mock.patch.object(D, "save"), mock.patch.object(D, "log"):
+            out = D.evaluate_slot(slot, state)
+        self.assertIsNone(out, "a spent slot has no new artifact to return")
+        self.assertEqual(state["last_eval_slot"], slot.isoformat(),
+                         "the slot is marked spent so the next loop does not retry it")
+
+
 class ForbiddenPathTests(unittest.TestCase):
     def test_table(self) -> None:
         cases = {

@@ -256,7 +256,13 @@ def evaluate_slot(slot: datetime, state: dict, args=None) -> dict | None:
         log(f"forward check {iso}: deferred, live position open")
         return DEFERRED
     if (state.get("slot_attempt") or {}).get("slot") == iso:
+        # A restart in the middle of a check leaves slot_attempt set but
+        # last_eval_slot behind. Without this the hourly branch looks due on every
+        # loop and republishes a "no artifact" report (and a report commit) until
+        # the hour rolls. The slot is spent; record that and let the loop sleep.
         log(f"slot {iso} already attempted; not repeating")
+        state["last_eval_slot"] = iso
+        save(state)
         return None
     started = time.time()
     state["slot_attempt"] = {"slot": iso, "started": started, "since": int(SINCE)}
