@@ -12,6 +12,19 @@
 # and there is never a window with no tape.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# One whole rebuild at a time. `scripts/book_cache.py` takes its own lock around the
+# export, but that leaves the other three steps unprotected: on 2026-11-18 at 06:00:36
+# the daemon's scheduled rebuild started while a hand-run one was mid-book, and the
+# two scanned the 31 GB tape through refresh_markets_ready, evolve cache and
+# subsec_discovery at the same time. The lock covers the whole chain, so the second
+# invocation leaves the tape alone and exits 0 -- the caller should not read a skip
+# as a failed rebuild. flock releases on process death, so a killed rebuild cannot
+# leave a stale lock behind.
+exec 9>data/.rebuild-cache.lock
+if ! flock -n 9; then
+  echo "=== rebuild already in progress $(date -Iseconds) -- skipping ==="
+  exit 0
+fi
 # The market metadata first: a window that recorded on the tape but has no settled
 # market record has no strike and no outcome, so the study would silently skip it.
 echo "=== market metadata $(date -Iseconds) ==="
