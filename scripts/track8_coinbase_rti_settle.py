@@ -4,7 +4,7 @@
 Kalshi's KX*15M settle on the 60-second average of the CF Benchmarks RTI. In the final 90 seconds, `k` of those
 60 fixings are already locked (the venue's `accum`/`k`, read through `AsianRTI`, which refuses a stale or inconsistent
 accumulator), and the remaining `n = 60 - k` are priced from the live spot: the engine's tick `spot`, the latest print
-from the lane's feed venues at or before the decision second.
+from Coinbase, Kraken or the REST backstop at or before the decision second (never an index print; venue not recorded).
     mean = (locked_sum + spot * n) / 60
     variance = (n / 60)^2 * sigma^2 * n / 3                       (secs_left <= 60)
              = sigma^2 * (secs_left - 40)                         (secs_left > 60: the window has not opened; same as AsianRTI)
@@ -240,7 +240,7 @@ def run_is() -> dict:
            "frozen_input_sha256": pin["sha256"],
            "rule": {"secs_left": [float(SECS[-1]), float(SECS[0])], "divergence_bps": DIVERGENCE_BPS, "hurdles": list(HURDLES),
                     "ask_band": [ASK_LO_M / 1000, ASK_HI_M / 1000], "entry": "taker, T+1s", "exit": "settle", "qty": QTY,
-                    "spot_source": "ticks.npz `spot`: the engine's latest print from the lane's feed venues (Coinbase or Kraken; venue not recorded)",
+                    "spot_source": "ticks.npz `spot` = engine slot.spot: the latest print from Coinbase, Kraken or the REST backstop (never an index print); the venue is not recorded",
                     "eligibility": [MIN_TRADES, MIN_PF, MIN_LANES]},
            "funnel": funnel(packs), "configs": configs, "controls_is": controls, "champion": champion,
            "brier_is": {"all_in_band": brier_rows(packs, lambda p: np.ones(len(p["t"]), bool)),
@@ -308,7 +308,7 @@ def hand_off(obj: dict) -> None:
     f = obj["funnel"]
     tot = lambda k: sum(v[k] for v in f.values())
     lines = [f"- {obj['windows']} windows ({obj['is_windows']} IS / {obj['oos_windows']} OOS), cut `{obj['cut']}`; secs_left 25-90; live spot "
-             f"(the engine's tick `spot`: latest Coinbase-or-Kraken print, venue not recorded) vs the RTI, |divergence| >= {DIVERGENCE_BPS:g} bps, "
+             f"(the engine's tick `spot`: latest Coinbase, Kraken or REST-backstop print, venue not recorded) vs the RTI, |divergence| >= {DIVERGENCE_BPS:g} bps, "
              f"p - ask >= hurdle, taker T+1s, hold to settlement.",
              f"- Trigger funnel (IS): {tot('rows')} decision rows, {tot('diverged_rows')} with |divergence| >= {DIVERGENCE_BPS:g} bps in "
              f"{tot('diverged_windows')} lane-windows; rows also clearing each hurdle: "
