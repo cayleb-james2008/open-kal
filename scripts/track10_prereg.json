@@ -1,0 +1,104 @@
+{
+  "name": "champion_rescore",
+  "version": 1,
+  "registered": "2026-11-18T12:00:00-05:00",
+  "status": "pre-registered; no trade of this track has been scored; the pinned tape and the pools for it are not built yet; the commit time is the authority for the order of events",
+  "question": "Do the old champion families keep an edge on the canonical simulator once the order arrives 1, 2 or 5 seconds after the trigger and every taker leg pays the exchange fee, on windows no family was chosen or looked at on?",
+  "owner_request": "Re-score every old champion family (F2_taker_1s, the XRP carry, the 0.84 cost band, the energy/opposite-side fade) on the canonical simulator at 1s, 2s and 5s latency with taker fees. Use walk-forward with Holm correction. Keep a ledger of which windows each family has already seen. A null result is a success.",
+  "families": {
+    "F2_taker_1s": {
+      "scored": true,
+      "defined_by": "scripts/f2_structural.py frozen rule, the verdict candidate in data/strategy-verdict.json (the live program)",
+      "trigger": "f2_structural.frozen_mask(pool, 'taker') on the causal pool, then bounded_sweep.pick with cooldown 90 s and at most 3 per window: |z| >= 0.30, signed flow >= 0.10, signed revision >= 0.0, spot-to-strike delta >= 3 bp, trigger-time side cost in [0.25, 0.60], seconds left in [180, 780]",
+      "side": "YES iff z > 0 (spot at or above strike), else NO",
+      "entry": "taker, at arrival = trigger + latency; arrival cost must be in [0.25, 0.62]",
+      "exits": "maker take-profit entry + 0.05 ($0 fee); stop 0.07 confirmed for 2 s, exit order arrives one latency later and pays the taker fee; time barrier 90 s after the fill, taker exit one latency later; anything else settles",
+      "excluded": "the calibrated-probability gate (decide() filter): it is a second fitted layer on about 100 triggers, so nothing here refits and the family is the unfiltered frozen rule"
+    },
+    "zobi_xrp_carry": {
+      "scored": false,
+      "defined_by": "z_obi_flow (data/strategy-verdict.prev-rejected.json), XRP lane, held to settlement: the 11-16 trade that lost -$44.55 (55 contracts at 0.81, take-profit and both scratches missed, settled NO)",
+      "reason_not_scored": "the profile buys at up to 0.84 and sim_core.run_trade raises on any cost ceiling above 0.62, which is also the owner's standing rule and openkal/readiness.MAX_NAKED_COST; scoring only its at-or-below-0.62 part would be a different family"
+    },
+    "zobi_band_084": {
+      "scored": false,
+      "defined_by": "z_obi_flow, all four lanes, entry cost band [0.15, 0.84], shipped exits (maker +5c take-profit, 45 s barrier, maker scratch, carry the binary)",
+      "reason_not_scored": "same as zobi_xrp_carry: the 0.15-0.84 band is above the canonical 0.62 ceiling"
+    },
+    "passive_mm_fade": {
+      "scored": true,
+      "assumption": "the owner's 'energy/opposite-side fade' is not defined anywhere in the repository or in any session transcript; passive_mm_fade is taken as the nearest family: it fades an extreme print-flow skew by taking the opposite side, and its IS champion is frozen in data/passive-mm-fade-is.json. The owner is asked to confirm or name another.",
+      "defined_by": "data/passive-mm-fade-is.json champion flow_thr2_vq0-1_tp0.06_scratch_hold180 (OOS look already spent: 46 trades, -$57.50, PF 0.63)",
+      "trigger": "z-score of the pool's 10 s signed print flow with the per-lane mean and std frozen in that file's z_obi_norm; |z_obi| >= 2.0; no volatility restriction (vq 0-1); the faded side's trigger-time cost (NO: 1 - ask, YES: bid) at most 0.55; bounded_sweep.pick cooldown 90 s, at most 3 per window; flow above its mean buys NO, below buys YES",
+      "entry": "taker (converted from the original resting bid, as the owner asked for taker fees), at arrival = trigger + latency; arrival cost at most 0.55",
+      "exits": "maker take-profit entry + 0.06 ($0 fee); time barrier 180 s after the fill with a maker scratch ($0 fee, arrives one latency later); an unfilled scratch settles",
+      "conversion_note": "the original is a maker strategy; every entry here crosses the spread and pays the taker fee, so a loss here says the signal does not survive paying for liquidity, not that the maker version fails"
+    }
+  },
+  "latencies_s": [1, 2, 5],
+  "latency_model": "the scenario latency is passed to sim_core.run_trade as lag_s, so it delays the entry order and every exit leg that run_trade sends after a decision (stop, barrier, take-profit, scratch), and is used for the quote that sizes the stake. The trigger set is identical across latencies; only the arrival price, the fills and the exits change.",
+  "fees": "sim_core.taker_fee on every taker leg (exact Decimal, rounded up to the cent); maker legs cost nothing; no fee is computed outside sim_core",
+  "canonical_rules": "openkal/sim_core.py unchanged: arrival at least 1 s after the trigger, passive legs need 50 contracts printed at or through the limit, NO ask = 1 - yes_bid, entry cost at most 0.62, no look-ahead; stake 65.58 USD sized per trade with sim_core.stake_qty, at most 50 contracts",
+  "tape": {
+    "pin": "data/track10-tape: a checked snapshot of the live evolve cache (track2c.snapshot_cache, digests in pin.json), read-only copy",
+    "windows": "distinct settled window closes with a book in some lane (track4_common.window_closes); a market without a book is not a window",
+    "pools": "data/track10-pool/slim_<LANE>.npz, built by scripts/rnd_pool_build.py's causal-spot code on the pinned tape (last index print at or before the row); the older data/rnd-pool is left as it is because earlier receipts depend on it"
+  },
+  "freeze": {
+    "rule": "a window is post-freeze when its close is after the last settled window close of data/frozen-cache, the cache every family's sweep, selection and OOS look was run on; every other window is pre-freeze",
+    "frozen_cache_windows": 168,
+    "freeze_close_epoch": 1794942000,
+    "freeze_close": "2026-11-17T14:00:00-05:00",
+    "why_one_cutoff_for_all_families": "F2, z_obi_flow and passive_mm_fade were each frozen on caches that ended no later than the frozen cache, and every look any of them took (IS grids, OOS looks, parity runs, variant sweeps) was inside it; treating all pre-freeze windows as seen by all four is the conservative reading. The per-family evidence is written to the window ledger.",
+    "live_note": "F2 has traded live since 2026-11-17 14:41 on post-freeze windows. That is forward trading, not selection, and is not used here."
+  },
+  "ledger": {
+    "file": "data/track10-window-ledger.json",
+    "per_family": "for each family: the pre-freeze windows (seen: selection, IS, OOS look, parity or variant runs, each with the file or ledger line that shows it), the post-freeze windows (unseen before this run), and which of them this run scored",
+    "oos_ledger": "every scored cell is appended to data/oos-ledger.jsonl as family 'rescore10:<family>@<latency>s' with rescore true and a reason, after a 'started' line, and never under a family's own name"
+  },
+  "walk_forward": {
+    "nothing_refit": "all thresholds, the fade's z-score normaliser and every exit are frozen as above, so folds measure stability over time and cannot fit anything",
+    "folds": "the pre-freeze windows in order split into 5 folds of equal window count (the remainder goes to the earliest folds), then the post-freeze windows as fold 6",
+    "reported": "per cell and fold: trades, win rate, net, profit factor",
+    "role": "folds 1-5 are windows the family was chosen on or looked at, so they favour the family; they are descriptive. Only fold 6 is out of sample, and only fold 6 is tested."
+  },
+  "test": {
+    "cell": "one scored family at one latency; trades from every post-freeze window of the pinned tape, all lanes pooled",
+    "statistic": "mean net USD per trade after fees",
+    "null": "mean <= 0",
+    "p_value": "one-sided percentile bootstrap resampling post-freeze window closes (all of them, trade-free windows included) with replacement; draws 10000, seed 0; mean of a draw is its summed net over its summed trades, and a draw with no trades counts as mean 0; p = (1 + number of draws with mean <= 0) / (draws + 1)",
+    "no_trades": "a cell with no post-freeze trades has p = 1"
+  },
+  "holm": {
+    "alpha": 0.05,
+    "m": 12,
+    "meaning": "4 families x 3 latencies; the 6 cells of the two families that cannot be scored enter with p = 1 so the correction does not loosen because they could not be run",
+    "procedure": "sort the 12 p-values ascending; reject the i-th (1-based) if p <= alpha / (12 - i + 1) and every earlier one was rejected"
+  },
+  "verdict": {
+    "edge_confirmed": "Holm-rejected and at least 30 post-freeze trades",
+    "no_edge_shown": "not Holm-rejected with at least 30 post-freeze trades",
+    "underpowered": "fewer than 30 post-freeze trades: neither a pass nor a refutation",
+    "not_scored": "the two families above",
+    "no_promotion": "this track promotes nothing: a confirmed cell would justify a pre-registered IS/OOS design for that family, not arming"
+  },
+  "descriptive_only": [
+    "pre-freeze folds 1-5 and the pre-freeze pooled score per cell",
+    "net and profit factor against latency for each family (the decay curve)",
+    "skip counts by reason, so a latency that only changes the fill rate is visible",
+    "for the two unscored families: nothing is computed"
+  ],
+  "known_before_registering": [
+    "F2 taker rerun on sim_core at 1 s, legacy pools: IS 61 trades -$74.14 PF 0.46, OOS 39 trades -$87.04 PF 0.28 (RND_REPORT, sim_core_parity)",
+    "passive_mm_fade frozen champion: IS 43 trades +$69.00 PF 2.55 (eligible), OOS 46 trades -$57.50 PF 0.63, as a maker strategy",
+    "the live F2 record in the README (20 wins, 0 losses, +$33.13) comes from gap-rule exits the simulator does not model and is a different measurement",
+    "the frozen cache holds 168 settled windows (the 1276 in its markets.json counts markets, many without a book); the live cache holds 238 today, so about 70 post-freeze windows and, at the frozen-window F2 rate of 109 triggers per 168 windows, roughly 45 F2 triggers and fewer for the fade",
+    "an independent backtest on 23.5k windows found no taker edge at a 5 s or longer delay"
+  ],
+  "expected": "no cell is edge_confirmed. A null here means the old champions do not survive realistic latency on fresh windows; underpowered cells mean more windows are needed, and the harness is rerunnable on a later pin (the decision is always made on the latest pin's post-freeze windows)",
+  "owner_questions": [
+    "which family is the 'energy/opposite-side fade'? passive_mm_fade was assumed",
+    "may a diagnostic score the 0.62-0.84 band outside sim_core's ceiling? Until the owner says so the two z_obi_flow families stay unscored"
+  ]
+}
