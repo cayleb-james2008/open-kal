@@ -243,10 +243,17 @@ class Track2D(unittest.TestCase):
             self.assertEqual([(r["family"], r["status"]) for r in map(json.loads, ledger.splitlines())],
                              [(C.FAMILY, "started"), (C.FAMILY, "scored"),
                               (D.FAMILY, "started"), (D.FAMILY, "scored")])
-            C.LEDGER.write_text(ledger + '{"family":')
+            for tail in ('{"family":', '{}\n'):
+                C.LEDGER.write_text(ledger + tail)
+                with self.assertRaisesRegex(RuntimeError, "malformed OOS ledger"):
+                    C.publish_results(c, d)
+            git("add", "--", "data/oos-ledger.jsonl")
+            git("commit", "--amend", "--no-edit")
+            C.LEDGER.write_text(ledger)
             with self.assertRaisesRegex(RuntimeError, "malformed OOS ledger"):
                 C.publish_results(c, d)
-            C.LEDGER.write_text(ledger)
+            git("update-ref", "HEAD", c_only)
+            git("read-tree", c_only)
             with patch.object(C, "time", SimpleNamespace(sleep=lambda _: hook.unlink())):
                 C.publish_with_retry(c, d)
             self.assertEqual(git("rev-parse", "HEAD^"), c_only)

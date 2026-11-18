@@ -623,6 +623,17 @@ def update_handoff(obj):
         atomic_text(RND_REPORT, report.rstrip() + "\n\n" + "\n".join(lines) + "\n")
 
 
+def validate_ledger_for_publication(payload):
+    try:
+        for line in payload.splitlines():
+            if line.strip():
+                row = json.loads(line)
+                if not isinstance(row, dict) or not isinstance(row.get("family"), str) or not row["family"]:
+                    raise ValueError("expected a named research family")
+    except ValueError as e:
+        raise RuntimeError("refusing to publish a malformed OOS ledger") from e
+
+
 def publish_results(obj, follow_on=None):
     from scripts import track2d_layagate_l2 as D
 
@@ -637,15 +648,17 @@ def publish_results(obj, follow_on=None):
                               cwd=ROOT, env=env, check=True, text=True, stdout=subprocess.PIPE,
                               timeout=90).stdout.strip()
 
+    def checked_push():
+        commit = git("rev-parse", "HEAD")
+        ledger_path = str(LEDGER.relative_to(ROOT))
+        if git("ls-tree", commit, "--", ledger_path):
+            validate_ledger_for_publication(git("show", f"{commit}:{ledger_path}"))
+        git("push", "origin", f"{commit}:{ref}")
+
     if git("branch", "--show-current") != BRANCH:
         raise RuntimeError("refusing to publish from a different branch")
-    try:
-        if LEDGER.exists():
-            for line in LEDGER.read_text().splitlines():
-                if line.strip() and not isinstance(json.loads(line), dict):
-                    raise ValueError("expected a JSON object")
-    except ValueError as e:
-        raise RuntimeError("refusing to publish a malformed OOS ledger") from e
+    if LEDGER.exists():
+        validate_ledger_for_publication(LEDGER.read_text())
     artifacts = [RND_REPORT, NEXT_JSON, OUT, TRADES, LEDGER, OOS_TRADES]
     c_paths = {str(p.relative_to(ROOT)) for p in artifacts if p.exists()}
     if follow_on is not None:
@@ -667,7 +680,7 @@ def publish_results(obj, follow_on=None):
                 or (prior_subject != subject and not compatible_c_only)):
             raise RuntimeError("refusing to push an unrelated unpublished commit")
         if compatible_c_only:
-            git("push", "origin", f"{ref}:{ref}")
+            checked_push()
             retrying = False
     if set(git("diff", "--cached", "--name-only").splitlines()).difference(paths):
         raise RuntimeError("refusing to commit unrelated staged files")
@@ -677,7 +690,7 @@ def publish_results(obj, follow_on=None):
             raise RuntimeError("refusing to add changes to an unpublished receipt commit")
         git("diff", "--cached", "--check")
         git("commit", "-m", subject)
-    git("push", "origin", f"{ref}:{ref}")
+    checked_push()
     if git("ls-remote", "origin", ref).split()[0] != git("rev-parse", "HEAD"):
         raise RuntimeError("remote R&D ref did not verify")
     print(f"Published {'Track 2C/2D' if follow_on is not None else 'Track 2C'} on {BRANCH}: "
