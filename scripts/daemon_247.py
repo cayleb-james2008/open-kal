@@ -61,11 +61,12 @@ DS.NEXT = NEXT
 
 STOP = {"flag": False}
 
-# Paths the daemon may commit. Everything else stays local: databases, caches,
-# keys and build output must never enter the public repository.
-GIT_PATHS = [".gitignore", "README.md", "ALIVE.md", "requirements.txt", "run.py",
-             "NEXT.json", "data/evening-report.md", "openkal", "scripts", "tests",
-             "dashboard", "docs"]
+# The only files the report sync may commit. This is a report committer, not a
+# working-tree committer: on 2026-11-18 at 12:00 the directory allowlist swept 14
+# source files into a "chore: sync report" commit while a feature was in progress.
+# Source changes are the operator's to review and commit; anything else stays
+# local, and databases, caches, keys and build output never enter the repository.
+GIT_PATHS = ["NEXT.json", "data/evening-report.md"]
 _GIT_LOCK = threading.Lock()
 
 
@@ -92,19 +93,27 @@ def _forbidden(path: str) -> bool:
 
 
 def _git_sync_work(reason: str) -> None:
-    """Stage only source/report paths, audit them, commit and push.
+    """Commit and push only the report files this daemon writes.
 
-    Any refusal resets the index and leaves the working tree untouched; the
-    supervisor's trading loop must never depend on GitHub being reachable.
+    Both the staged diff and the commit are path-limited. A shared working tree
+    means anything the operator has staged (or any source edit in flight) would
+    ride along under a plain `git commit`; a `git commit -- <paths>` leaves the
+    rest of the index and the tree exactly where the operator left them.
+
+    Any refusal resets only the report paths; the supervisor's trading loop must
+    never depend on GitHub being reachable.
     """
     if not (ROOT / ".git").exists():
         return
-    code, _ = DS.run(["git", "-C", str(ROOT), "add", "--", *GIT_PATHS], timeout=60)
+    paths = [p for p in GIT_PATHS if (ROOT / p).exists()]
+    if not paths:
+        return
+    code, _ = DS.run(["git", "-C", str(ROOT), "add", "--", *paths], timeout=60)
     if code != 0:
         log(f"git sync skipped: add rc={code}")
         return
-    code, out = DS.run(["git", "-C", str(ROOT), "diff", "--cached", "--name-only"],
-                       timeout=30)
+    code, out = DS.run(["git", "-C", str(ROOT), "diff", "--cached", "--name-only",
+                        "--", *paths], timeout=30)
     staged = [line.strip() for line in out.splitlines() if line.strip()]
     if code != 0 or not staged:
         return
@@ -121,8 +130,8 @@ def _git_sync_work(reason: str) -> None:
         log(f"git sync REFUSED: forbidden={bad[:5]} oversized={big[:5]}")
         return
     msg = f"chore: sync {reason} · {now().isoformat(timespec='seconds')}"
-    code, out = DS.run(["git", "-C", str(ROOT), "commit", "-m", msg], timeout=90,
-                       env={"GIT_TERMINAL_PROMPT": "0"})
+    code, out = DS.run(["git", "-C", str(ROOT), "commit", "-m", msg, "--", *paths],
+                       timeout=90, env={"GIT_TERMINAL_PROMPT": "0"})
     if code != 0:
         log(f"git sync commit warning: {out[-200:]}")
         return
@@ -650,7 +659,26 @@ def window_report(state: dict, st: dict) -> None:
     }
     DS.atomic_write(NEXT, json.dumps(payload, indent=1, default=str))
     log("report + NEXT.json updated")
+    prune_ws_now()
     git_sync(f"report {state.get('last_window') or 'gate'}")
+
+
+def prune_ws_now() -> None:
+    """Keep the websocket tapes inside their 3-day window.
+
+    The engine's own maintenance thread prunes from the next build onward. This
+    bridge means a long-running engine that predates that build still stops
+    growing `ws_book`/`ws_trade`, without an engine restart: the work is the same
+    chunked operator path, bounded so it can never hold the write lock for long.
+    """
+    code, out = DS.run([str(ROOT / ".venv/bin/python"),
+                        str(ROOT / "scripts" / "prune_ws.py"),
+                        "--budget-s", "15", "--passes", "2"], timeout=120)
+    if code != 0:
+        log(f"ws prune rc={code}: {out[-160:]}")
+        return
+    last = out.strip().splitlines()[-1] if out.strip() else ""
+    log(f"ws prune: {last[:200]}")
 
 
 def write_report(state: dict, note: str) -> None:

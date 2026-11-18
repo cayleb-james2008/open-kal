@@ -45,10 +45,11 @@ class GitSyncTests(unittest.TestCase):
         _git(self.repo, "config", "user.email", "test@example.invalid")
         _git(self.repo, "config", "user.name", "test")
         _git(self.repo, "remote", "add", "origin", str(self.bare))
-        # Mirror the real allowlist: git add fails outright if any GIT_PATHS entry is missing.
+        # Only the report files are seeded from the allowlist; source files exist so
+        # the "unrelated change" cases have something to change and stage.
         for rel in D.GIT_PATHS:
-            self._write(rel + ("/seed.txt" if rel in ("openkal", "scripts", "tests", "dashboard", "docs") else ""), "seed\n")
-        for rel in ("scripts/a.py", "openkal/x.py", "data/evening-report.md"):
+            self._write(rel, "seed\n")
+        for rel in ("scripts/a.py", "openkal/x.py"):
             self._write(rel, "seed\n")
         _git(self.repo, "add", "-A")
         _git(self.repo, "commit", "-q", "-m", "seed")
@@ -84,65 +85,67 @@ class GitSyncTests(unittest.TestCase):
     def _staged(self) -> list[str]:
         return [p for p in _git(self.repo, "diff", "--cached", "--name-only").splitlines() if p]
 
-    def test_allowlisted_change_is_committed_and_pushed_others_are_not(self) -> None:
-        self._write("scripts/a.py", "changed\n")
-        self._write("misc/outside.txt", "not on the allowlist\n")
+    def _committed(self) -> list[str]:
+        return _git(self.repo, "show", "--name-only", "--format=", "HEAD").split()
+
+    def test_report_change_is_committed_and_pushed(self) -> None:
+        self._write("NEXT.json", '{"state": "new"}\n')
+        self._write("misc/outside.txt", "not a report\n")
         before = self._head()
-        D._git_sync_work("test-clean")
-        self.assertNotEqual(self._head(), before, "allowlisted change should be committed")
+        D._git_sync_work("test-report")
+        self.assertNotEqual(self._head(), before, "report change should be committed")
         self.assertEqual(self._remote_head(), self._head(), "commit should reach origin")
-        committed = _git(self.repo, "show", "--name-only", "--format=", "HEAD").split()
-        self.assertEqual(committed, ["scripts/a.py"])
+        self.assertEqual(self._committed(), ["NEXT.json"])
         self.assertTrue((self.repo / "misc" / "outside.txt").exists(), "untouched on disk")
 
-    def test_database_under_openkal_is_refused_and_index_reset(self) -> None:
-        self._write("openkal/state.db", "sqlite-ish\n")
+    def test_unrelated_changes_are_ignored_even_when_staged(self) -> None:
+        # The 2026-11-18 12:00 failure: a report run swept 14 source files into its
+        # commit. Source edits, and anything the operator staged, must stay out.
+        self._write("scripts/a.py", "changed\n")
+        self._write("openkal/x.py", "changed\n")
+        self._write("README.md", "changed\n")
+        self._write("NEXT.json", '{"state": "new"}\n')
+        _git(self.repo, "add", "scripts/a.py")
         before = self._head()
-        D._git_sync_work("test-db")
-        self.assertEqual(self._head(), before, "refused sync must not commit")
-        self.assertEqual(self._staged(), [], "refusal resets the index")
-        self.assertTrue((self.repo / "openkal" / "state.db").exists(), "working tree untouched")
+        D._git_sync_work("test-unrelated")
+        self.assertNotEqual(self._head(), before, "the report itself should commit")
+        self.assertEqual(self._committed(), ["NEXT.json"])
+        self.assertEqual(_git(self.repo, "show", "HEAD:scripts/a.py"), "seed\n",
+                         "the source file's committed content is untouched")
+        self.assertIn("scripts/a.py", self._staged(),
+                      "the operator's staged file is still staged, not committed")
 
-    def test_oversized_file_over_5mb_is_refused(self) -> None:
-        self._write("scripts/big.py", size=5_000_001)
+    def test_only_unrelated_changes_make_no_commit(self) -> None:
+        self._write("scripts/a.py", "changed\n")
+        _git(self.repo, "add", "scripts/a.py")
         before = self._head()
-        D._git_sync_work("test-big")
+        D._git_sync_work("test-quiet")
+        self.assertEqual(self._head(), before, "no report change, so no commit")
+        self.assertIn("scripts/a.py", self._staged())
+
+    def test_oversized_report_is_refused_and_index_reset(self) -> None:
+        self._write("data/evening-report.md", size=5_000_001)
+        before = self._head()
+        D._git_sync_work("test-big-report")
         self.assertEqual(self._head(), before)
-        self.assertEqual(self._staged(), [])
+        self.assertEqual(self._staged(), [], "refusal resets the report paths")
 
-    def test_file_at_exactly_5mb_is_not_refused_as_oversized(self) -> None:
-        self._write("scripts/edge.py", size=5_000_000)
+    def test_report_at_exactly_5mb_is_committed(self) -> None:
+        self._write("data/evening-report.md", size=5_000_000)
         before = self._head()
         D._git_sync_work("test-edge")
         self.assertNotEqual(self._head(), before, "5,000,000 bytes is at the limit, not over it")
 
-    def test_keys_directory_inside_allowlisted_path_is_refused(self) -> None:
-        self._write("scripts/keys/venue.pem", "-----BEGIN-----\n")
+    def test_audit_still_refuses_a_database_if_the_allowlist_is_widened(self) -> None:
+        # Defence in depth for a future edit to GIT_PATHS: the path audit still runs.
+        self._write("openkal/state.db", "sqlite-ish\n")
         before = self._head()
-        D._git_sync_work("test-keys")
-        self.assertEqual(self._head(), before)
-        self.assertEqual(self._staged(), [])
-
-    def test_root_dotenv_is_never_staged(self) -> None:
-        self._write(".env", "KALSHI=redacted\n")
-        before = self._head()
-        D._git_sync_work("test-env-root")
-        self.assertEqual(self._head(), before, ".env is outside GIT_PATHS, so nothing stages")
-
-    def test_data_directory_other_than_report_is_refused(self) -> None:
-        # Only data/evening-report.md is allowed under data/; anything else there is data.
-        self._write("data/day-state.json", "{}\n")
-        before = self._head()
-        D._git_sync_work("test-data")
-        self.assertEqual(self._head(), before)
-
-    def test_nested_dotenv_is_refused(self) -> None:
-        # _forbidden matches path *components*, so a secrets file nested under an
-        # allowlisted directory (scripts/.env) is refused, not just a root one.
-        self._write("scripts/.env", "KALSHI=redacted\n")
-        before = self._head()
-        D._git_sync_work("test-env-nested")
-        self.assertEqual(self._head(), before, "a nested .env must be refused")
+        with mock.patch.object(D, "GIT_PATHS", ["openkal"]):
+            D._git_sync_work("test-db")
+        self.assertEqual(self._head(), before, "refused sync must not commit")
+        self.assertEqual(self._staged(), [], "refusal resets the index")
+        self.assertTrue((self.repo / "openkal" / "state.db").exists(),
+                        "working tree untouched")
 
 
 class ForbiddenPathTests(unittest.TestCase):
@@ -160,6 +163,7 @@ class ForbiddenPathTests(unittest.TestCase):
             "scripts/__pycache__/m.cpython-314.pyc": True,
             "dashboard/node_modules/x.js": True,
             ".remember/now.md": True,
+            "scripts/.env": True,
             "scripts/daemon_247.py": False,
             "openkal/strategy.py": False,
             "tests/test_daemon_247.py": False,
