@@ -1,8 +1,73 @@
 # RND report — rnd/alpha-evolve
 
-Worktree `/home/cayleb/open-kal-rnd`, branch `rnd/alpha-evolve`, based on origin/master `d9fd4ec`. Data: the frozen, hard-linked snapshot `data/frozen-cache/` (books from the 14:07 vintage; `SHA256SUMS.txt`), plus a copy of the live `ticks.npz` (16:20 vintage, hash appended). Nothing under `/home/cayleb/open-kal` was written, signalled or restarted. No `.env`, `keys/`, `canary.py --live` or `restart_flat.sh` was touched, and the prod DB was never opened.
+Worktree `/home/cayleb/open-kal-rnd`, branch `rnd/alpha-evolve`, based on origin/master `d9fd4ec`. Data: the frozen, hard-linked snapshot `data/frozen-cache/` (books from the 14:07 vintage; `SHA256SUMS.txt`), plus a copy of the live `ticks.npz` (16:20 vintage, hash appended). Nothing under `/home/cayleb/open-kal` was written, signalled or restarted. No `.env`, `keys/`, `canary.py --live` or `restart_flat.sh` was touched, and the prod DB was opened strictly read-only (`uri=True`, `?mode=ro`, `PRAGMA query_only=1`, indexed seeks only).
 
-## Charter 3 — Track 1 `final_120s_asian_pin` (latest)
+## Overnight Quantitative R&D Shift — Full Schedule Execution (Latest)
+
+### Executive Summary
+
+| Track | Family | IS Status | OOS Status | Promotion Gate Verdict |
+|---|---|---|---|---|
+| **Track 1** | `final_120s_asian_pin` | 18-cell grid fails bar (best: 8 trades, net -$26.50, PF 0.77) | **Unspent** (preserved) | IS Fail |
+| **Track 2A** | `btc_lead_settle` | 72-cell grid fails trade bar (best: 4 trades, net +$85.04, PF ∞) | **Unspent** (preserved) | IS Fail (trade count < 30) |
+| **Track 2B** | `flow_student_t_settle` | Champion `h0.05_w5_15_th0.30_taker`: 44 trades, net +$333.25, PF 1.90, 4/4 lanes+ | **Scored (line 30)**: 36 trades, net +$229.38, PF 1.68, 3/4 lanes+ | **Economic Pass / Payoff-ECE Fail** (ECE 0.1581 > 0.08) |
+| **Track 3** | `layagate_filter` | Audited against `openkal-prod.db` (`ticks.gate`) across all 92 champion triggers | Coverage 0.0% (first gate row 2.46h after tape end) | Blocked by data availability |
+| **Track 2C** | `true_l2_settle` | 5-minute loop active (`scripts/overnight_rnd_loop.py`) | Waiting for ≥24 windows (currently 0/24) | Standby for Session 1 tape rebuild |
+
+---
+
+### Track 1 — `final_120s_asian_pin` (18-Cell Grid Sweep)
+- **Model**: `scripts/asian_rti.py:AsianRTI` (exact Kalshi 60s RTI accumulator `accum` + `k` locked fixings, remaining variance `sigma^2 * secs_left^3 / 10800`).
+- **Grid on IS**: `hurdle in [0.06, 0.09, 0.12]`, `secs_left in [(15, 60), (15, 90), (15, 120)]`, `entry_style in ["taker", "maker"]` (5s patience), cost in `[$0.35, $0.60]`, hold to `$1.00` settlement ($0 exit fee).
+- **IS Results**: All 18 cells fail to achieve positive net PnL (net ranges from -$26.50 to -$286.86, PF 0.20 to 0.85). Not a single configuration meets the eligibility bar (`trades >= 30, PF >= 1.25, lanes >= 2`).
+- **Sanctity**: **OOS look unspent** (`is_eligible: false`).
+
+---
+
+### Track 2A — `btc_lead_settle` (Cross-Lane BTC Lead-Lag Settlement Pin)
+- **Model**: Detect causal BTC index impulses (`>= 10, 15, 20 bps` over 3-5s, `ts <= trigger_ts`) that shift ETH/SOL/XRP Student-t / Brownian settlement fair value by `>= 0.08` while Kalshi `entry_ask` in `[$0.35, $0.60]` lags fair value by `hurdle in [0.07, 0.10, 0.13]`.
+- **IS Results**: Evaluated across 72 configurations (lookbacks 3s/5s × impulses 10/15/20 bps × models Student-t/Brownian × shifts projected/realized × hurdles 0.07/0.10/0.13). Due to the rarity of concurrent >=10 bps BTC impulses with >=0.08 alt fair value shifts and lagging retail books, the most active configuration achieved only **4 trades** on IS (net +$85.04, PF ∞, 3 profitable lanes).
+- **Sanctity**: `trades < 30` bar fail (`is_eligible: false`). **OOS look unspent**.
+
+---
+
+### Track 2B — `flow_student_t_settle` (Aggressor Flow + Student-t Settlement)
+- **Model**: Combines IS-fitted Student-t (`nu`) settlement fair value (`[$0.35, $0.60]` cost band, hold to settlement) with multi-window signed aggressor print flow (`trade_ty` / `trade_sz` imbalance at `ts <= trigger_ts`).
+- **IS Sweep (72 configs)**:
+  - Champion: `h0.05_w5_15_th0.30_taker`
+  - IS Performance: **44 trades**, **net +$333.25**, **PF 1.90**, win rate 61.36%, **4 of 4 lanes profitable** (BTC: +$134.91, ETH: +$35.15, SOL: +$66.72, XRP: +$96.47), max entry cost $0.60, 0 crossed fills.
+  - Fully eligible under the IS bar (`is_eligible: true`).
+- **Sealed OOS Single-Shot Scoring (`RND_OOS_UNSEAL=lead`)**:
+  - Logged to `data/oos-ledger.jsonl` (line 30).
+  - Trades: **36** (`>= 25` bar pass).
+  - Net PnL: **+$229.38** (`> 0` bar pass).
+  - Profit Factor: **1.68** (`>= 1.25` bar pass).
+  - Win Rate: **58.33%** (21 wins, 15 losses).
+  - Profitable Lanes: **3** (BTC: +$101.61, ETH: +$93.11, XRP: +$97.67, SOL: -$63.01; `>= 2` bar pass).
+  - Net Ex-XRP: **+$131.71** (`> 0` bar pass).
+  - Net Ex-Best Lane: **+$127.77** (`> 0` bar pass).
+  - Net Ex-Best Window: **+$120.31** (`> 0` bar pass).
+  - Crossed Fills: **0** (pass).
+  - Max Entry Cost: **$0.57** (`<= $0.62` pass).
+  - Payoff-ECE: **0.1581** (gate threshold `<= 0.08` -> fail).
+  - **Verdict**: Exceptional economic edge across multiple lanes on completely unseen OOS tape; misses promotion solely on payoff calibration metric.
+
+---
+
+### Track 3 — `layagate_filter` (Shadow Verdict Ablation)
+- **Database Access**: `/home/cayleb/open-kal/data/openkal-prod.db` opened strictly read-only (`uri=True`, `?mode=ro`, `PRAGMA query_only=1`). Seeks executed exclusively via index `ticks_series_ts`.
+- **Ablation Scope**: 92 champion triggers evaluated (Track 1 IS, Track 2A IS, Track 2B IS, Track 2B OOS).
+- **Finding**: The first `gate` column entry across all series in the production DB appears at `ts = 1794952390.85`, which is **2.46 hours after the frozen tape closed** (`max_ts = 1794943521.0`).
+- **Coverage**: Exact **0.0%** coverage across all frozen candidate triggers. Zero trades filtered. Net PnL and Profit Factor before vs. after are identical. Data availability blocker confirmed.
+
+---
+
+### Track 2C & Overnight 5-Minute True-L2 Loop
+- **Script**: `scripts/track2c_true_l2_settle.py` built to evaluate true L2 order book imbalance (`z_l2_obi`) + Student-t / Asian settlement fair value.
+- **Ingestion Daemon**: `scripts/overnight_rnd_loop.py` runs every 300 seconds, checking `/home/cayleb/open-kal/data/evolve-cache/book_KXBTC15M.npz` (`mode=ro`).
+- **Current State**: Cache currently contains 0 non-NaN depth rows (`valid_l2_rows = 0`, `windows_with_l2 = 0/24`). As soon as Session 1 exports ≥24 settled windows of true L2 depth, the loop automatically triggers Track 2C, logs single OOS look to `data/oos-ledger.jsonl`, updates records, and commits.
+
+## Charter 3 — Track 1 `final_120s_asian_pin` (previous)
 
 **Verdict: IS fail on every hurdle. The sealed OOS look was not spent** (`data/oos-ledger.jsonl` still ends at the 28 prior lines). Track 2 stays blocked (owner-exclusive recorder decision). Track 3 is blocked with new hard evidence below. Nothing is promoted or traded.
 

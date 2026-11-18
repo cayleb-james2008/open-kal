@@ -1,6 +1,40 @@
 {
- "updated": "2026-11-17T15:31:27-05:00",
+ "updated": "2026-11-17T20:20:00-05:00",
  "goal": "24/7 forward-OOS gate, live compounding, trailing drawdown breaker.",
+ "rnd_overnight_shift": {
+  "lane": "rnd/alpha-evolve",
+  "track1_asian_pin": {
+   "status": "IS fail",
+   "oos_spent": false,
+   "note": "18-cell grid fails to produce positive net PnL (best: 8 trades, net -$26.50, PF 0.77). OOS look unspent."
+  },
+  "track2a_btc_lead_settle": {
+   "status": "IS fail",
+   "oos_spent": false,
+   "note": "72-cell grid fails trade count bar (best: 4 trades, net +$85.04, PF inf). OOS look unspent."
+  },
+  "track2b_flow_student_t": {
+   "status": "OOS scored",
+   "is_champion": "h0.05_w5_15_th0.30_taker",
+   "is_metrics": {"trades": 44, "net": 333.25, "pf": 1.90, "win_rate": 0.6136, "profitable_lanes": 4},
+   "oos_metrics": {"trades": 36, "net": 229.38, "pf": 1.68, "win_rate": 0.5833, "profitable_lanes": 3, "net_ex_xrp": 131.71},
+   "oos_payoff_ece": 0.1581,
+   "gate_pass": false,
+   "note": "Economic pass on all criteria (+229.38 net, PF 1.68, 3/4 lanes, net_ex_xrp > 0), gate fail on payoff-ECE <= 0.08."
+  },
+  "track3_layagate_filter": {
+   "status": "Audited",
+   "coverage_pct": 0.0,
+   "note": "Blocked by data availability: first gate row in prod DB is ts 1794952390.85 (2.46h after tape ends)."
+  },
+  "track2c_true_l2_loop": {
+   "status": "Monitoring",
+   "loop_script": "scripts/overnight_rnd_loop.py",
+   "current_windows": 0,
+   "required_windows": 24,
+   "note": "Active 5-minute loop awaiting Session 1 2-hourly tape rebuilds with non-NaN true-L2 depth."
+  }
+ },
  "state": {
   "decision": "promoted",
   "engine_pid": 2943377,
