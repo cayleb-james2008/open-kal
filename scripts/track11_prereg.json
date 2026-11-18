@@ -1,0 +1,69 @@
+{
+  "name": "queue_short_favourite_bid",
+  "version": 1,
+  "registered": "2026-11-18T12:18:14-05:00",
+  "status": "pre-registered; no trade of this track has been simulated and no price or outcome of the L2 windows has been read; only touch-size coverage and the size percentiles below were looked at",
+  "question": "Does a resting bid on the favourite side, joined only when the displayed queue ahead is short and filled only after that queue has printed, have a positive expectancy held to settlement?",
+  "owner_request": "Pre-register one maker (resting-order) idea with an explicit queue-position model before touching data, then score it in-sample only. A null result is a success.",
+  "why_this_idea": "Every maker result so far used sim_core's fill rule, which treats the order as first in line: it fills once 50 contracts print at or through the limit, whatever rests ahead of it. Touch sizes now exist, so that assumption can be replaced by first-in-first-out. A bid joined behind a deep queue fills only after a large sell flow, which is adverse; a bid joined behind a short queue fills on ordinary flow. The idea tests whether the short-queue favourite bid is worth resting once the queue is paid for. It is one rule, with no sweep.",
+  "queue_position_model": {
+    "implemented_in": "openkal/sim_core.py: Tape.queue_ahead, Tape.queue_fill and run_trade(queue_model=True); additive and off by default, the existing results unchanged",
+    "queue_ahead": "the contracts displayed at the order's price on the book row it arrives into: yes_bid_sz for a YES bid, yes_ask_sz for a NO bid (a NO bid's touch is the YES ask); a bid inside the spread has 0 ahead; a bid below the touch, a row with no size, or a tape with no sizes has an unknown queue and the order is skipped",
+    "queue_moves_on": "prints at the order's price from the aggressors that trade against it (YES sellers for a YES bid, YES buyers for a NO bid); nothing else moves it",
+    "fill": "first in, first out: filled when queue_ahead + own contracts have printed at the price, or at the first print strictly through the price; the order also needs the existing proof that at least 50 contracts printed at or through the price since it arrived; whole fills only",
+    "conservative_simplifications": "cancellations ahead of the order and size changes are not modelled, so the queue never shrinks except by prints and fills come later than they may in life",
+    "arrival": "1 s after the decision, the canonical lag; prints at the arrival second do not count",
+    "exit_legs": "none in this idea; run_trade keeps the plain print-through rule for exit legs, so this does not touch them"
+  },
+  "data": {
+    "tape": "data/track10-tape (pinned, digests in pin.json), read only",
+    "l2_windows": "settled window closes where every lane has finite touch sizes on more than half of its book rows: 46 windows, 2026-11-17 20:15 to 2026-11-18 11:00",
+    "touch_sizes_exist_from": "2026-11-17 20:06; before that the cache has no sizes and depth arrays are all NaN",
+    "no_other_data": "no spot, index, flow or feature enters the rule"
+  },
+  "split": {
+    "rule": "chronological over the 46 L2 window closes: cut = l2_closes[int(0.6 * 46)] = l2_closes[27]",
+    "cut_epoch": 1795001400.0,
+    "cut": "2026-11-18T06:30:00-05:00",
+    "is_windows": 27,
+    "oos_windows": 19,
+    "oos": "closes at or after the cut are never loaded, simulated or counted by this track; they stay sealed (oos_scored null) and nothing here spends a look"
+  },
+  "rule": {
+    "decision_points": "for every lane and every IS window, at 660, 540, 420 and 300 seconds before the close, in that order",
+    "one_position": "once an order of a lane in a window fills, that lane-window takes no further order; an order that does not fill is cancelled after its patience and the next decision point may place another",
+    "side": "the favourite: the side with the higher best bid (YES bid against NO bid = 1 - yes ask); a tie is skipped",
+    "price_band": "the favourite's best bid in [0.40, 0.60]",
+    "queue_band": "the queue ahead is known and at most 100 contracts, i.e. at most two full stakes; the 100 was read off the touch-size percentiles in known_before_registering, not off any outcome",
+    "order": "a post-only bid joined at the side's best bid, sized with sim_core.stake_qty at a stake of 65.58 USD (at most 50 contracts), patience 100 s, then cancelled",
+    "exit": "none: the position is held to settlement, no exit order, no fee beyond the zero maker entry fee",
+    "all_orders_through": "openkal/sim_core.py run_trade(entry_style=maker, queue_model=True); no price, fill or PnL is computed outside it"
+  },
+  "primary_statistic": "mean net USD per filled trade in sample, the profit factor and the per-lane nets, from sim_core",
+  "is_bar": {
+    "meaning": "the same IS bar as the earlier tracks; clearing it earns a pre-registered OOS design, never an OOS look by itself",
+    "needs_all_of": [
+      "at least 30 fills",
+      "net > 0",
+      "profit factor >= 1.25",
+      "at least 2 profitable lanes",
+      "one-sided window bootstrap p < 0.05 for mean net <= 0 (10000 draws, seed 0, resampling the IS window closes with replacement, the Track 10 procedure)"
+    ],
+    "no_multiplicity": "one registered idea and one configuration, so no correction applies; the controls below are descriptive and decide nothing"
+  },
+  "controls_descriptive": [
+    "the same orders under the old fill rule (queue_model False, 50 contracts at or through): how optimistic the old maker results were",
+    "the same rule with the queue longer than 100 contracts but known, under the queue model: whether long queues are the adverse ones",
+    "decision points by outcome: placed, filled, and each skip reason (no size, queue over 100, band, tie, no quote, crossed)"
+  ],
+  "known_before_registering": [
+    "touch sizes exist only from 2026-11-17 20:06; depth arrays are all NaN and gate_allow is constant 0, so only the touch queue is observable",
+    "the 46 L2 windows have sizes on more than half their rows in all four lanes; the 60/40 cut puts 27 windows in sample",
+    "displayed touch size percentiles 10/25/50/75/90 on valid rows: BTC 204/1175/4207/8723/13090, ETH 21/131/428/806/1248, SOL 6/53/181/506/707, XRP 5/45/250/408/687 contracts; so a 100-contract cap admits SOL, XRP and ETH often and BTC rarely",
+    "the earlier maker tracks all failed in sample or out of sample under the old fill rule: two-sided spread market making (Track 5), the Asian-settlement maker (Track 4B), passive_mm_fade (OOS 46 trades, -$57.50)",
+    "the market's ask is well calibrated in the band (Brier about 0.2376), so a favourite bought at its bid has an edge only of about the spread it saves, before adverse selection",
+    "Track 6's L2 tree models and Tracks 2C and 2D scored the same L2 windows with different rules; their OOS slices are sealed and unread"
+  ],
+  "expected": "fewer than 30 fills in sample, so the bar is not cleared and the result is a null. Most decision points will skip on the queue cap or the band. If the primary does fill 30 or more and loses, the queue model has done its job; if it clears the bar, the next step is a pre-registered OOS design, not a look.",
+  "oos_scored": null
+}
