@@ -902,8 +902,12 @@ class Engine:
 
         The review runs in a background task and its verdict is cached per ticker.
         The entry path below reads that cache, so a 610-650ms forward pass never
-        stalls the tick loop.
+        stalls the tick loop. The cache is refreshed on a timer (15s) or as soon as
+        the book's mid has moved a tick: the question Laya was asked describes a
+        book, and a book that has moved is a different question.
         """
+        if not self.gate.stale(quote.ticker, mid=float(quote.mid)):
+            return
         self.gate.schedule(slot, quote, seconds_left, decision,
                            on_done=self._gate_recorder(slot))
 

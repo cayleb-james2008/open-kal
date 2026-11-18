@@ -982,6 +982,24 @@ def control_layagate_cache() -> None:
     check("gate: a verdict older than the refresh window is stale",
           gate.stale(TICKER, mid=0.46), f"stale={gate.stale(TICKER, mid=0.46)}")
 
+    # The refresh is on a timer or a book move, not on every tick: a fresh verdict
+    # must not send the lane back to the model.
+    engine = gate_engine(gate)
+    verdict.ts = time.time()
+    gate.mid_ref[TICKER] = 0.46
+    scheduled: list[str] = []
+    gate.schedule = lambda slot, q, s, d, on_done=None: scheduled.append(q.ticker)  # type: ignore[assignment]
+    engine._gate_refresh(SimpleNamespace(params=Params()), quote("0.45", "0.47"),
+                         300.0, Decision("entry", "kernel entry", side="YES",
+                                         price=Decimal("0.47")))
+    check("gate: a fresh cached verdict is not refreshed again",
+          not scheduled, f"scheduled={scheduled}")
+    engine._gate_refresh(SimpleNamespace(params=Params()), quote("0.43", "0.45"),
+                         300.0, Decision("entry", "kernel entry", side="YES",
+                                         price=Decimal("0.47")))
+    check("gate: a 2c mid move does send the lane back to the model",
+          scheduled == [TICKER], f"scheduled={scheduled}")
+
 
 def control_layagate_filter() -> None:
     """`require_layagate_allow` is the switch that makes the gate binding."""
@@ -1029,6 +1047,23 @@ def control_layagate_filter() -> None:
                                 quote("0.45", "0.47"), entry)
     check("gate: an offline gate never blocks the kernel",
           offline.action == "entry", f"action={offline.action}")
+
+    # The forward scorer's gate filter reads the same recorded opinions: the last
+    # verdict at or before the trigger is the one that was in force.
+    import numpy as np
+
+    from scripts import forward_oos as F
+    verdicts = {"KXBTC15M": (np.array([100.0, 200.0, 300.0]),
+                             np.array([1.0, 0.0, 1.0]))}
+    check("gate: the forward filter takes the verdict in force at the trigger",
+          F._gate_allow(verdicts, "KXBTC15M", 150.0) is True
+          and F._gate_allow(verdicts, "KXBTC15M", 250.0) is False
+          and F._gate_allow(verdicts, "KXBTC15M", 350.0) is True,
+          "the last verdict at or before the trigger")
+    check("gate: a trigger before the first verdict has no opinion to read",
+          F._gate_allow(verdicts, "KXBTC15M", 50.0) is None
+          and F._gate_allow(verdicts, "KXETH15M", 150.0) is None,
+          "no verdict in force")
 
 
 # --------------------------------------------------------------------------

@@ -74,5 +74,32 @@
   "log": "data/daemon-247.log",
   "report": "data/evening-report.md",
   "cadence": "hourly gate / 15-minute live checks / 6-hour cache rebuild"
+ },
+ "production_readiness_2026_11_18": {
+  "done": {
+   "layagate_non_blocking": "openkal/decision_gate.py caches one verdict per ticker and refreshes it in a background task (15s or a 2c mid move). openkal/engine.py reads that cache on the entry path: a dict read, 0ms, no connection opened. Params.require_layagate_allow / layagate_min_confidence turn the cached opinion into a hard filter with no code edit.",
+   "student_t_l2_settle": "openkal/features.py: exact Student-t CDF (continued fraction), per-lane frozen (nu, s), tau_eff = max(secs_left - 40, 1), true-L2 imbalance, signed aggressor flow on a fast and a slow window. openkal/strategy.py: the 0.35-0.60 band under the 0.62 hard cap, OBI and flow aligned with the side, T+1s entry, hold to settlement for a $0 exit fee. openkal/engine.py can run it when Params.strategy_mode says so; F2_taker_1s stays the default.",
+   "forward_scorer": "scripts/forward_oos.py --strategy student_t_l2_settle scores the program on the same forward slice through openkal/sim_core.py only, with the production strategy deciding the entries. Artifact: data/forward-oos-student-t-l2.json.",
+   "tests": "tests/test_live_exit.py: 125/125 checks (was 97). New: 0ms cached gate reads with the HTTP client booby-trapped, require_layagate_allow on/off, offline gate, minimum confidence, Student-t quantiles, the imbalance, the band, the 0.62 cap, the OBI and flow alignment, and the hold-to-settlement exit."
+  },
+  "verified": {
+   "suites": "test_sim_core 33/33, test_live_exit 125/125, test_daemon_247 20/20, test_gate_controls 18/18, test_day_pipeline 76/76",
+   "dashboard": "npm run build ok, npm run role-coverage ok, render-check PASSED (against the built dashboard served with a snapshot rebuilt from the production ledger; the live engine was down, see incident)"
+  },
+  "not_promoted": {
+   "student_t_l2_settle": "2 forward trades, -$38.13, PF 0.00: the gate fails (needs 20 trades). The true-L2 depth only exists in 16-20 of the 81 forward windows per lane, so the sample is not there yet.",
+   "f2_taker_1s": "still the default, still unpromoted: the forward slice has grown to 34 trades / -$22.61 / PF 0.64, so data/strategy-verdict.json keeps promoted=false."
+  },
+  "incident": {
+   "what": "The engine (run.py, pid 1034236) and the overnight L2 supervisor (pid 1425934) both died at ~01:24 EST, 2026-11-18.",
+   "evidence": "Last engine tick in data/openkal-prod.db is ts 1794983052.95 = 01:24:12 EST; the first 'connection refused' from the monitor is in the 01:24 minute; the supervisor's last cycle was 01:21:55 and it never ran again; data/engine.log has no new session banner, so restart_flat.sh did not run; no OOM line in the kernel journal.",
+   "not_caused_by_this_change": "The first source edit of this session is openkal/features.py at 01:29:17 EST, five minutes after the last engine tick. daemon_247 (214533) and laya-serve (4129892) are still running.",
+   "effect": "http://127.0.0.1:8787 is down, so the live dashboard and the render-check's own BASE_URL path are unavailable, and no new depth rows or gate verdicts are being written for the 24/24 true-L2 window target.",
+   "owner_decision": "Restarting either process was not done: the session guardrails say do not restart the L2 supervisor and keep run.py untouched."
+  },
+  "next": {
+   "action": "Restart the paper engine (bash scripts/restart_flat.sh; the venue is flat, so it will come back in paper mode, unarmed, $121.46) and the overnight L2 supervisor (scripts/overnight_l2_supervisor.py --until 2026-11-18T06:00:00-05:00) once the owner approves, so the true-L2 depth keeps accumulating toward 24/24 windows.",
+   "then": "Re-run .venv/bin/python scripts/forward_oos.py --strategy student_t_l2_settle once the 24/24 windows are in; the program stays unarmed until it clears the same seven gate conditions as every other candidate."
+  }
  }
 }

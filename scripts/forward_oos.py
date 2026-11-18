@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
 from collections import Counter
 from datetime import datetime, timezone
@@ -44,6 +45,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from openkal import features, sim_core  # noqa: E402
+from openkal.config import load_settings  # noqa: E402
 from openkal.strategy import (Params, Quote, decide, exit_cost,  # noqa: E402
                               taker_fee_per_contract)
 from scripts import alpha_discover as AD  # noqa: E402
@@ -369,6 +371,52 @@ def _flow_at(trade_ts: np.ndarray, cum_signed: np.ndarray, cum_size: np.ndarray,
     return float((cum_signed[hi] - cum_signed[lo]) / den)
 
 
+def _gate_verdicts(db_path: Path) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    """The LayaGate verdicts the live engine recorded, per series.
+
+    Two arrays per series: the tick timestamp, and the verdict's `allow` flag
+    (1.0 allow, 0.0 deny). This is the shadow opinion the lane actually saw at
+    the time -- the same rows the offline ablation reads -- so a gate filter on a
+    forward score is the same filter the live path would have applied.
+    """
+    out: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    if not db_path.exists():
+        return out
+    con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    try:
+        rows = con.execute(
+            "SELECT series, ts, gate FROM ticks "
+            "WHERE gate IS NOT NULL AND gate != '' ORDER BY series, ts").fetchall()
+    finally:
+        con.close()
+    by_series: dict[str, list[tuple[float, float]]] = {}
+    for series, ts, gate in rows:
+        try:
+            allow = json.loads(gate).get("allow")
+        except (TypeError, ValueError):
+            continue
+        if allow is None:
+            continue
+        by_series.setdefault(str(series), []).append((float(ts), 1.0 if allow else 0.0))
+    for series, items in by_series.items():
+        out[series] = (np.array([t for t, _ in items], dtype=np.float64),
+                       np.array([a for _, a in items], dtype=np.float64))
+    return out
+
+
+def _gate_allow(verdicts: dict[str, tuple[np.ndarray, np.ndarray]], series: str,
+                t: float) -> bool | None:
+    """The verdict in force at `t`: the last one recorded at or before it."""
+    pair = verdicts.get(series)
+    if not pair:
+        return None
+    ts, allow = pair
+    idx = int(np.searchsorted(ts, t, "right")) - 1
+    if idx < 0:
+        return None
+    return bool(float(allow[idx]) >= 0.5)
+
+
 def _settlement_triggers(lane: Lane, name: str, closes: set[float], sig: dict,
                           params: Params) -> tuple[list[dict], Counter]:
     """The settlement program's own entries on one lane.
@@ -464,21 +512,30 @@ def _settlement_triggers(lane: Lane, name: str, closes: set[float], sig: dict,
     return kept, skips
 
 
-def score_student_t_l2(since: float, until: float | None = None) -> dict:
+def score_student_t_l2(since: float, until: float | None = None,
+                       gate_filter: bool = False, db_path: Path | None = None) -> dict:
     """Score the settlement program on windows closing in `[since, until)`.
 
     The probability this program carries is a *settlement* probability, so the
     calibration error is measured against the contract's own settlement outcome,
     not against a round trip: the contract is carried to expiry and pays $1 or
     $0.
+
+    `gate_filter=True` keeps only the trades whose trigger carried a LayaGate
+    verdict of `allow == True` -- the same opinion the live lane saw, read off
+    the recorded `ticks.gate` rows. It is optional because the gate is still a
+    shadow in this build; the filter is how a promoted strategy would enforce it
+    without a code edit.
     """
     params = Params()
+    verdicts = _gate_verdicts(db_path or load_settings().db_path)
     lanes = {name: Lane(name) for name in LANES}
     rows: list[dict] = []
     skips: Counter = Counter()
     windows: set[float] = set()
     pools_ok: dict[str, int] = {}
     events = 0
+    gate_counts = {"allowed": 0, "denied": 0, "unlogged": 0}
     for name, lane in lanes.items():
         closes = {float(m["close"]) for m in lane.meta.values()
                   if float(m["close"]) >= since
@@ -510,6 +567,9 @@ def score_student_t_l2(since: float, until: float | None = None) -> dict:
                 skips[res.reason] += 1
                 continue
             windows.add(float(trig["close"]))
+            allow = _gate_allow(verdicts, name, float(trig["ts"]))
+            gate_counts["allowed" if allow is True else
+                        "denied" if allow is False else "unlogged"] += 1
             rows.append({
                 "lane": name, "ticker": trig["ticker"], "tid": trig["tid"],
                 "ts": float(res.order_ts), "fill_ts": float(res.legs[0].ts),
@@ -522,17 +582,18 @@ def score_student_t_l2(since: float, until: float | None = None) -> dict:
                 "p_yes": trig["p_yes"],
                 "edge_c": trig["edge"], "obi": trig["obi"],
                 "flow_fast": trig["flow_fast"], "flow_slow": trig["flow_slow"],
-                "secs_left": trig["secs_left"],
+                "secs_left": trig["secs_left"], "gate_allow": allow,
             })
 
+    kept = [r for r in rows if r["gate_allow"] is True] if gate_filter else rows
     hours = ((max(windows) - min(windows)) / 3600.0) if len(windows) > 1 else 0.0
-    summary = summarize(rows, hours) if rows else summarize([], 0.0)
-    summary = _with_true_side_costs(summary, rows)
-    summary["crossed_fills"] = sum(int(r["crossed"]) for r in rows)
+    summary = summarize(kept, hours) if kept else summarize([], 0.0)
+    summary = _with_true_side_costs(summary, kept)
+    summary["crossed_fills"] = sum(int(r["crossed"]) for r in kept)
     # This program's probability describes the contract's own settlement, so the
     # calibration error is measured against the settlement outcome -- which is
     # what `summarize`'s own settlement ECE does.
-    settlement_ece = float(summary.get("ece") or 1.0) if rows else 1.0
+    settlement_ece = float(summary.get("ece") or 1.0) if kept else 1.0
     lanes_pos = sum(1 for v in (summary.get("by_lane") or {}).values()
                     if float(v.get("net") or 0) > 0)
     gate = gate_from_summary(summary, settlement_ece, lanes_pos)
@@ -540,6 +601,8 @@ def score_student_t_l2(since: float, until: float | None = None) -> dict:
         "generated": datetime.now(timezone.utc).isoformat(),
         "score_model": "openkal.sim_core",
         "strategy": "student_t_l2_settle",
+        "gate_filter": gate_filter,
+        "gate_counts": gate_counts,
         "program": {
             "settlement_model": "Student-t per lane (nu, s)",
             "student_t_fit": {k: list(v) for k, v in features.STUDENT_T_FIT.items()},
@@ -577,7 +640,7 @@ def score_student_t_l2(since: float, until: float | None = None) -> dict:
         "settlement_ece": settlement_ece,
         "lanes_profitable": lanes_pos,
         "gate": gate,
-        "rows": rows,
+        "rows": kept,
     }
 
 
@@ -592,12 +655,15 @@ def main() -> int:
     # program is scored by the same canonical simulator on the same slice.
     ap.add_argument("--strategy", choices=("f2", "student_t_l2_settle"),
                     default="f2")
+    # Optional LayaGate gating for the settlement program: keep only the trades
+    # whose trigger carried an `allow == True` verdict in the recorded ticks.
+    ap.add_argument("--gate-filter", action="store_true")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
     if args.strategy == "student_t_l2_settle":
         if args.out == str(OUT):
             args.out = str(OUT_STUDENT_T)
-        report = score_student_t_l2(args.since, args.until)
+        report = score_student_t_l2(args.since, args.until, gate_filter=args.gate_filter)
     else:
         report = score(args.since, args.until)
     out = Path(args.out)
