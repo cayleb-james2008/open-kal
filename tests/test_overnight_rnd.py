@@ -69,6 +69,41 @@ class ShiftTiming(unittest.TestCase):
             sleep.assert_called_once()
             self.assertAlmostEqual(sleep.call_args.args[0], 299.3)
 
+    def run_ready(self, *, publish=True, check_only=False, exits=(0,)):
+        clock = {"t": 900.0}
+        exits = iter(exits)
+        launched = []
+
+        class Child:
+            pid = 7
+
+            def poll(self):
+                return next(exits, 0)
+
+            def wait(self, timeout):
+                return 0
+
+        def popen(command, cwd):
+            launched.append((command, cwd))
+            return Child()
+
+        ready = {"status": "ready", "windows_with_l2": 24}
+        with patch.object(loop.time, "time", side_effect=lambda: clock["t"]), \
+                patch.object(loop.time, "sleep", side_effect=lambda s: clock.update(t=clock["t"] + s)), \
+                patch.object(loop, "log"), patch.object(loop, "check_once", return_value=ready), \
+                patch.object(loop.subprocess, "Popen", side_effect=popen):
+            loop.run_loop(check_only=check_only, publish=publish, until=1500)
+        return launched
+
+    def test_ready_cache_starts_track2c_once_and_it_publishes_2d_with_it(self):
+        script = str(loop.ROOT / "scripts/track2c_true_l2_settle.py")
+        self.assertEqual(self.run_ready(), [([loop.sys.executable, "-B", script, "--publish"], loop.ROOT)])
+
+    def test_deferred_exit_75_retries_but_check_only_and_no_publish_stay_inert(self):
+        self.assertEqual(len(self.run_ready(exits=(75, 0))), 2)
+        self.assertEqual(self.run_ready(check_only=True), [])
+        self.assertNotIn("--publish", self.run_ready(publish=False)[0][0])
+
     def test_expired_shift_never_reads_the_cache(self):
         with patch.object(loop.time, "time", return_value=1201), patch.object(loop, "log"), \
                 patch.object(loop, "check_once") as check:
