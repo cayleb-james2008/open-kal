@@ -423,6 +423,83 @@
    "gate": null,
    "result_artifact": "data/track5-two-sided-mm.json",
    "note": "Research only; no live promotion or trading."
+  },
+  "track6_gbdt_l2_meta": {
+   "status": "IS fail; OOS unspent",
+   "champion": "net_0.65_tp5_stop7",
+   "is": {
+    "trades": 31,
+    "wins": 12,
+    "losses": 19,
+    "win_rate": 0.3871,
+    "net": -98.28,
+    "pf": 0.17119244391971664,
+    "avg_pnl": -3.1703225806451614,
+    "max_entry_cost": 0.62,
+    "fees_entry": 25.53,
+    "fees_exit": 15.75,
+    "crossed_fills": 0,
+    "requotes": 0,
+    "profitable_lanes": 0,
+    "net_ex_best_lane": -80.67,
+    "net_ex_xrp": -71.6,
+    "net_ex_best_window": -101.66,
+    "windows": 13,
+    "by_lane": {
+     "KXBTC15M": {
+      "trades": 10,
+      "wins": 4,
+      "net": -27.77
+     },
+     "KXETH15M": {
+      "trades": 6,
+      "wins": 2,
+      "net": -17.61
+     },
+     "KXSOL15M": {
+      "trades": 5,
+      "wins": 1,
+      "net": -26.22
+     },
+     "KXXRP15M": {
+      "trades": 10,
+      "wins": 5,
+      "net": -26.68
+     }
+    },
+    "by_reason": {
+     "stop": {
+      "trades": 19,
+      "net": -118.58
+     },
+     "tp": {
+      "trades": 12,
+      "net": 20.3
+     }
+    },
+    "skips": {
+     "cost_band": 2
+    }
+   },
+   "is_eligible": false,
+   "oos_spent": false,
+   "oos": null,
+   "payoff_ece": null,
+   "strict_gate": null,
+   "rolling_edge_bar": null,
+   "rolling_scaled_bar_pass": [
+    "net_0.60_hold",
+    "net_0.65_hold"
+   ],
+   "brier_is_oof": {
+    "rows": 15025,
+    "model": 0.26173555836697365,
+    "ask": 0.23764043926788686,
+    "base_rate": 0.2458192264141018
+   },
+   "brier_oos": null,
+   "result_artifact": "data/track6-gbdt-l2-meta.json",
+   "note": "Research only; no live promotion or trading."
   }
  },
  "state": {

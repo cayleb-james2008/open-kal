@@ -500,12 +500,25 @@ def score_oos() -> dict:
     return obj
 
 
+def rolling_text(obj: dict) -> str:
+    """The scaled rolling fold beside the out-of-fold IS scoring that selection uses, config by config."""
+    cfgs, folds = obj["configs"], obj["rolling"]["scaled_3h_1p5h"]["folds"]
+    traded = [v["rolling_scaled"]["net"] for v in cfgs.values() if v["rolling_scaled"]["trades"]]
+    passing = [c for c, v in cfgs.items() if rolling_edge_bar(v["rolling_scaled"])["pass"]]
+    vs = "; ".join(f"`{c}` rolling ${cfgs[c]['rolling_scaled']['net']:+.2f}, out-of-fold ${cfgs[c]['is']['net']:+.2f} (PF {cfgs[c]['is']['pf']:.2f})"
+                   for c in passing)
+    return (f"Scaled rolling ({folds} fold, 3h train / 1.5h test, IS windows only, not used for selection): net "
+            f"${min(traded, default=0):+.2f} to ${max(traded, default=0):+.2f} across {len(traded)} configs that traded; "
+            f"{len(passing)} meet the rolling-edge bar" + (f": {vs}. One fold is noise-sized against 12 configs." if passing else "."))
+
+
 def hand_off(obj: dict) -> None:
     best, score, eligible_ = obj["champion"]["is"], obj["oos_scored"], obj["champion"]["is_eligible"]
     state = {"status": "OOS scored" if score else ("IS eligible; OOS pending" if eligible_ else "IS fail; OOS unspent"),
              "champion": obj["champion"]["config"], "is": best, "is_eligible": eligible_, "oos_spent": score is not None,
              "oos": score["oos"] if score else None, "payoff_ece": score["payoff_ece"] if score else None,
              "strict_gate": score["gate"] if score else None, "rolling_edge_bar": obj.get("rolling_edge_bar"),
+             "rolling_scaled_bar_pass": [c for c, v in obj["configs"].items() if rolling_edge_bar(v["rolling_scaled"])["pass"]],
              "brier_is_oof": obj["brier_is_oof"], "brier_oos": obj.get("brier_oos"),
              "result_artifact": str(OUT.relative_to(ROOT)), "note": "Research only; no live promotion or trading."}
     b = obj["brier_is_oof"]
@@ -517,7 +530,10 @@ def hand_off(obj: dict) -> None:
               f"- No IS config met the bar (>= {MIN_IS_TRADES} trades, PF >= {MIN_PF}, >= {MIN_LANES} lanes); best by net "
               f"`{obj['champion']['config']}`: {T.scorecard(best)}."),
              f"- Rolling 24h-train/12h-test: {obj['rolling']['spec_24h_12h']['folds']} folds (IS span "
-             f"{obj['rolling']['spec_24h_12h']['is_span_hours']:.1f}h, below the 36h needed)."]
+             f"{obj['rolling']['spec_24h_12h']['is_span_hours']:.1f}h, below the 36h needed). {rolling_text(obj)}",
+             f"- Refit on all IS windows and scored in-sample, the best config nets "
+             f"${max(v['is_insample']['net'] for v in obj['configs'].values()):+.2f}; out-of-fold the best PF is "
+             f"{max(v['is']['pf'] for v in obj['configs'].values()):.2f}: the boosted models memorise the IS windows."]
     if score:
         o, bo = score["oos"], obj["brier_oos"]
         lines += [f"- One sealed OOS look: {T.scorecard(o)}; payoff-ECE {score['payoff_ece']}. Rolling-edge bar pass: "

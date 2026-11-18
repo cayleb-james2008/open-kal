@@ -329,6 +329,18 @@ class Evaluation(unittest.TestCase):
         for key, bad in (("trades", 11), ("net", 0.0), ("pf", 1.24), ("profitable_lanes", 1)):
             self.assertFalse(M.rolling_edge_bar({**ok, key: bad})["pass"], key)
 
+    def test_the_report_sets_a_rolling_pass_beside_its_out_of_fold_loss(self):
+        def card(trades, net, pf, lanes):
+            return {"trades": trades, "net": net, "pf": pf, "profitable_lanes": lanes}
+        obj = {"rolling": {"scaled_3h_1p5h": {"folds": 1}}, "configs": {
+            "good_roll": {"rolling_scaled": card(23, 126.17, 1.56, 2), "is": card(60, -238.13, 0.71, 0)},
+            "bad_roll": {"rolling_scaled": card(30, -10.0, 0.9, 1), "is": card(40, 5.0, 1.1, 1)},
+            "idle": {"rolling_scaled": card(0, 0.0, 0.0, 0), "is": card(0, 0.0, 0.0, 0)}}}
+        text = M.rolling_text(obj)
+        self.assertIn("1 meet the rolling-edge bar: `good_roll` rolling $+126.17, out-of-fold $-238.13 (PF 0.71)", text)
+        self.assertIn("$-10.00 to $+126.17 across 2 configs", text)
+        self.assertIn("noise-sized", text)
+
     def test_the_24h_12h_rolling_spec_needs_36_hours_and_the_scaled_one_has_ordered_disjoint_folds(self):
         closes = [20000.0 + 900.0 * i for i in range(30)]                                   # 7.5h of windows
         self.assertEqual(M.rolling_folds(closes, 24.0, 12.0), [])

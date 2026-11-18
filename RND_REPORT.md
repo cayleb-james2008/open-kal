@@ -535,3 +535,13 @@ OOS, the four champions made 0–3 trades each, net −$14.29 to $0.00 (ledger a
 - IS bar missed; OOS left sealed, no ledger entry.
 - The 'sealed' OOS slice is sealed per family in the ledger only: earlier families on this tape (Tracks 2B-2D, F2 variants) already looked at overlapping late windows.
 - Receipt: `data/track5-two-sided-mm.json`; no live promotion.
+
+### Track 6 — gradient-boosted L2 + LayaGate meta-model
+- 37 L2-and-gate windows (22 IS / 15 OOS), cut `1794996900.0`; HistGradientBoosting on 14 causal features (depth3 ratio and gate_allow unusable: see receipt); IS trades scored out-of-fold.
+- IS Brier, win model 0.2617 vs side's own ask 0.2376 vs base rate 0.2458 (15025 rows).
+- No IS config met the bar (>= 15 trades, PF >= 1.25, >= 2 lanes); best by net `net_0.65_tp5_stop7`: 31 trades, win 0.387, net $-98.28, PF 0.171, 0 profitable lanes, ex-XRP $-71.60, max entry $0.62, 0 crossed fills.
+- Rolling 24h-train/12h-test: 0 folds (IS span 5.2h, below the 36h needed). Scaled rolling (1 fold, 3h train / 1.5h test, IS windows only, not used for selection): net $-96.49 to $+126.17 across 12 configs that traded; 2 meet the rolling-edge bar: `net_0.60_hold` rolling $+82.42, out-of-fold $-173.82 (PF 0.86); `net_0.65_hold` rolling $+126.17, out-of-fold $-238.13 (PF 0.71). One fold is noise-sized against 12 configs.
+- Refit on all IS windows and scored in-sample, the best config nets $+839.44; out-of-fold the best PF is 0.86: the boosted models memorise the IS windows.
+- IS bar missed; OOS left sealed, no ledger entry.
+- The 'sealed' OOS slice is sealed per family in the ledger only: earlier families on this tape (Tracks 2B-2D, F2 variants) already looked at overlapping late windows.
+- Receipt: `data/track6-gbdt-l2-meta.json`; no live promotion.
