@@ -707,9 +707,9 @@ class Engine:
             self.equity_curve = self.equity_curve[-720:]
             self._last_equity_store = now
         self.last_snapshot = now
-        await self._decay_check()
+        await self._decay_check(now)
 
-    async def _decay_check(self) -> None:
+    async def _decay_check(self, now: float) -> None:
         """Disarm when the epoch's own last trades stop paying.
 
         The forward gate is scored before arming; after it, the venue's closed
@@ -718,8 +718,11 @@ class Engine:
         else would hand the account back to paper before the 20% trailing floor,
         and a decayed 2-3 day edge can lose more than that inside ten trades.
         """
-        if not self.live_armed:
+        # Once a minute: the trip is about ten closed trades, and a ledger read on
+        # every sub-second tick is load the hot path does not need.
+        if not self.live_armed or now - getattr(self, "_last_decay_check", 0.0) < 60:
             return
+        self._last_decay_check = now
         trades = sorted(
             (t for t in self.store.recent_trades(DECAY_WINDOW_TRADES * 2)
              if float(t.get("closed_ts") or 0) >= float(self.epoch_start or 0)),
