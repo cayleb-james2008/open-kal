@@ -95,8 +95,12 @@ class LayaGate:
         if time.time() - verdict.ts >= self.refresh_s:
             return True
         ref = self.mid_ref.get(ticker)
-        if mid is not None and ref is not None and abs(float(mid) - ref) >= self.mid_move_c:
-            return True
+        if mid is not None and ref is not None:
+            # The tolerance is there because 0.48 - 0.46 is 0.019999999999999962 in
+            # binary floating point: a move of exactly two cents has to trip the
+            # rule, and the venue's smallest price step is a tenth of a cent.
+            if abs(float(mid) - ref) >= self.mid_move_c - 1e-9:
+                return True
         return False
 
     # ---------- the background path ----------
@@ -122,6 +126,10 @@ class LayaGate:
             except Exception:  # noqa: BLE001 - a shadow failure is not a trading event
                 self.failures += 1
                 return
+            finally:
+                # The ticker changes every window; keeping the finished task would
+                # grow this map for the life of the process.
+                self.tasks.pop(ticker, None)
             verdict.ticker = ticker
             verdict.ts = time.time()
             self.cache[ticker] = verdict

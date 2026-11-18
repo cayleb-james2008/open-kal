@@ -918,138 +918,6 @@ def control_depth_clipping() -> None:
           not broker.placed and slot.order is None, f"placed={len(broker.placed)}")
 
 
-def main() -> int:
-    tp = Decision("exit_tp", "take-profit reached", side="NO", price=Decimal("0.88"))
-
-    # 1. The book already pays more than the take-profit. A post-only sell at the
-    #    target would cross (the venue rejects it), so the ask is rested instead:
-    #    $0 fee if it is lifted, and the bid is taken only if nobody lifts it.
-    q = quote("0.07", "0.08")          # NO bid = 0.92 >= 0.88, NO ask = 0.93
-    slot, broker = slot_for(q), FakeBroker()
-    ex = LiveExecutor(ctx(), broker)
-    run(slot, ex, tp, q)
-    sent = broker.placed[-1] if broker.placed else {}
-    check("exit: a take-profit below the bid rests post-only at the ask first",
-          len(broker.placed) == 1 and sent.get("post_only") is True
-          and sent.get("price") == Decimal("0.93") and slot.exit.take_on_timeout,
-          f"placed={len(broker.placed)} post_only={sent.get('post_only')} price={sent.get('price')}")
-    lifted = venue([{"order_id": "ord1", "count_fp": "10.00", "no_price_dollars": "0.93",
-                     "yes_price_dollars": "0.07", "fee_cost": "0.0", "is_taker": False}])
-    asyncio.run(ex._poll_exit(slot, q, NOW + 1, lifted))
-    pnl = Decimal(str(ex.ctx.fills[-1]["pnl"])) if ex.ctx.fills else Decimal("0")
-    check("exit: lifted at the ask, it closes as a maker with no fee",
-          slot.position is None and pnl == Decimal("1.0000") and ex.ctx.fills[-1]["fee"] == 0,
-          f"pnl={pnl} fee={ex.ctx.fills[-1]['fee'] if ex.ctx.fills else None}")
-
-    # 1b. Nobody lifts it: pulled, seen off the book, then the bid is taken (IOC).
-    slot, broker = slot_for(q), FakeBroker()
-    ex = LiveExecutor(ctx(), broker)
-    run(slot, ex, tp, q)
-    asyncio.run(ex._poll_exit(slot, q, NOW + 3.1, venue([], tuple(broker.resting))))
-    asyncio.run(ex._poll_exit(slot, q, NOW + 3.6, venue([], tuple(broker.resting) or ("ord1",))))
-    asyncio.run(ex._poll_exit(slot, q, NOW + 4.4, venue([])))
-    waiting = (len(broker.placed), slot.position is not None)
-    asyncio.run(ex._poll_exit(slot, q, NOW + 7.5, venue([])))
-    sent = broker.placed[-1]
-    pnl = Decimal(str(ex.ctx.fills[-1]["pnl"])) if ex.ctx.fills else Decimal("0")
-    check("exit: an unlifted gap take-profit is pulled, then taken as a reduce-only IOC",
-          broker.cancelled == ["ord1"] and waiting == (1, True)  # one cancel, no early IOC
-          and sent.get("post_only") is False and sent.get("reduce_only") is True
-          and slot.position is None,
-          f"cancelled={broker.cancelled} waiting={waiting} post_only={sent.get('post_only')}")
-    # 0.92 - 0.83 = 9c on 10 contracts, minus the exact taker fee.
-    check("exit: the booked P&L is net of the taker fee",
-          pnl > Decimal("0.80") and pnl < Decimal("0.90"),
-          f"pnl={pnl} (gross 0.90)")
-
-    # 1c. The bid falls back under the target while it rests: no taker leg, and the
-    #     position goes back to the decision loop.
-    slot, broker = slot_for(q), FakeBroker()
-    ex = LiveExecutor(ctx(), broker)
-    run(slot, ex, tp, q)
-    back = quote("0.13", "0.15")       # NO bid = 0.85 < 0.88
-    asyncio.run(ex._poll_exit(slot, back, NOW + 3.1, venue([], tuple(broker.resting))))
-    asyncio.run(ex._poll_exit(slot, back, NOW + 4.4, venue([])))
-    asyncio.run(ex._poll_exit(slot, back, NOW + 7.5, venue([])))
-    check("exit: if the bid retreats under the target, nothing is taken",
-          len(broker.placed) == 1 and slot.position is not None and slot.exit is None,
-          f"placed={len(broker.placed)} exit={slot.exit}")
-
-    # 1c'. Bid at 0.99: nothing above it to rest at, so the bid is taken at once.
-    top = quote("0.00", "0.01")        # NO bid = 0.99, NO ask = 1.00
-    slot, broker = slot_for(top), FakeBroker()
-    ex = LiveExecutor(ctx(), broker)
-    run(slot, ex, tp, top)
-    check("exit: at a 0.99 bid the take-profit goes straight out as an IOC",
-          len(broker.placed) == 1 and broker.placed[0]["post_only"] is False,
-          f"placed={len(broker.placed)} post_only={broker.placed[0]['post_only'] if broker.placed else None}")
-
-    # 1c". A stop pulls the resting take-profit instead of waiting out the barrier.
-    q2 = quote("0.15", "0.16")
-    slot, broker = slot_for(q2), FakeBroker()
-    slot.position.opened_ts = NOW - 5
-    ex = LiveExecutor(ctx(), broker)
-    asyncio.run(ex._rest_take_profit(slot, Decision("hold", "z+flow working", side="NO"), q2, NOW))
-    run(slot, ex, Decision("exit_sl", "confirmed stop", side="NO", price=Decimal("0.84")), q2)
-    asyncio.run(ex._poll_exit(slot, q2, NOW, venue([], tuple(broker.resting))))
-    check("exit: a stop decision pulls the resting take-profit at once",
-          slot.exit is not None and slot.exit.deadline <= NOW and broker.cancelled == ["ord1"],
-          f"deadline_now={slot.exit.deadline <= NOW if slot.exit else None} cancelled={broker.cancelled}")
-
-    # 1d. A crossed or locked book never gets the resting ask.
-    for label, cq in (("crossed", quote("0.60", "0.55")), ("locked", quote("0.08", "0.08"))):
-        slot, broker = slot_for(cq), FakeBroker()
-        ex = LiveExecutor(ctx(), broker)
-        asyncio.run(ex._rest_take_profit(
-            slot, Decision("hold", "z+flow working", side="NO"), cq, NOW - 40))
-        check(f"exit: no take-profit is rested on a {label} book",
-              not broker.placed, f"placed={len(broker.placed)}")
-
-    # 1e. From the fill, the take-profit rests as a maker ask at entry+5c to the barrier.
-    q = quote("0.15", "0.16")          # NO bid = 0.84 < 0.88
-    slot, broker = slot_for(q), FakeBroker()
-    slot.position.opened_ts = NOW - 5
-    ex = LiveExecutor(ctx(), broker)
-    hold = Decision("hold", "z+flow working", side="NO")
-    asyncio.run(ex._rest_take_profit(slot, hold, q, NOW))
-    asyncio.run(ex._rest_take_profit(slot, hold, q, NOW + 1))
-    sent = broker.placed[-1] if broker.placed else {}
-    check("exit: the flow take-profit rests post-only at the target from the fill, once",
-          len(broker.placed) == 1 and sent.get("post_only") is True
-          and sent.get("price") == Decimal("0.88") and slot.exit.retry_on_timeout
-          and slot.exit.deadline == NOW + 40,
-          f"placed={len(broker.placed)} price={sent.get('price')}")
-    slot.position.hold_to_settle = True
-    slot.exit = None
-    asyncio.run(ex._rest_take_profit(slot, hold, q, NOW + 2))
-    check("exit: a position carried to settlement gets no new resting take-profit",
-          len(broker.placed) == 1, f"placed={len(broker.placed)}")
-
-    # 2. The take-profit is above the bid: it rests post-only, once, and the next
-    #    tick does not place a second order or reset the deadline.
-    q = quote("0.13", "0.15")          # NO bid = 0.85 < 0.88 -> the target rests above it
-    slot, broker = slot_for(q), FakeBroker()
-    ex = LiveExecutor(ctx(), broker)
-    run(slot, ex, tp, q)
-    deadline = slot.exit.deadline if slot.exit else None
-    run(slot, ex, tp, q)
-    check("exit: a resting take-profit is placed once, post-only",
-          len(broker.placed) == 1 and broker.placed[0]["post_only"] is True,
-          f"placed={len(broker.placed)} post_only={broker.placed[0]['post_only'] if broker.placed else None}")
-    check("exit: a second decision tick does not reset the fallback deadline",
-          slot.exit is not None and slot.exit.deadline == deadline and len(broker.placed) == 1,
-          f"deadline_moved={bool(slot.exit) and slot.exit.deadline != deadline} placed={len(broker.placed)}")
-
-    # 3. The venue rejects the rest: the marker is cleared so the next tick can retry,
-    #    and nothing is left pretending to be in flight.
-    q = quote("0.13", "0.15")
-    slot, broker = slot_for(q), FakeBroker(post_only_ok=False)
-    ex = LiveExecutor(ctx(), broker)
-    run(slot, ex, tp, q)
-    check("exit: a rejected rest clears the in-flight marker",
-          slot.exit is None and bool(ex.note) and "post only" in ex.note,
-          f"exit={slot.exit} note={ex.note!r}")
-
 # --------------------------------------------------------------------------
 # 10. The LayaGate: a cached verdict read in 0ms, and a filter a promoted
 #     strategy can turn on without a code edit.
@@ -1196,7 +1064,7 @@ def control_settlement_program() -> None:
           and features.l2_imbalance(0, 100) is None,
           "None for unknown or empty depth")
     check("settlement: the imbalance is (bid - ask) / (bid + ask)",
-          abs(features.l2_imbalance(500, 200) - 0.6) < 1e-12,
+          abs(features.l2_imbalance(500, 200) - (300.0 / 700.0)) < 1e-12,
           f"obi={features.l2_imbalance(500, 200)}")
 
     # The signal: no depth, no thesis; outside the window, no thesis.
@@ -1288,6 +1156,141 @@ def control_settlement_program() -> None:
 
 
 
+
+
+def main() -> int:
+    tp = Decision("exit_tp", "take-profit reached", side="NO", price=Decimal("0.88"))
+
+    # 1. The book already pays more than the take-profit. A post-only sell at the
+    #    target would cross (the venue rejects it), so the ask is rested instead:
+    #    $0 fee if it is lifted, and the bid is taken only if nobody lifts it.
+    q = quote("0.07", "0.08")          # NO bid = 0.92 >= 0.88, NO ask = 0.93
+    slot, broker = slot_for(q), FakeBroker()
+    ex = LiveExecutor(ctx(), broker)
+    run(slot, ex, tp, q)
+    sent = broker.placed[-1] if broker.placed else {}
+    check("exit: a take-profit below the bid rests post-only at the ask first",
+          len(broker.placed) == 1 and sent.get("post_only") is True
+          and sent.get("price") == Decimal("0.93") and slot.exit.take_on_timeout,
+          f"placed={len(broker.placed)} post_only={sent.get('post_only')} price={sent.get('price')}")
+    lifted = venue([{"order_id": "ord1", "count_fp": "10.00", "no_price_dollars": "0.93",
+                     "yes_price_dollars": "0.07", "fee_cost": "0.0", "is_taker": False}])
+    asyncio.run(ex._poll_exit(slot, q, NOW + 1, lifted))
+    pnl = Decimal(str(ex.ctx.fills[-1]["pnl"])) if ex.ctx.fills else Decimal("0")
+    check("exit: lifted at the ask, it closes as a maker with no fee",
+          slot.position is None and pnl == Decimal("1.0000") and ex.ctx.fills[-1]["fee"] == 0,
+          f"pnl={pnl} fee={ex.ctx.fills[-1]['fee'] if ex.ctx.fills else None}")
+
+    # 1b. Nobody lifts it: pulled, seen off the book, then the bid is taken (IOC).
+    slot, broker = slot_for(q), FakeBroker()
+    ex = LiveExecutor(ctx(), broker)
+    run(slot, ex, tp, q)
+    asyncio.run(ex._poll_exit(slot, q, NOW + 3.1, venue([], tuple(broker.resting))))
+    asyncio.run(ex._poll_exit(slot, q, NOW + 3.6, venue([], tuple(broker.resting) or ("ord1",))))
+    asyncio.run(ex._poll_exit(slot, q, NOW + 4.4, venue([])))
+    waiting = (len(broker.placed), slot.position is not None)
+    asyncio.run(ex._poll_exit(slot, q, NOW + 7.5, venue([])))
+    sent = broker.placed[-1]
+    pnl = Decimal(str(ex.ctx.fills[-1]["pnl"])) if ex.ctx.fills else Decimal("0")
+    check("exit: an unlifted gap take-profit is pulled, then taken as a reduce-only IOC",
+          broker.cancelled == ["ord1"] and waiting == (1, True)  # one cancel, no early IOC
+          and sent.get("post_only") is False and sent.get("reduce_only") is True
+          and slot.position is None,
+          f"cancelled={broker.cancelled} waiting={waiting} post_only={sent.get('post_only')}")
+    # 0.92 - 0.83 = 9c on 10 contracts, minus the exact taker fee.
+    check("exit: the booked P&L is net of the taker fee",
+          pnl > Decimal("0.80") and pnl < Decimal("0.90"),
+          f"pnl={pnl} (gross 0.90)")
+
+    # 1c. The bid falls back under the target while it rests: no taker leg, and the
+    #     position goes back to the decision loop.
+    slot, broker = slot_for(q), FakeBroker()
+    ex = LiveExecutor(ctx(), broker)
+    run(slot, ex, tp, q)
+    back = quote("0.13", "0.15")       # NO bid = 0.85 < 0.88
+    asyncio.run(ex._poll_exit(slot, back, NOW + 3.1, venue([], tuple(broker.resting))))
+    asyncio.run(ex._poll_exit(slot, back, NOW + 4.4, venue([])))
+    asyncio.run(ex._poll_exit(slot, back, NOW + 7.5, venue([])))
+    check("exit: if the bid retreats under the target, nothing is taken",
+          len(broker.placed) == 1 and slot.position is not None and slot.exit is None,
+          f"placed={len(broker.placed)} exit={slot.exit}")
+
+    # 1c'. Bid at 0.99: nothing above it to rest at, so the bid is taken at once.
+    top = quote("0.00", "0.01")        # NO bid = 0.99, NO ask = 1.00
+    slot, broker = slot_for(top), FakeBroker()
+    ex = LiveExecutor(ctx(), broker)
+    run(slot, ex, tp, top)
+    check("exit: at a 0.99 bid the take-profit goes straight out as an IOC",
+          len(broker.placed) == 1 and broker.placed[0]["post_only"] is False,
+          f"placed={len(broker.placed)} post_only={broker.placed[0]['post_only'] if broker.placed else None}")
+
+    # 1c". A stop pulls the resting take-profit instead of waiting out the barrier.
+    q2 = quote("0.15", "0.16")
+    slot, broker = slot_for(q2), FakeBroker()
+    slot.position.opened_ts = NOW - 5
+    ex = LiveExecutor(ctx(), broker)
+    asyncio.run(ex._rest_take_profit(slot, Decision("hold", "z+flow working", side="NO"), q2, NOW))
+    run(slot, ex, Decision("exit_sl", "confirmed stop", side="NO", price=Decimal("0.84")), q2)
+    asyncio.run(ex._poll_exit(slot, q2, NOW, venue([], tuple(broker.resting))))
+    check("exit: a stop decision pulls the resting take-profit at once",
+          slot.exit is not None and slot.exit.deadline <= NOW and broker.cancelled == ["ord1"],
+          f"deadline_now={slot.exit.deadline <= NOW if slot.exit else None} cancelled={broker.cancelled}")
+
+    # 1d. A crossed or locked book never gets the resting ask.
+    for label, cq in (("crossed", quote("0.60", "0.55")), ("locked", quote("0.08", "0.08"))):
+        slot, broker = slot_for(cq), FakeBroker()
+        ex = LiveExecutor(ctx(), broker)
+        asyncio.run(ex._rest_take_profit(
+            slot, Decision("hold", "z+flow working", side="NO"), cq, NOW - 40))
+        check(f"exit: no take-profit is rested on a {label} book",
+              not broker.placed, f"placed={len(broker.placed)}")
+
+    # 1e. From the fill, the take-profit rests as a maker ask at entry+5c to the barrier.
+    q = quote("0.15", "0.16")          # NO bid = 0.84 < 0.88
+    slot, broker = slot_for(q), FakeBroker()
+    slot.position.opened_ts = NOW - 5
+    ex = LiveExecutor(ctx(), broker)
+    hold = Decision("hold", "z+flow working", side="NO")
+    asyncio.run(ex._rest_take_profit(slot, hold, q, NOW))
+    asyncio.run(ex._rest_take_profit(slot, hold, q, NOW + 1))
+    sent = broker.placed[-1] if broker.placed else {}
+    check("exit: the flow take-profit rests post-only at the target from the fill, once",
+          len(broker.placed) == 1 and sent.get("post_only") is True
+          and sent.get("price") == Decimal("0.88") and slot.exit.retry_on_timeout
+          and slot.exit.deadline == NOW + 40,
+          f"placed={len(broker.placed)} price={sent.get('price')}")
+    slot.position.hold_to_settle = True
+    slot.exit = None
+    asyncio.run(ex._rest_take_profit(slot, hold, q, NOW + 2))
+    check("exit: a position carried to settlement gets no new resting take-profit",
+          len(broker.placed) == 1, f"placed={len(broker.placed)}")
+
+    # 2. The take-profit is above the bid: it rests post-only, once, and the next
+    #    tick does not place a second order or reset the deadline.
+    q = quote("0.13", "0.15")          # NO bid = 0.85 < 0.88 -> the target rests above it
+    slot, broker = slot_for(q), FakeBroker()
+    ex = LiveExecutor(ctx(), broker)
+    run(slot, ex, tp, q)
+    deadline = slot.exit.deadline if slot.exit else None
+    run(slot, ex, tp, q)
+    check("exit: a resting take-profit is placed once, post-only",
+          len(broker.placed) == 1 and broker.placed[0]["post_only"] is True,
+          f"placed={len(broker.placed)} post_only={broker.placed[0]['post_only'] if broker.placed else None}")
+    check("exit: a second decision tick does not reset the fallback deadline",
+          slot.exit is not None and slot.exit.deadline == deadline and len(broker.placed) == 1,
+          f"deadline_moved={bool(slot.exit) and slot.exit.deadline != deadline} placed={len(broker.placed)}")
+
+    # 3. The venue rejects the rest: the marker is cleared so the next tick can retry,
+    #    and nothing is left pretending to be in flight.
+    q = quote("0.13", "0.15")
+    slot, broker = slot_for(q), FakeBroker(post_only_ok=False)
+    ex = LiveExecutor(ctx(), broker)
+    run(slot, ex, tp, q)
+    check("exit: a rejected rest clears the in-flight marker",
+          slot.exit is None and bool(ex.note) and "post only" in ex.note,
+          f"exit={slot.exit} note={ex.note!r}")
+
+    control_multi_fill()
     control_partial_fills()
     control_tp_scratch_settle()
     control_fail_safe()
