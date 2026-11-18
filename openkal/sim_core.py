@@ -262,11 +262,14 @@ def run_trade(tape: Tape, *, side: str, trigger_ts: float, entry_style: str, qty
               stop_c: Decimal | None = None, stop_confirm_s: float = 2.0,
               hold_s: float | None = None, barrier_exit: str = "settle",
               scratch_by_s: float | None = None, scratch_c: Decimal = ZERO,
-              min_print: float = MIN_PRINT) -> Trade | Skip:
+              min_print: float = MIN_PRINT, entry_limit: Decimal | None = None) -> Trade | Skip:
     """One trade from trigger to flat, under the canonical fill rules.
 
     Entry: taker crosses the book at arrival (fee charged), maker joins the side's
-    bid at arrival and waits up to `patience_s` for the print-through.
+    bid at arrival and waits up to `patience_s` for the print-through. A maker may
+    instead rest at `entry_limit`, a price in held-side terms: it must not cross the
+    book it arrives into (else Skip("post_only")), costs that price when it fills,
+    and still has to clear the same cap, band and 50-contract print-through.
     Exits, raced on the same tape, earliest wins, take-profit and lock are
     one-cancels-other:
       tp_c    $0-fee post-only sell of the held side at entry + tp_c;
@@ -295,6 +298,8 @@ def run_trade(tape: Tape, *, side: str, trigger_ts: float, entry_style: str, qty
         raise ValueError((side, entry_style))
     if barrier_exit not in ("settle", "taker", "scratch"):
         raise ValueError(f"barrier_exit {barrier_exit!r}")
+    if entry_limit is not None and entry_style != MAKER:
+        raise ValueError("entry_limit is a resting bid: it needs entry_style='maker'")
     qty = min(int(qty), MAX_QTY)
     if qty <= 0:
         return Skip("qty")
@@ -309,6 +314,10 @@ def run_trade(tape: Tape, *, side: str, trigger_ts: float, entry_style: str, qty
     except NoQuote:
         return Skip("no_quote")
     cost = entry_price(side, entry_style, b, a)
+    if entry_limit is not None:
+        if not post_only_ok(side, BUY, entry_limit, b, a):
+            return Skip("post_only")
+        cost = entry_limit
     if cost <= 0 or cost > max_cost:
         return Skip("cost_band")
     if (cost_lo is not None and cost < cost_lo) or (cost_hi is not None and cost > cost_hi):

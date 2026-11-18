@@ -178,6 +178,41 @@ class PrintThrough(unittest.TestCase):
             tape(FLAT).print_fill(T0, T0 + 5, S.YES, S.BUY, D("0.60"), need=49)
 
 
+class EntryLimit(unittest.TestCase):
+    """A caller-chosen resting bid, in held-side cost terms, instead of joining the bid."""
+
+    def _run(self, prints, side, limit, book=FLAT, **kw):
+        return S.run_trade(tape(book, prints), side=side, trigger_ts=T0, entry_style=S.MAKER,
+                           qty=10, patience_s=10.0, entry_limit=D(limit), **kw)
+
+    def test_yes_limit_below_the_bid_fills_only_when_the_tape_trades_through_it(self):
+        self.assertEqual(self._run([(T0 + 2.0, 0.60, 100, 0)], S.YES, "0.55"), S.Skip("unfilled"))
+        tr = self._run([(T0 + 2.0, 0.55, 30, 0), (T0 + 3.0, 0.54, 20, 0)], S.YES, "0.55")
+        self.assertEqual((tr.entry, tr.legs[0].ts, tr.legs[0].fee), (D("0.55"), T0 + 3.0, D("0")))
+        self.assertEqual(tr.pnl, (D("1") - D("0.55")) * 10)
+
+    def test_no_limit_is_filled_by_yes_buyers_at_or_above_one_minus_the_limit(self):
+        # A NO bid at 0.36 is a YES offer at 0.64: YES buyers at 0.63 do not reach it.
+        self.assertEqual(self._run([(T0 + 2.0, 0.63, 100, 1)], S.NO, "0.36"), S.Skip("unfilled"))
+        self.assertEqual(self._run([(T0 + 2.0, 0.64, 100, 0)], S.NO, "0.36"), S.Skip("unfilled"))
+        tr = self._run([(T0 + 2.0, 0.64, 50, 1)], S.NO, "0.36")
+        self.assertEqual((tr.entry, tr.side), (D("0.36"), S.NO))
+
+    def test_a_limit_that_would_cross_the_book_is_refused_as_post_only(self):
+        self.assertEqual(self._run([], S.YES, "0.63"), S.Skip("post_only"))     # = the YES ask
+        self.assertEqual(self._run([], S.NO, "0.40"), S.Skip("post_only"))      # = the NO ask 1 - bid
+        self.assertNotEqual(self._run([], S.YES, "0.62"), S.Skip("post_only"))
+
+    def test_the_cost_cap_still_binds_a_limit(self):
+        book = [(T0 - 10.0, 0.70, 0.75)]
+        self.assertEqual(self._run([], S.YES, "0.65", book=book), S.Skip("cost_band"))
+
+    def test_a_limit_is_maker_only(self):
+        with self.assertRaises(ValueError):
+            S.run_trade(tape(FLAT), side=S.YES, trigger_ts=T0, entry_style=S.TAKER, qty=10,
+                        entry_limit=D("0.55"))
+
+
 class PairLock(unittest.TestCase):
     """A NO bid at 1 - c - L is the same resting order as a YES offer at c + L."""
 
