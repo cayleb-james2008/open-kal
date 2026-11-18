@@ -28,7 +28,8 @@ import subprocess
 import sys
 import tempfile
 import time
-from zipfile import BadZipFile
+from zipfile import BadZipFile, ZipFile
+from zlib import error as InvalidCompression
 from collections import Counter
 from decimal import Decimal
 from pathlib import Path
@@ -52,6 +53,7 @@ LEDGER = ROOT / "data" / "oos-ledger.jsonl"
 RND_REPORT = ROOT / "RND_REPORT.md"
 NEXT_JSON = ROOT / "NEXT.json"
 PRIVATE_GIT = ROOT / "data" / "overnight-rnd.git"
+PINNED_CACHE = ROOT / "data" / "track2cd-tape"
 BRANCH = "rnd/alpha-evolve"
 
 FAMILY = "true_l2_settle"
@@ -67,6 +69,7 @@ MIN_TRADES, MIN_PF, MIN_LANES = 30, 1.25, 2
 MIN_WINDOWS_REQUIRED = 24  # >= 24 settled windows (>= 6 hours)
 FEATURES = ["p_side", "edge", "secs_left", "z_l2_obi", "flow_fast"]
 OBI_LOOKBACK_S, MIN_OBI_OBS, MAX_L2_AGE_S = 150.0, 5, 2.0
+DECISION_SECS = np.arange(780.0, 59.0, -2.0)
 
 
 def config_name(hurdle: float, obi_th: float, fw: tuple[float, float], style: str) -> str:
@@ -157,8 +160,22 @@ def causal_z_l2_obi(ts, obi):
     return z
 
 
+def recent_l2_obi(ts_grid, book_ts, bid_sz, ask_sz, micro):
+    obi = np.full(len(ts_grid), np.nan)
+    if not len(book_ts):
+        return obi
+    j = np.searchsorted(book_ts, ts_grid, side="right") - 1
+    row = np.maximum(j, 0)
+    bid, ask, mp = bid_sz[row], ask_sz[row], micro[row]
+    good = ((j >= 0) & (ts_grid - book_ts[row] <= MAX_L2_AGE_S)
+            & valid_size(bid) & valid_size(ask) & valid_microprice(mp))
+    bid, ask = bid[good], ask[good]
+    obi[good] = (bid - ask) / (bid + ask)
+    return obi
+
+
 def collect_l2_lane_samples(lane, fit_params: dict, valid_closes: set[float], cut: float,
-                            split: str, cache: Path) -> dict:
+                            split: str, cache: Path, *, raw_only: bool = False) -> dict:
     its, v = KF.clean_index(lane.index, before=cut if split == "is" else None)
     tv, C, N = KF.sigma_prefix(its, v)
 
@@ -178,11 +195,12 @@ def collect_l2_lane_samples(lane, fit_params: dict, valid_closes: set[float], cu
     p_yes_l, p_no_l = [], []
     obi_l = []
     f_fast_l, f_slow_l = {}, {}
-    for fw in FLOW_WINDOWS:
+    flow_windows = () if raw_only else FLOW_WINDOWS
+    for fw in flow_windows:
         f_fast_l[fw] = []
         f_slow_l[fw] = []
 
-    secs_grid = np.arange(780.0, 59.0, -2.0)
+    secs_grid = DECISION_SECS
     n_tickers = 0
 
     for tid, name in enumerate(lane.tickers):
@@ -206,26 +224,22 @@ def collect_l2_lane_samples(lane, fit_params: dict, valid_closes: set[float], cu
             skips["no_l2"] += len(secs_grid)
             continue
         ts_grid = close - secs_grid
-        j = np.searchsorted(bk_ts, ts_grid, side="right") - 1
-        row = a_bk + np.maximum(j, 0)
-        bid_sz, ask_sz, micro = bid_sz_all[row], ask_sz_all[row], micro_all[row]
-        good = ((j >= 0) & (ts_grid - bk_ts[np.maximum(j, 0)] <= MAX_L2_AGE_S)
-                & valid_size(bid_sz) & valid_size(ask_sz) & valid_microprice(micro))
-        obi = np.full(len(secs_grid), np.nan)
-        obi[good] = (bid_sz[good] - ask_sz[good]) / (bid_sz[good] + ask_sz[good])
-        z_grid = causal_z_l2_obi(ts_grid, obi)
+        book = slice(a_bk, b_bk)
+        obi = recent_l2_obi(ts_grid, bk_ts, bid_sz_all[book], ask_sz_all[book], micro_all[book])
+        signal = obi if raw_only else causal_z_l2_obi(ts_grid, obi)
 
-        lo_tr, hi_tr = int(lane.trade_bounds[tid]), int(lane.trade_bounds[tid + 1])
-        tts = lane.trade_ts[lo_tr:hi_tr]
-        sz = lane.trade_sz[lo_tr:hi_tr]
-        signed = np.where(lane.trade_ty[lo_tr:hi_tr] == 1, sz, -sz)
-        cs = np.concatenate(([0.0], np.cumsum(signed)))
-        ct = np.concatenate(([0.0], np.cumsum(sz)))
-        n_trades = len(tts)
+        if flow_windows:
+            lo_tr, hi_tr = int(lane.trade_bounds[tid]), int(lane.trade_bounds[tid + 1])
+            tts = lane.trade_ts[lo_tr:hi_tr]
+            sz = lane.trade_sz[lo_tr:hi_tr]
+            signed = np.where(lane.trade_ty[lo_tr:hi_tr] == 1, sz, -sz)
+            cs = np.concatenate(([0.0], np.cumsum(signed)))
+            ct = np.concatenate(([0.0], np.cumsum(sz)))
+            n_trades = len(tts)
 
-        for t, secs, z_l2_obi in zip(ts_grid, secs_grid, z_grid):
-            if not math.isfinite(z_l2_obi):
-                skips["no_causal_l2_z"] += 1
+        for t, secs, obi_signal in zip(ts_grid, secs_grid, signal):
+            if not math.isfinite(obi_signal):
+                skips["no_l2" if raw_only else "no_causal_l2_z"] += 1
                 continue
 
             spot = KF.index_last(its, v, t)
@@ -268,9 +282,9 @@ def collect_l2_lane_samples(lane, fit_params: dict, valid_closes: set[float], cu
             cn_maker_l.append(cn_m)
             p_yes_l.append(p_yes)
             p_no_l.append(p_no)
-            obi_l.append(z_l2_obi)
+            obi_l.append(obi_signal)
 
-            for fw in FLOW_WINDOWS:
+            for fw in flow_windows:
                 w_fast, w_slow = fw
                 if n_trades > 0:
                     af = int(np.searchsorted(tts, t - w_fast, "left"))
@@ -301,9 +315,9 @@ def collect_l2_lane_samples(lane, fit_params: dict, valid_closes: set[float], cu
         "cost_no_maker": np.asarray(cn_maker_l),
         "p_yes": np.asarray(p_yes_l),
         "p_no": np.asarray(p_no_l),
-        "z_l2_obi": np.asarray(obi_l),
-        "flow_fast": {fw: np.asarray(f_fast_l[fw]) for fw in FLOW_WINDOWS},
-        "flow_slow": {fw: np.asarray(f_slow_l[fw]) for fw in FLOW_WINDOWS},
+        ("l2_obi" if raw_only else "z_l2_obi"): np.asarray(obi_l),
+        "flow_fast": {fw: np.asarray(f_fast_l[fw]) for fw in flow_windows},
+        "flow_slow": {fw: np.asarray(f_slow_l[fw]) for fw in flow_windows},
         "skips": skips,
     }
 
@@ -349,7 +363,7 @@ def find_l2_triggers(pack: dict, hurdle: float, obi_th: float,
 
 
 def run_l2_triggers(pack: dict, triggers: list[tuple[int, str, float, float, float, float]],
-                    cfg_name: str, style: str, hurdle: float, out_dict: dict) -> None:
+                    cfg_name: str, style: str, hurdle: float, out_dict: dict, *, family: str = FAMILY) -> None:
     lane = pack["lane"]
     entry_style = S.TAKER if style == "taker" else S.MAKER
     patience = 5.0 if style == "maker" else 0.0
@@ -377,7 +391,7 @@ def run_l2_triggers(pack: dict, triggers: list[tuple[int, str, float, float, flo
 
         out_dict[cfg_name]["rows"].append(RC.trade_row(
             res, lane=lane.lane, ticker=name, close=float(pack["close"][i]),
-            slice_name=pack["split"], feat=feat, config=cfg_name, family=FAMILY,
+            slice_name=pack["split"], feat=feat, config=cfg_name, family=family,
             hurdle=hurdle, p_side=p_side, edge=round(edge, 6)))
 
 
@@ -469,9 +483,9 @@ def run_full_l2_sweep(audit: dict, cache: Path, manifest: dict) -> dict:
             return scored["rows"], dict(scored["skips"]), RC.fit_payoff_model(champ_rows)
 
         # The ledger writes "started" before invoking scorer; no score after a crash or rerun.
-        obj["oos_scored"] = RC.score_oos_once(
-            FAMILY, {"config": champion["config"], **cfg, "exit": "settle", "cut": cut,
-                     "input_markets_sha256": manifest["markets.json"]}, scorer)
+        score_with_receipt(OUT, obj, FAMILY,
+                           {"config": champion["config"], **cfg, "exit": "settle", "cut": cut,
+                            "input_markets_sha256": manifest["markets.json"]}, scorer)
     obj["runtime_s"] = round(time.time() - t0, 1)
     obj["completed_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     return obj
@@ -491,9 +505,20 @@ def snapshot_cache(destination: Path) -> dict | None:
     if signature() != before:
         print("Cache files changed while taking the snapshot; no score, retry on the next slot.")
         return None
+    for name in names[1:]:
+        with ZipFile(destination / name) as archive:
+            needed = (("tickers", "ts", "tid", "bid", "ask", "yes_bid_sz", "yes_ask_sz", "microprice",
+                       "trade_ts", "trade_px", "trade_sz", "trade_ty", "trade_tid")
+                      if name.startswith("book_") else ("ts", "value"))
+            if not {key + ".npy" for key in needed}.issubset(archive.namelist()) or archive.testzip() is not None:
+                raise BadZipFile(f"{name}: incomplete frozen cache")
+    return snapshot_digests(destination, names)
+
+
+def snapshot_digests(cache, names):
     digests = {}
     for name in names:
-        with (destination / name).open("rb") as f:
+        with (cache / name).open("rb") as f:
             digests[name] = hashlib.file_digest(f, "sha256").hexdigest()
     return digests
 
@@ -503,6 +528,40 @@ def atomic_text(path, text):
         f.write(text)
         temp = Path(f.name)
     temp.replace(path)
+
+
+def score_with_receipt(out, obj, family, config, scorer):
+    def stage(score):
+        obj["oos_scored"] = score
+        obj["completed_at"] = score["ts"]
+        atomic_text(out.with_suffix(".pending"), json.dumps(obj, default=RC._json_default) + "\n")
+
+    return RC.score_oos_once(family, config, scorer, before_record=stage)
+
+
+def recover_scored_receipt(out, ledger, family, manifest):
+    prior = ([r for line in ledger.read_text().splitlines() if line.strip()
+              and (r := json.loads(line))["family"] == family] if ledger.exists() else [])
+    pending = out.with_suffix(".pending")
+    if not prior and not pending.exists():
+        return None
+    if not pending.is_file() or [row["status"] for row in prior] not in (["started"], ["started", "scored"]):
+        raise RuntimeError(f"{family}: OOS touched without a recoverable receipt; refusing to rescore")
+    obj = json.loads(pending.read_text())
+    score = obj["oos_scored"]
+    if (obj.get("frozen_input_sha256") != manifest or score["family"] != family
+            or score["status"] != "scored" or score["rescore"]
+            or score["config"] != prior[0]["config"] or (len(prior) == 2 and score != prior[1])):
+        raise RuntimeError(f"{family}: staged receipt disagrees with the OOS ledger")
+    if len(prior) == 1:
+        with ledger.open("a") as fh:
+            fh.write(json.dumps(score, default=RC._json_default) + "\n")
+    return obj
+
+
+def save_receipt(out, obj, *, strict=False):
+    atomic_text(out, json.dumps(obj, indent=2, default=RC._json_default, allow_nan=not strict) + "\n")
+    out.with_suffix(".pending").unlink(missing_ok=True)
 
 
 def update_handoff(obj):
@@ -546,7 +605,9 @@ def update_handoff(obj):
         atomic_text(RND_REPORT, report.rstrip() + "\n\n" + "\n".join(lines) + "\n")
 
 
-def publish_results(obj):
+def publish_results(obj, follow_on=None):
+    from scripts import track2d_layagate_l2 as D
+
     if not PRIVATE_GIT.is_dir() or not PRIVATE_GIT.resolve().is_relative_to(ROOT):
         raise RuntimeError("cannot publish without isolated R&D Git metadata")
     env = {k: v for k, v in os.environ.items() if k not in
@@ -560,24 +621,94 @@ def publish_results(obj):
 
     if git("branch", "--show-current") != BRANCH:
         raise RuntimeError("refusing to publish from a different branch")
-    paths = [str(p.relative_to(ROOT)) for p in (RND_REPORT, NEXT_JSON, OUT, TRADES, LEDGER, OOS_TRADES) if p.exists()]
+    artifacts = [RND_REPORT, NEXT_JSON, OUT, TRADES, LEDGER, OOS_TRADES]
+    if follow_on is not None:
+        artifacts += [D.OUT, D.IS_TRADES, D.OOS_TRADES]
+    paths = [str(p.relative_to(ROOT)) for p in artifacts if p.exists()]
+    label = "Track 2C/2D true-L2 results" if follow_on is not None else "Track 2C true-L2 sweep"
+    subject = f"{label}: {obj['champion']['config']}"
+    ref = f"refs/heads/{BRANCH}"
+    remote = git("ls-remote", "origin", ref).split()
+    head, *parents = git("rev-list", "--parents", "-n1", "HEAD").split()
+    if not remote:
+        raise RuntimeError("R&D publication branch does not exist on origin")
+    retrying = head != remote[0]
+    if retrying:
+        committed = set(git("diff-tree", "--no-commit-id", "--name-only", "-r", head).splitlines())
+        if (parents != [remote[0]] or git("log", "-1", "--format=%s") != subject
+                or not committed or committed.difference(paths)):
+            raise RuntimeError("refusing to push an unrelated unpublished commit")
     if set(git("diff", "--cached", "--name-only").splitlines()).difference(paths):
         raise RuntimeError("refusing to commit unrelated staged files")
     git("add", "-f", "--", *paths)
     if git("diff", "--cached", "--name-only"):
+        if retrying:
+            raise RuntimeError("refusing to add changes to an unpublished receipt commit")
         git("diff", "--cached", "--check")
-        git("commit", "-m", f"Track 2C true-L2 sweep: {obj['champion']['config']}")
-    ref = f"refs/heads/{BRANCH}"
+        git("commit", "-m", subject)
     git("push", "origin", f"{ref}:{ref}")
     if git("ls-remote", "origin", ref).split()[0] != git("rev-parse", "HEAD"):
         raise RuntimeError("remote R&D ref did not verify")
-    print(f"Published Track 2C on {BRANCH}: {git('rev-parse', '--short', 'HEAD')}")
+    print(f"Published {'Track 2C/2D' if follow_on is not None else 'Track 2C'} on {BRANCH}: "
+          f"{git('rev-parse', '--short', 'HEAD')}", flush=True)
+
+
+def run_pinned_tracks(*, on_follow_on_error=None):
+    from scripts import track2d_layagate_l2 as D
+
+    if PINNED_CACHE.exists():
+        pin = json.loads((PINNED_CACHE / "pin.json").read_text())
+        audit, manifest = pin["audit"], pin["sha256"]
+        if snapshot_digests(PINNED_CACHE, manifest) != manifest:
+            raise RuntimeError("Track 2C/2D frozen tape digest mismatch")
+    else:
+        if OUT.exists():
+            raise RuntimeError("Track 2C receipt exists but its frozen tape is missing; refusing a different tape")
+        with tempfile.TemporaryDirectory(prefix="track2cd-tape-", dir=PINNED_CACHE.parent) as temp:
+            cache = Path(temp) / "snapshot"
+            cache.mkdir()
+            try:
+                manifest = snapshot_cache(cache)
+                if manifest is None:
+                    return None
+                audit = audit_l2_depth(cache)
+            except (FileNotFoundError, BadZipFile, InvalidCompression, json.JSONDecodeError) as e:
+                print(f"Cache publication incomplete; no score: {e}", file=sys.stderr)
+                return None
+            if audit["windows_with_l2"] < MIN_WINDOWS_REQUIRED:
+                print(f"Frozen tape has {audit['windows_with_l2']}/{MIN_WINDOWS_REQUIRED} eligible windows; no score.")
+                return None
+            (cache / "pin.json").write_text(json.dumps({"audit": audit, "sha256": manifest}) + "\n")
+            cache.rename(PINNED_CACHE)
+
+    finalized = OUT.exists()
+    if not finalized:
+        if os.environ.get("RND_OOS_UNSEAL") != "lead" or os.environ.get("RND_OOS_RESCORE"):
+            raise RuntimeError("Track 2C needs the one-shot lead seal; rescores are forbidden")
+    obj = json.loads(OUT.read_text()) if finalized else recover_scored_receipt(OUT, LEDGER, FAMILY, manifest)
+    if obj is None:
+        print(f"Pinned {audit['windows_with_l2']} qualifying BTC closes. Running Track 2C.", flush=True)
+        obj = run_full_l2_sweep(audit, PINNED_CACHE, manifest)
+    if obj.get("frozen_input_sha256") != manifest or "completed_at" not in obj:
+        raise RuntimeError("ambiguous prior Track 2C output; refusing to rescore")
+    if not finalized:
+        save_receipt(OUT, obj)
+    update_handoff(obj)
+    print("Track 2C complete. Running Track 2D on the same pinned tape.", flush=True)
+    try:
+        return obj, D.run_pinned(PINNED_CACHE, obj)
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        raise
+    except Exception:
+        if on_follow_on_error is not None and not D.OUT.exists():
+            on_follow_on_error(obj)
+        raise
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check-only", action="store_true")
-    ap.add_argument("--publish", action="store_true", help="Commit and push the completed research receipt")
+    ap.add_argument("--publish", action="store_true", help="Commit and push the completed research receipts")
     args = ap.parse_args()
 
     if args.check_only:
@@ -585,40 +716,18 @@ def main() -> int:
         return 0
     with (ROOT / "data/overnight-track2c.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        if OUT.exists():
-            obj = json.loads(OUT.read_text())
-            if "frozen_input_sha256" not in obj or "completed_at" not in obj:
-                raise RuntimeError("ambiguous prior Track 2C output; refusing to rescore")
-        else:
-            if any(json.loads(line)["family"] == FAMILY for line in LEDGER.read_text().splitlines() if line.strip()):
-                raise RuntimeError("Track 2C OOS touched without a complete receipt; refusing to rescore")
-            if os.environ.get("RND_OOS_UNSEAL") != "lead" or os.environ.get("RND_OOS_RESCORE"):
-                raise RuntimeError("Track 2C needs the one-shot lead seal; rescores are forbidden")
-            with tempfile.TemporaryDirectory(prefix="track2c-tape-", dir=ROOT / "data") as temp:
-                cache = Path(temp)
-                try:
-                    manifest = snapshot_cache(cache)
-                    if manifest is not None:
-                        audit = audit_l2_depth(cache)
-                except (FileNotFoundError, BadZipFile) as e:
-                    print(f"Cache publication incomplete; no score: {e}", file=sys.stderr)
-                    return 75
-                if manifest is None:
-                    return 75
-                if audit["windows_with_l2"] < MIN_WINDOWS_REQUIRED:
-                    print(f"Frozen tape has {audit['windows_with_l2']}/{MIN_WINDOWS_REQUIRED} eligible windows; no score.")
-                    return 75
-                print(f"Pinned {audit['windows_with_l2']} qualifying BTC closes. Running Track 2C.", flush=True)
-                obj = run_full_l2_sweep(audit, cache, manifest)
-                atomic_text(OUT, json.dumps(obj, indent=2, default=RC._json_default) + "\n")
-        update_handoff(obj)
-        if args.publish:
-            try:
-                publish_results(obj)
-            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-                print(f"Publication failed; retain result and retry only publishing: {e}", file=sys.stderr)
+        try:
+            result = run_pinned_tracks(on_follow_on_error=publish_results if args.publish else None)
+            if result is None:
                 return 75
+            obj, follow_on = result
+            if args.publish:
+                publish_results(obj, follow_on)
+        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            print(f"I/O or publication failed; retry without rescoring a completed track: {e}", file=sys.stderr)
+            return 75
         print(f"Track 2C: {obj['champion']['config']}; OOS {'scored' if obj['oos_scored'] else 'unspent'}.")
+        print(f"Track 2D: {follow_on['status']}.")
     return 0
 
 

@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-18T01:05:00-05:00",
+ "updated": "2026-11-18T01:30:00-05:00",
  "goal": "24/7 forward-OOS gate, live compounding, trailing drawdown breaker.",
  "rnd_overnight_shift": {
   "lane": "rnd/alpha-evolve",
@@ -58,17 +58,26 @@
    "note": "Twelve denied, three unlogged, zero allowed. PF and calibration lift are not measurable on an empty allowed subset."
   },
   "track2c_true_l2_loop": {
-   "status": "Awaiting scheduled depth checks",
+   "status": "Watcher active; waiting for 24 settled windows",
    "loop_script": "scripts/overnight_rnd_loop.py",
    "service": "openkal-rnd-overnight-20261118.service",
    "schedule_est": ["2026-11-18T01:15:00-05:00", "2026-11-18T06:00:00-05:00"],
    "interval_s": 300,
-   "current_windows": 16,
+   "current_windows": 20,
    "required_windows": 24,
-   "valid_l2_rows": 9517812,
+   "valid_l2_rows": 11666357,
    "oos_spent": false,
    "log": "data/overnight-rnd-loop.log",
-   "note": "Preflight 16/24. The timer checks the read-only cache through 06:00 EST; sweep once at 24 qualifying closes and keep OOS sealed if no IS champion qualifies."
+   "note": "Verified heartbeat 01:30 EST: 20/24. The timer checks the read-only cache through 06:00 EST; sweep once at 24 qualifying closes and keep OOS sealed if no IS champion qualifies."
+  },
+  "track2d_layagate_l2": {
+   "status": "Armed; awaiting the shared Track 2C snapshot",
+   "script": "scripts/track2d_layagate_l2.py",
+   "same_tape_as_track2c": true,
+   "preflight_joint_windows": 20,
+   "required_joint_windows": 24,
+   "oos_spent": false,
+   "note": "Runs immediately after Track 2C with the same immutable tape and cut. Requires a recorded live LayaGate verdict and covers both directions with signed raw OBI. Research only."
   }
  },
  "state": {

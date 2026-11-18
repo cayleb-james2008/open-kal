@@ -169,7 +169,7 @@ def promotion_gate(oos: dict, ece: float | None) -> dict:
     return checks
 
 
-def score_oos_once(family: str, config: dict, scorer, *, rescore: bool = False) -> dict:
+def score_oos_once(family: str, config: dict, scorer, *, rescore: bool = False, before_record=None) -> dict:
     """Score one frozen champion on OOS, once per family, and log the touch.
 
     `scorer()` must return (oos_rows, oos_skips, payoff_model). The ledger is
@@ -177,6 +177,7 @@ def score_oos_once(family: str, config: dict, scorer, *, rescore: bool = False) 
     mid-score still counts as a look. A family with any prior line is refused unless
     this is a rescore: `rescore=True`, or RND_OOS_RESCORE set to the reason, which is
     recorded with the entry.
+    `before_record`, if supplied, can durably stage the calculated receipt before the scored append.
     """
     if os.environ.get("RND_OOS_UNSEAL") != "lead":
         raise RuntimeError("OOS is sealed: only the lead scores a champion (RND_OOS_UNSEAL=lead)")
@@ -197,9 +198,11 @@ def score_oos_once(family: str, config: dict, scorer, *, rescore: bool = False) 
     ece = payoff_ece(model, rows)
     verdict = promotion_gate(oos, ece)
     entry = {"ts": datetime.now(timezone.utc).isoformat(), "family": family,
-             "status": "scored", "config": config, "rescore": rescore,
-             "rescore_reason": reason, "oos": oos, "payoff_ece": ece,
-             "gate": verdict, "cache": str(CACHE)}
+              "status": "scored", "config": config, "rescore": rescore,
+              "rescore_reason": reason, "oos": oos, "payoff_ece": ece,
+              "gate": verdict, "cache": str(CACHE)}
+    if before_record is not None:
+        before_record(entry)
     with LEDGER.open("a") as fh:
         fh.write(json.dumps(entry, default=_json_default) + "\n")
     return entry

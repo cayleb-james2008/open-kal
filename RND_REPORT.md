@@ -44,6 +44,8 @@ The read-only preflight found **9,517,812** rows with both sizes and a valid mic
 
 At 24 closes, `scripts/track2c_true_l2_settle.py` pins one cache snapshot and splits its closes chronologically 60/40 across all coins. It measures `z_l2_obi` against the prior 150 seconds of depth samples and uses a Student-t settlement probability with Asian-average variance scaling before the final minute. All fills use `sim_core.py`, entries $0.35–$0.60, settlement at $1 or $0. Only an IS-eligible champion can spend one OOS look; any result goes to the ledger and this report and is research-only. The watcher will not send a live order or promote a strategy.
 
+Track 2D is queued as the immediate follow-on in the same child process. It reuses Track 2C's pinned cache and chronological cut, requires at least 24 of those closes with simultaneous true depth and an available same-ticker LayaGate verdict, and applies a fixed rule: `allow` or confidence ≥ 0.55, raw signed OBI magnitude ≥ 0.20, and positive own-side Student-t edge. Taker fills use T+1s and $0.35–$0.60, then hold to binary settlement. Track 2D has a separate one-shot OOS ledger family; the same IS eligibility bar applies. No live execution or promotion.
+
 Verification at handoff: 33/33 canonical simulator tests (54 targeted tests total); a separate synthetic 24-window run exercised one OOS score, one ledger receipt pair, and refused replay. No real Track 2C OOS result at preflight.
 
 ---
