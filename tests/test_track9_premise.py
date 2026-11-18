@@ -1,6 +1,7 @@
 """The Coinbase-vs-RTI premise test: registered constants, the lead-lag statistic, the criteria and the single-run gate."""
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import tempfile
@@ -17,7 +18,7 @@ PREREG_SHA256 = "66bc153252603d9cb4d1aeb461c201ac8b6538e3c35fdc8044a6cb21d084354
 T0 = 1_800_000_000.0
 
 
-def feeds(n=21_600, lag=0, noise=0.0, seed=1):
+def feeds(n=36_000, lag=0, noise=0.0, seed=1):
     """A random-walk 'Coinbase' price printed every second and an 'RTI' that shows it `lag` seconds later (negative: earlier)."""
     rng = np.random.default_rng(seed)
     walk = np.cumsum(rng.normal(0.0, 2e-4, n + 20))
@@ -46,6 +47,19 @@ class Registration(unittest.TestCase):
         self.assertEqual((M.LL["bootstrap"]["draws"], M.LL["bootstrap"]["seed"], M.LL["bootstrap"]["block_s"]), (2000, 0, 900))
         self.assertEqual(M.LANE_SYMBOL, {"KXBTC15M": "BTC-USD", "KXETH15M": "ETH-USD", "KXSOL15M": "SOL-USD", "KXXRP15M": "XRP-USD"})
         M.check_constants()
+
+    def test_the_numbers_hard_coded_in_the_script_are_the_ones_written_in_the_registration(self):
+        s = M.SPEC
+        prose = s["eligibility"]["window"]
+        self.assertTrue("[close - 150 s, close]" in prose and "at least 30" in prose and "at most 3.0 s" in prose)
+        self.assertEqual((M.ELIG_WINDOW_S, M.ELIG_MIN_PRINTS, M.ELIG_MAX_GAP_S), (150.0, 30, 3.0))
+        self.assertIn("S >= 0.10", M.LL["lane_passes_when"])
+        self.assertEqual(M.PRIMARY, (1, 2))
+        self.assertIn("S = A_1 + A_2", M.LL["statistic"])
+        self.assertIn("at least 3 of the 4 lanes", M.LL["criterion_passes_when"])
+        self.assertIn("at least 100 events across at least 40 distinct window closes", M.FUN["criterion_passes_when"])
+        self.assertEqual(M.LL["grid_s"], 1)
+        self.assertIn("all four lanes have a settled outcome", prose)
 
     def test_a_changed_track8_constant_stops_the_run_instead_of_quietly_changing_the_test(self):
         with patch.object(M8, "DIVERGENCE_BPS", 4.0):
@@ -161,12 +175,57 @@ class Criteria(unittest.TestCase):
         got = M.brier_criterion({"A": tie})
         self.assertFalse(got["passes"] and got["d_hi"] >= 0)
 
+    def windows_with_d(self, better: int, worse: int):
+        """Per-window constants: a 'better' window has d = -0.24, a 'worse' one +0.56 (p_cb 0.9 or 0.1 against a mid of 0.5, y = 1)."""
+        n = better + worse
+        close = np.repeat(np.arange(n) * 900.0, 4)
+        p = np.repeat(np.r_[np.full(better, 0.9), np.full(worse, 0.1)], 4)
+        return {"close": close, "secs": np.full(len(close), 40.0), "y": np.ones(len(close)), "p_cb": p, "p_rti": p,
+                "bid_m": np.full(len(close), 490.0), "ask_m": np.full(len(close), 510.0)}
+
+    def test_a_negative_mean_whose_interval_reaches_zero_does_not_pass(self):
+        got = M.brier_criterion({"A": self.windows_with_d(22, 8)})                       # mean d = -0.027, but only 30 windows
+        self.assertLess(got["mean_d"], 0)
+        self.assertGreaterEqual(got["d_hi"], 0)
+        self.assertFalse(got["passes"])
+        self.assertTrue(M.brier_criterion({"A": self.windows_with_d(30, 0)})["passes"])
+
+    def test_too_few_windows_or_blocks_cannot_make_an_interval(self):
+        one = M.brier_criterion({"A": self.windows_with_d(1, 0)})
+        self.assertEqual((one["windows"], one["d_lo"], one["d_hi"]), (1, one["mean_d"], one["mean_d"]))      # a degenerate interval ...
+        self.assertFalse(one["passes"])                                                                   # ... never passes
+        cb, rti = feeds(n=900, lag=1)
+        self.assertFalse(M.lead_lag(cb, rti, T0, T0 + 900)["passes"])                     # one 15-minute block of a perfect lead
+
     def test_all_three_criteria_are_needed(self):
         yes = {"passes": True}
         no = {"passes": False}
         self.assertTrue(M.decide(yes, yes, yes)["premise_passes"])
         for combo in ((no, yes, yes), (yes, no, yes), (yes, yes, no)):
             self.assertFalse(M.decide(*combo)["premise_passes"])
+
+
+class Settlement(unittest.TestCase):
+    def tape(self, d, closes_by_lane, unsettled=()):
+        meta = {}
+        for lane, closes in closes_by_lane.items():
+            names = []
+            for c in closes:
+                name = f"{lane}-{int(c)}"
+                names.append(name)
+                meta[name] = {"close": c, "strike": 100.0, "y": None if name in unsettled else 1}
+            np.savez(Path(d) / f"book_{lane}.npz", tickers=np.array(names))
+        (Path(d) / "markets.json").write_text(json.dumps(meta))
+
+    def test_a_close_is_eligible_only_if_it_settled_in_every_lane(self):
+        with tempfile.TemporaryDirectory() as d:
+            lanes = {"KXBTC15M": [900.0, 1800.0, 2700.0], "KXETH15M": [900.0, 1800.0, 2700.0],
+                     "KXSOL15M": [900.0, 1800.0, 2700.0, 3600.0], "KXXRP15M": [900.0, 1800.0, 2700.0]}
+            self.tape(d, lanes, unsettled={"KXXRP15M-1800"})                                 # XRP's 1800 has no outcome yet
+            by_lane = M.settled_closes_by_lane(Path(d))
+            self.assertEqual(by_lane["KXXRP15M"], {900.0, 2700.0})
+            self.assertEqual(by_lane["KXSOL15M"], {900.0, 1800.0, 2700.0, 3600.0})
+            self.assertEqual(M.common_closes(by_lane), [900.0, 2700.0])                      # not the union of 4 lanes' closes
 
 
 class Eligibility(unittest.TestCase):
@@ -236,6 +295,16 @@ class RunGate(unittest.TestCase):
                 out = M.run(Path(d), rec)
             self.assertEqual((out["status"], out["cut"], out["is_windows"]), ("decided", eligible[172], 172))
 
+    def test_two_runs_cannot_overlap(self):
+        with tempfile.TemporaryDirectory() as d:
+            rec = Path(d) / "r.json"
+            with rec.with_suffix(".lock").open("a") as held:
+                fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)                             # another run is in progress
+                with patch.object(M, "load_inputs", self.boom):
+                    with self.assertRaisesRegex(RuntimeError, "holds the lock"):
+                        M.run(Path(d), rec)
+            self.assertFalse(rec.exists())
+
     def test_check_only_reports_readiness_without_writing_or_computing(self):
         with tempfile.TemporaryDirectory() as d:
             rec = Path(d) / "r.json"
@@ -267,21 +336,37 @@ class RunGate(unittest.TestCase):
 
 
 class Tape(unittest.TestCase):
-    def test_a_new_tape_is_copied_pinned_and_checked_on_use(self):
+    def fake_snapshot(self, dest):
+        (dest / "markets.json").write_bytes(b"{}")
+        (dest / "book_KXBTC15M.npz").write_bytes(b"book")
+        return M.C.snapshot_digests(dest, ["markets.json", "book_KXBTC15M.npz"])
+
+    def test_the_tape_is_a_checked_snapshot_plus_the_exported_ticks_pinned_together(self):
         with tempfile.TemporaryDirectory() as d:
-            src = Path(d) / "src"
-            src.mkdir()
-            (src / "spot_ticks.npz").write_bytes(b"ticks")
-            (src / "markets.json").write_bytes(b"{}")
+            evolve = Path(d) / "evolve"
+            evolve.mkdir()
+            (evolve / "spot_ticks.npz").write_bytes(b"ticks")
             dest = Path(d) / "tape"
-            digests = M.pin_new_tape(dest, [src / "spot_ticks.npz", src / "markets.json"])
-            self.assertEqual(set(digests), {"spot_ticks.npz", "markets.json"})
+            digests = M.build_tape(dest, evolve, self.fake_snapshot)
+            self.assertEqual(set(digests), {"markets.json", "book_KXBTC15M.npz", "spot_ticks.npz"})
             self.assertEqual(M.T.pin_tape(dest)["sha256"], digests)
+            self.assertEqual((evolve / "spot_ticks.npz").read_bytes(), b"ticks")          # the source is only read
             with self.assertRaisesRegex(RuntimeError, "already pinned"):
-                M.pin_new_tape(dest, [src / "markets.json"])
+                M.build_tape(dest, evolve, self.fake_snapshot)
             (dest / "spot_ticks.npz").write_bytes(b"tampered")
             with self.assertRaisesRegex(RuntimeError, "digest mismatch"):
                 M.T.pin_tape(dest)
+
+    def test_it_refuses_without_the_export_or_when_the_cache_moved_during_the_copy(self):
+        with tempfile.TemporaryDirectory() as d:
+            evolve = Path(d) / "evolve"
+            evolve.mkdir()
+            with self.assertRaisesRegex(RuntimeError, "export_spot_ticks"):
+                M.build_tape(Path(d) / "t1", evolve, self.fake_snapshot)
+            (evolve / "spot_ticks.npz").write_bytes(b"ticks")
+            with self.assertRaisesRegex(RuntimeError, "changed while"):
+                M.build_tape(Path(d) / "t2", evolve, lambda dest: None)
+            self.assertFalse((Path(d) / "t2" / "pin.json").exists())
 
 
 if __name__ == "__main__":

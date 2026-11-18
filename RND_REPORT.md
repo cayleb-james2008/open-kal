@@ -567,3 +567,13 @@ OOS, the four champions made 0–3 trades each, net −$14.29 to $0.00 (ledger a
 - IS bar missed; OOS left sealed, no ledger entry.
 - The 'sealed' OOS slice is sealed per family in the ledger only: earlier families on this tape (Tracks 2B-2D, F2 variants) already looked at overlapping late windows.
 - Receipt: `data/track8-coinbase-rti-settle.json`; no live promotion.
+
+### Track 9 — Coinbase vs RTI lead-lag premise test (pre-registered, not run)
+- Not run. The registration is `scripts/track9_prereg.json` (sha256 `66bc1532…354b`), registered in `81927da`, amended once to v2 in `b8ea5e0` before any code or data (v1's h-window statistic could not see a pure 2-3 s lag at h=1; the reason is inside the file).
+- **Retention risk:** `Store.prune()` deletes `spot_ticks` older than 3 days when the engine process shuts down, so a restart on or after about Nov 21 would delete Nov 18's rows and put the 288-window gate out of reach. The exporter accumulates (rowid watermark, append-only) so exported rows survive; run it daily and before any restart, or raise `keep_s` for `spot_ticks`.
+- Data: venue-labelled Coinbase prints only (`spot_ticks.source == 'coinbase'`), exported read-only from the production DB by `scripts/export_spot_ticks.py` (sqlite `mode=ro`, rowid-bounded chunks, refuses when the WAL files are absent, writes one archive file atomically with fsync).
+- Gate and split: run only with >= 288 eligible windows (settled in all four lanes and every lane has >= 30 Coinbase prints in the last 150 s with no gap over 3.0 s); cut = eligible_closes[int(0.6 n)]; the test reads IS only, OOS stays sealed, it runs once and one at a time.
+- Criteria, all on IS: (1) lead-lag A_k = corr(r_cb(t), r_rti(t+k)) - corr(r_rti(t), r_cb(t+k)) on 1 s returns, primary S = A_1 + A_2 >= 0.10 with a 15-minute block-bootstrap lower bound above 0 in at least 3 of 4 lanes; (2) >= 100 (lane, window) events with |Coinbase/RTI - 1| >= 8 bps in the last 90 s across >= 40 windows; (3) in the last 60 s the Coinbase settlement probability beats the market mid in Brier with the bootstrap upper bound below 0. All three, or no sweep. (A validity guard, not a threshold: fewer than 30 bootstrap blocks or windows never passes; it cannot bind at the gate.)
+- Prior to beat: an independent backtest on 23.5k windows found no taker edge at 5 s or longer delay and the market beating public feeds in the last 60 s (Brier 0.004 vs 0.039).
+- Disclosure: thresholds were set after Track 8 showed no lead of the engine's unlabelled spot over the index (S about -0.12 there); the expectation is that the premise fails.
+- To run: export, `--build-tape`, `--check-only`, then the test (see NEXT.json).

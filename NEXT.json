@@ -742,6 +742,26 @@
    "brier_oos": null,
    "result_artifact": "data/track8-coinbase-rti-settle.json",
    "note": "Research only; no live promotion or trading."
+  },
+  "track9_coinbase_lead_lag_premise": {
+   "status": "pre-registered (v2); NOT RUN; waiting for >= 288 eligible windows (about 2026-11-21)",
+   "spec": "scripts/track9_prereg.json",
+   "spec_sha256": "66bc153252603d9cb4d1aeb461c201ac8b6538e3c35fdc8044a6cb21d084354b",
+   "prereg_commits": {
+    "v1": "81927da6aee5bdbaf0ecdc338f7f335102574285",
+    "v2_amendment": "b8ea5e0538144c64c280d81d401f354d6a17c5ce"
+   },
+   "run_when": "on or after 2026-11-21 (three full days of spot_ticks), then once",
+   "steps": [
+    "scripts/export_spot_ticks.py  (read-only, accumulating: appends new rows to spot_ticks.npz in the evolve cache; --dest to change; needs the engine running so the WAL files exist)",
+    "scripts/track9_coinbase_lead_lag.py --build-tape   (consistency-checked cache snapshot plus spot_ticks.npz, pinned in data/track9-tape)",
+    "scripts/track9_coinbase_lead_lag.py --check-only   (counts eligible windows against the 288 gate; computes nothing else)",
+    "scripts/track9_coinbase_lead_lag.py               (the premise test, once; writes data/track9-premise.json; one run at a time)"
+   ],
+   "decision": "lead_lag AND funnel AND brier must all pass on IS; only then may a sweep be designed, on IS, with OOS sealed. Otherwise the premise is closed.",
+   "prior_to_beat": "no taker edge at 5 s or longer delay (23.5k windows); market Brier 0.004 vs 0.039 for public feeds in the final 60 s",
+   "note": "Premise test only, not a trading track. No spot_ticks data has been read.",
+   "RETENTION_RISK": "openkal Store.prune() (called only when the engine process shuts down) deletes spot_ticks rows older than 3 days. A restart on or after about 2026-11-21 deletes 2026-11-18's rows, and the 288-window gate becomes unreachable. The exporter therefore ACCUMULATES: each run appends only rows above its rowid watermark, so exported rows survive a later prune. Run it daily and before any engine restart, or ask Session 1 to raise keep_s for spot_ticks."
   }
  },
  "state": {

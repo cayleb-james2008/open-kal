@@ -9,13 +9,14 @@ the file is read at run time and its sha256 goes into the receipt). Three criter
   brier     in the last 60 s the Coinbase settlement probability must beat the market mid, bootstrap upper bound below 0.
 The premise passes only if all three do; only then may a sweep be designed, on IS, with OOS still sealed.
 
-Inputs are a pinned tape directory (pin.json digests; build one with `pin_new_tape`) holding the evolve-cache files the other tracks use
+Inputs are a pinned tape directory (pin.json digests; build one with `--build-tape`) holding the evolve-cache files the other tracks use
 plus `spot_ticks.npz` from `scripts/export_spot_ticks.py`. The run gate is >= 288 eligible windows (about three days): below it the script
 writes `insufficient_data` and computes no statistic. A decided receipt is never overwritten: the test is run once.
 """
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import shutil
@@ -48,6 +49,8 @@ SPOT_FILE = "spot_ticks.npz"
 LAGS = tuple(LL["lags_s"])
 PRIMARY = (1, 2)
 ELIG_WINDOW_S, ELIG_MIN_PRINTS, ELIG_MAX_GAP_S = 150.0, 30, 3.0       # the registered eligibility rule
+MIN_BLOCKS = 30                      # validity guard, not a registered threshold: fewer bootstrap blocks/windows cannot make an interval
+                                     # (the 288-window gate puts at least 172 in-sample windows behind it, so it never binds there)
 
 
 def check_constants() -> None:
@@ -56,6 +59,7 @@ def check_constants() -> None:
     assert (float(M8.SECS[0]), float(M8.SECS[-1])) == (float(FUN["secs_left"][1]), float(FUN["secs_left"][0])), "decision grid differs"
     assert M8.QUOTE_MAX_AGE_S == FUN["quote_fresh_s"], "quote age differs"
     assert KF.INDEX_TOL == FUN["cb_fresh_s"] == LL["fresh_s"], "freshness differs"
+    assert LL["grid_s"] == 1, "the return and lag logic assumes a one-second grid"
 
 
 # ------------------------------------------------------------------ inputs
@@ -64,6 +68,22 @@ def coinbase_series(spot: dict, symbol: str) -> tuple[np.ndarray, np.ndarray]:
     m = (spot["source"] == "coinbase") & (spot["symbol"] == symbol) & np.isfinite(spot["price"]) & (spot["price"] > 0)
     order = np.argsort(spot["ts"][m], kind="stable")
     return spot["ts"][m][order], spot["price"][m][order]
+
+
+def settled_closes_by_lane(tape: Path) -> dict[str, set]:
+    """For each lane, the window closes whose market settled (outcome known, strike known)."""
+    meta = json.loads((tape / "markets.json").read_text())
+    out = {}
+    for lane in RC.LANES:
+        with np.load(tape / f"book_{lane}.npz", allow_pickle=False) as data:
+            names = [str(t) for t in data["tickers"]]
+        out[lane] = {float(meta[n]["close"]) for n in names if n in meta and meta[n].get("y") in (0, 1) and meta[n].get("strike")}
+    return out
+
+
+def common_closes(by_lane: dict) -> list[float]:
+    """The registered rule's first half: closes that settled in every lane."""
+    return sorted(set.intersection(*by_lane.values())) if by_lane else []
 
 
 def eligible_closes(closes: list[float], series: dict) -> list[float]:
@@ -124,7 +144,7 @@ def lane_passes(s: dict) -> bool:
 
 def lead_lag(cb: tuple, rti: tuple, t_start: float, t_end: float) -> dict:
     """A_k for each registered lag and the primary S, with block-bootstrap intervals, from data strictly before `t_end`."""
-    grid_t = np.arange(np.ceil(t_start), np.floor(t_end), 1.0)
+    grid_t = np.arange(np.ceil(t_start), np.floor(t_end), float(LL["grid_s"]))
     r_cb, r_rti = second_returns(last_vals(*cb, grid_t)), second_returns(last_vals(*rti, grid_t))
     block = ((grid_t[1:] // LL["bootstrap"]["block_s"]) - (grid_t[1] // LL["bootstrap"]["block_s"])).astype(np.int64)
     blocks = int(block.max()) + 1
@@ -145,7 +165,7 @@ def lead_lag(cb: tuple, rti: tuple, t_start: float, t_end: float) -> dict:
     out = {f"A_{k}": {"point": float(point[i]), "lo": float(lo[i]), "hi": float(hi[i])} for i, k in enumerate(LAGS)}
     out["S"] = {"point": float(point[-1]), "lo": float(lo[-1]), "hi": float(hi[-1])}
     out.update(rows=int(stats[:, 0].sum()), blocks=int(len(stats)))
-    out["passes"] = lane_passes(out["S"])
+    out["passes"] = lane_passes(out["S"]) and out["blocks"] >= MIN_BLOCKS
     return out
 
 
@@ -179,7 +199,7 @@ def brier_criterion(packs: dict) -> dict:
     b = BR["bootstrap"]
     point, lo, hi = bootstrap(stats, fn, b["draws"], b["seed"], b["ci"])
     return {"rows": int(len(rows)), "windows": int(len(closes)), "mean_d": float(point[0]), "d_lo": float(lo[0]), "d_hi": float(hi[0]),
-            "brier_cb": float(point[1]), "brier_rti_spot": float(point[2]), "brier_mid": float(point[3]), "passes": bool(point[0] < 0 and hi[0] < 0)}
+            "brier_cb": float(point[1]), "brier_rti_spot": float(point[2]), "brier_mid": float(point[3]), "passes": bool(point[0] < 0 and hi[0] < 0 and len(closes) >= MIN_BLOCKS)}
 
 
 def decide(lead: dict, funnel: dict, brier: dict) -> dict:
@@ -195,7 +215,7 @@ def load_inputs(tape: Path) -> dict:
     spot = dict(np.load(tape / SPOT_FILE, allow_pickle=False))
     cb = {lane: coinbase_series(spot, sym) for lane, sym in LANE_SYMBOL.items()}
     rti = {lane: KF.clean_index(dict(np.load(tape / f"index_{AD.INDEX_BY_SERIES[lane]}.npz"))) for lane in RC.LANES}
-    return {"pin": pin, "closes": T.window_closes(tape), "cb": cb, "rti": rti}
+    return {"pin": pin, "closes": common_closes(settled_closes_by_lane(tape)), "cb": cb, "rti": rti}
 
 
 def gather_packs(inp: dict, cut: float) -> dict:
@@ -209,7 +229,18 @@ def gather_packs(inp: dict, cut: float) -> dict:
 
 
 def run(tape: Path = TAPE, receipt: Path = RECEIPT, *, check_only: bool = False) -> dict:
+    """One run at a time (an exclusive lock beside the receipt), and only once: a decided receipt is never rewritten."""
     check_constants()
+    receipt.parent.mkdir(parents=True, exist_ok=True)
+    with receipt.with_suffix(".lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError("another premise run holds the lock") from None
+        return _run(tape, receipt, check_only)
+
+
+def _run(tape: Path, receipt: Path, check_only: bool) -> dict:
     if receipt.exists() and "decision" in json.loads(receipt.read_text()):
         raise RuntimeError("the premise test has already been decided; it is run once")
     inp = load_inputs(tape)
@@ -234,15 +265,23 @@ def run(tape: Path = TAPE, receipt: Path = RECEIPT, *, check_only: bool = False)
     return obj
 
 
-def pin_new_tape(dest: Path, files: list[Path]) -> dict:
-    """Copy `files` into a new directory and write pin.json with their sha256 digests (refuses to touch an existing pin)."""
+def build_tape(dest: Path = TAPE, evolve: Path = C.EVOLVE_CACHE, snapshot=C.snapshot_cache) -> dict:
+    """Pin the tape this test runs on: a consistency-checked copy of the evolve cache plus the exported spot_ticks.npz.
+
+    `snapshot` is `track2c.snapshot_cache` (it copies and verifies the markets, book and index files, or reports that they
+    changed while copying). The evolve cache is only read."""
     dest.mkdir(parents=True, exist_ok=True)
     if (dest / "pin.json").exists():
         raise RuntimeError(f"{dest} is already pinned")
-    for f in files:
-        shutil.copyfile(f, dest / Path(f).name)
-    digests = C.snapshot_digests(dest, sorted(p.name for p in dest.iterdir()))
-    (dest / "pin.json").write_text(json.dumps({"sha256": digests, "source": [str(f) for f in files]}) + "\n")
+    spot = evolve / SPOT_FILE
+    if not spot.exists():
+        raise RuntimeError(f"{spot} is missing: run scripts/export_spot_ticks.py first")
+    digests = snapshot(dest)
+    if digests is None:
+        raise RuntimeError("the evolve cache changed while it was copied; try again")
+    shutil.copyfile(spot, dest / SPOT_FILE)
+    digests = {**digests, **C.snapshot_digests(dest, [SPOT_FILE])}
+    (dest / "pin.json").write_text(json.dumps({"sha256": digests, "source": str(evolve)}) + "\n")
     return digests
 
 
@@ -250,7 +289,11 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--tape", type=Path, default=TAPE)
     ap.add_argument("--check-only", action="store_true", help="count eligible windows against the run gate; compute nothing else")
+    ap.add_argument("--build-tape", action="store_true", help="pin the tape (cache snapshot + spot_ticks.npz) and stop")
     args = ap.parse_args()
+    if args.build_tape:
+        print(json.dumps(build_tape(args.tape), indent=1))
+        return 0
     out = run(args.tape, check_only=args.check_only)
     print(json.dumps(T.clean(out), indent=1, default=RC._json_default))
     return 0
