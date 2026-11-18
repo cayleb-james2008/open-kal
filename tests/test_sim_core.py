@@ -424,5 +424,122 @@ class MakerScratch(unittest.TestCase):
                         hold_s=10.0, barrier_exit="market")
 
 
+def sized(tp, bid_sz, ask_sz):
+    import dataclasses
+    return dataclasses.replace(tp, yes_bid_sz=np.array(bid_sz, dtype=np.float32), yes_ask_sz=np.array(ask_sz, dtype=np.float32))
+
+
+class QueueModel(unittest.TestCase):
+    """A resting order waits behind the contracts displayed at its price; off by default."""
+
+    BOOK = [(T0 - 10.0, 0.60, 0.63)]
+
+    def tp(self, prints=(), bid_sz=300.0, ask_sz=80.0, book=None):
+        b = book or self.BOOK
+        return sized(tape(b, prints), [bid_sz] * len(b), [ask_sz] * len(b))
+
+    def test_the_queue_ahead_is_the_displayed_touch_size_inside_the_spread_it_is_zero_below_it_unknown(self):
+        tp = self.tp()
+        self.assertEqual(tp.queue_ahead(T0, S.YES, D("0.60")), 300.0)
+        self.assertEqual(tp.queue_ahead(T0, S.NO, D("0.37")), 80.0)                        # a NO bid's touch is the YES ask size
+        self.assertEqual(tp.queue_ahead(T0, S.YES, D("0.61")), 0.0)                        # improves the bid: alone at its price
+        self.assertEqual(tp.queue_ahead(T0, S.NO, D("0.38")), 0.0)
+        self.assertIsNone(tp.queue_ahead(T0, S.YES, D("0.59")))                            # behind depth the cache does not carry
+        self.assertIsNone(tp.queue_ahead(T0, S.NO, D("0.36")))
+        self.assertIsNone(tp.queue_ahead(T0 - 11.0, S.YES, D("0.60")))                     # before the first row
+
+    def test_a_tape_or_row_without_sizes_gives_no_queue(self):
+        self.assertIsNone(tape(self.BOOK).queue_ahead(T0, S.YES, D("0.60")))
+        self.assertIsNone(self.tp(bid_sz=float("nan")).queue_ahead(T0, S.YES, D("0.60")))
+        self.assertIsNone(self.tp(ask_sz=float("nan")).queue_ahead(T0, S.NO, D("0.37")))
+        self.assertIsNone(self.tp(bid_sz=-1.0).queue_ahead(T0, S.YES, D("0.60")))
+
+    def test_the_queue_is_read_from_the_row_the_order_arrives_into(self):
+        book = [(T0 - 10.0, 0.60, 0.63), (T0 + 5.0, 0.60, 0.63)]
+        tp = sized(tape(book), [300.0, 40.0], [80.0, 90.0])
+        self.assertEqual(tp.queue_ahead(T0 + 4.9, S.YES, D("0.60")), 300.0)
+        self.assertEqual(tp.queue_ahead(T0 + 5.0, S.YES, D("0.60")), 40.0)
+        moved = sized(tape([(T0 - 10.0, 0.60, 0.63), (T0 + 5.0, 0.61, 0.64)]), [300.0, 40.0], [80.0, 90.0])     # the touch itself moves
+        self.assertEqual(moved.queue_ahead(T0 + 4.9, S.YES, D("0.61")), 0.0)                                      # inside the old spread
+        self.assertEqual(moved.queue_ahead(T0 + 5.0, S.YES, D("0.61")), 40.0)                                     # the new touch
+        self.assertIsNone(moved.queue_ahead(T0 + 5.0, S.YES, D("0.60")))                                          # now below it
+
+    def test_the_order_fills_only_after_the_queue_and_its_own_size_have_printed_at_its_price(self):
+        prints = [(T0 + 2.0, 0.60, 200.0, 0), (T0 + 3.0, 0.60, 100.0, 0), (T0 + 4.0, 0.60, 50.0, 0), (T0 + 5.0, 0.60, 60.0, 0)]
+        tp = self.tp(prints)
+        self.assertEqual(tp.print_fill(T0 + 1.0, T0 + 60.0, S.YES, S.BUY, D("0.60")), T0 + 2.0)               # the old rule: first in line
+        self.assertEqual(tp.queue_fill(T0 + 1.0, T0 + 60.0, S.YES, S.BUY, D("0.60"), 300.0, 40), T0 + 4.0)      # 200 + 100 < 340 <= 350
+        self.assertEqual(tp.queue_fill(T0 + 1.0, T0 + 60.0, S.YES, S.BUY, D("0.60"), 300.0, 50), T0 + 4.0)      # 350 >= 350 exactly
+        self.assertEqual(tp.queue_fill(T0 + 1.0, T0 + 60.0, S.YES, S.BUY, D("0.60"), 300.0, 51), T0 + 5.0)      # one more contract, one print later
+        self.assertIsNone(tp.queue_fill(T0 + 1.0, T0 + 60.0, S.YES, S.BUY, D("0.60"), 420.0, 40))              # 410 printed < 460
+
+    def test_a_print_through_the_limit_clears_the_queue_but_not_the_fifty_contract_proof(self):
+        deep = self.tp([(T0 + 2.0, 0.59, 50.0, 0)], bid_sz=10_000.0)
+        self.assertEqual(deep.queue_fill(T0 + 1.0, T0 + 60.0, S.YES, S.BUY, D("0.60"), 10_000.0, 40), T0 + 2.0)
+        thin = self.tp([(T0 + 2.0, 0.59, 20.0, 0)])
+        self.assertIsNone(thin.queue_fill(T0 + 1.0, T0 + 60.0, S.YES, S.BUY, D("0.60"), 300.0, 40))             # 20 < 50
+        both = self.tp([(T0 + 2.0, 0.59, 20.0, 0), (T0 + 3.0, 0.60, 30.0, 0)])                                   # 20 through + 30 at = 50 proven
+        self.assertEqual(both.queue_fill(T0 + 1.0, T0 + 60.0, S.YES, S.BUY, D("0.60"), 300.0, 40), T0 + 3.0)
+
+    def test_only_the_aggressors_that_trade_against_the_order_move_the_queue(self):
+        prints = [(T0 + 2.0, 0.60, 500.0, 1), (T0 + 3.0, 0.61, 500.0, 0), (T0 + 4.0, 0.60, 340.0, 0)]
+        tp = self.tp(prints)                                                              # YES buyers do not hit a YES bid; 0.61 is not at or through 0.60
+        self.assertEqual(tp.queue_fill(T0 + 1.0, T0 + 60.0, S.YES, S.BUY, D("0.60"), 300.0, 40), T0 + 4.0)
+
+    def test_the_window_is_after_arrival_and_up_to_the_patience(self):
+        tp = self.tp([(T0 + 1.0, 0.60, 400.0, 0), (T0 + 9.0, 0.60, 400.0, 0)])
+        self.assertEqual(tp.queue_fill(T0 + 1.0, T0 + 60.0, S.YES, S.BUY, D("0.60"), 300.0, 40), T0 + 9.0)      # a print at the arrival second is too early
+        self.assertIsNone(tp.queue_fill(T0 + 1.0, T0 + 8.0, S.YES, S.BUY, D("0.60"), 300.0, 40))
+        self.assertIsNone(tp.queue_fill(T0 + 9.0, T0 + 9.0, S.YES, S.BUY, D("0.60"), 300.0, 40))
+
+    def test_a_no_bid_is_filled_by_yes_buyers_at_its_level(self):
+        tp = self.tp([(T0 + 2.0, 0.63, 60.0, 1), (T0 + 3.0, 0.63, 30.0, 1), (T0 + 4.0, 0.64, 50.0, 1)])
+        self.assertEqual(tp.queue_fill(T0 + 1.0, T0 + 60.0, S.NO, S.BUY, D("0.37"), 80.0, 20), T0 + 4.0)        # 90 < 100 at the level; the 0.64 print goes through
+        self.assertEqual(tp.queue_fill(T0 + 1.0, T0 + 60.0, S.NO, S.BUY, D("0.37"), 70.0, 20), T0 + 3.0)        # 60 < 90 <= 90 at the level
+        self.assertEqual(tp.queue_fill(T0 + 1.0, T0 + 60.0, S.NO, S.BUY, D("0.37"), 40.0, 20), T0 + 2.0)        # 60 >= 60 at the first print
+
+    def test_an_empty_queue_and_a_stake_under_the_fifty_contract_rule_is_the_old_fill(self):
+        for prints in ([(T0 + 2.0, 0.60, 30.0, 0), (T0 + 3.0, 0.60, 30.0, 0)], [(T0 + 2.0, 0.59, 60.0, 0)], [(T0 + 2.0, 0.60, 49.0, 0)]):
+            tp = self.tp(prints)
+            self.assertEqual(tp.queue_fill(T0 + 1.0, T0 + 60.0, S.YES, S.BUY, D("0.60"), 0.0, 40),
+                             tp.print_fill(T0 + 1.0, T0 + 60.0, S.YES, S.BUY, D("0.60")))
+
+    def test_the_fifty_contract_floor_cannot_be_lowered(self):
+        with self.assertRaises(ValueError):
+            self.tp().queue_fill(T0, T0 + 9.0, S.YES, S.BUY, D("0.60"), 0.0, 10, need=10.0)
+
+    def test_run_trade_with_the_queue_model_fills_late_pays_no_fee_and_settles(self):
+        prints = [(T0 + 2.0, 0.60, 200.0, 0), (T0 + 3.0, 0.60, 100.0, 0), (T0 + 4.0, 0.60, 50.0, 0)]
+        tp = self.tp(prints)
+        old = S.run_trade(tp, side=S.YES, trigger_ts=T0, entry_style=S.MAKER, qty=40, patience_s=60.0)
+        new = S.run_trade(tp, side=S.YES, trigger_ts=T0, entry_style=S.MAKER, qty=40, patience_s=60.0, queue_model=True)
+        self.assertEqual(old.legs[0].ts, T0 + 2.0)                                           # the old model fills at the first 50+ print
+        self.assertEqual((new.legs[0].ts, new.legs[0].fee, new.entry, new.reason), (T0 + 4.0, D("0"), D("0.60"), "settle"))
+        self.assertEqual(new.pnl, D("0.40") * 40)                                            # YES settled in the money: 1.00 - 0.60 on 40 contracts
+
+    def test_run_trade_reports_an_unknown_queue_and_a_queue_that_never_clears(self):
+        prints = [(T0 + 2.0, 0.60, 100.0, 0)]
+        for tp in (tape(self.BOOK, prints), self.tp(prints, bid_sz=float("nan"))):
+            r = S.run_trade(tp, side=S.YES, trigger_ts=T0, entry_style=S.MAKER, qty=40, patience_s=60.0, queue_model=True)
+            self.assertEqual(r, S.Skip("queue_unknown"))
+        r = S.run_trade(self.tp(prints), side=S.YES, trigger_ts=T0, entry_style=S.MAKER, qty=40, patience_s=60.0, queue_model=True)
+        self.assertEqual(r, S.Skip("unfilled"))                                              # 100 printed behind a 300 queue
+        below = S.run_trade(self.tp(prints), side=S.YES, trigger_ts=T0, entry_style=S.MAKER, qty=40, patience_s=60.0,
+                            entry_limit=D("0.59"), queue_model=True)
+        self.assertEqual(below, S.Skip("queue_unknown"))                                     # a bid below the touch has an unknown queue
+        inside = S.run_trade(self.tp([(T0 + 2.0, 0.61, 60.0, 0)]), side=S.YES, trigger_ts=T0, entry_style=S.MAKER, qty=40, patience_s=60.0,
+                             entry_limit=D("0.61"), queue_model=True)
+        self.assertEqual((inside.entry, inside.legs[0].ts), (D("0.61"), T0 + 2.0))           # inside the spread: nobody ahead
+
+    def test_the_queue_model_is_for_resting_entries_and_is_off_by_default(self):
+        with self.assertRaises(ValueError):
+            S.run_trade(self.tp(), side=S.YES, trigger_ts=T0, entry_style=S.TAKER, qty=10, queue_model=True)
+        prints = [(T0 + 2.0, 0.60, 60.0, 0)]
+        plain = S.run_trade(self.tp(prints), side=S.YES, trigger_ts=T0, entry_style=S.MAKER, qty=40, patience_s=60.0)
+        explicit = S.run_trade(self.tp(prints), side=S.YES, trigger_ts=T0, entry_style=S.MAKER, qty=40, patience_s=60.0, queue_model=False)
+        self.assertEqual(plain, explicit)
+        self.assertEqual(plain.legs[0].ts, T0 + 2.0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -131,6 +131,8 @@ class Tape:
     trade_taker_yes: np.ndarray  # 1 when the aggressor bought YES
     close_ts: float
     result_yes: int | None = None  # 1 when YES settled in the money
+    yes_bid_sz: np.ndarray | None = None  # contracts displayed at the YES bid on each book row; None when the cache has no sizes
+    yes_ask_sz: np.ndarray | None = None  # contracts displayed at the YES ask on each book row (the NO bid's touch)
 
     @classmethod
     def from_lane(cls, lane, tid: int, close_ts: float, result_yes: int | None) -> "Tape":
@@ -188,6 +190,60 @@ class Tape:
             return None
         return float(self.trade_ts[lo + int(np.argmax(cum >= need - EPS))])
 
+    def queue_ahead(self, ts: float, side: str, limit: Decimal) -> float | None:
+        """Contracts resting ahead of a buy at `limit` on the book row it arrives into, or None when that cannot be known.
+
+        Only the touch is observable: joining the side's best bid queues behind the size displayed there (a NO bid's touch
+        is the YES ask size); a bid inside the spread is alone at its price (0); a bid below the touch sits behind depth
+        the cache does not carry (None), as does a tape or row with no size.
+        """
+        if self.yes_bid_sz is None or self.yes_ask_sz is None:
+            return None
+        j = int(np.searchsorted(self.book_ts, ts, "right")) - 1
+        if j < 0:
+            return None
+        b, a = check_book(float(self.yes_bid[j]), float(self.yes_ask[j]))
+        touch = b if side == YES else ONE - a
+        if limit > touch:
+            return 0.0
+        size = float((self.yes_bid_sz if side == YES else self.yes_ask_sz)[j])
+        if limit < touch or not np.isfinite(size) or size < 0:
+            return None
+        return size
+
+    def queue_fill(self, t0: float, t1: float, side: str, action: str, limit: Decimal, queue_ahead: float,
+                   qty: int, need: float = MIN_PRINT) -> float | None:
+        """Time a resting order of `qty` behind `queue_ahead` contracts fills in (t0, t1], first in, first out.
+
+        The queue only moves on prints at the limit price from the aggressors that trade against the order: it is cleared
+        once `queue_ahead + qty` contracts have printed there, or at the first print strictly through the limit (every
+        order at the limit has then traded). Cancellations ahead are not modelled, so fills come later than they may in
+        life. On top of that, `need` contracts must have printed at or through the limit, the same liquidity proof as
+        `print_fill`; with an empty queue and a stake under `need` this is `print_fill`.
+        """
+        if need < MIN_PRINT:
+            raise ValueError(f"print-through below {MIN_PRINT:g} contracts")
+        if t1 <= t0:
+            return None
+        lo = int(np.searchsorted(self.trade_ts, t0, "right"))
+        hi = int(np.searchsorted(self.trade_ts, t1, "right"))
+        if hi <= lo:
+            return None
+        taker_yes, level, above = print_rule(side, action, limit)
+        p = self.trade_px[lo:hi].astype(np.float64)
+        sz = self.trade_sz[lo:hi].astype(np.float64)
+        hit = (self.trade_taker_yes[lo:hi] == 1) == taker_yes
+        hit &= (p >= level - EPS) if above else (p <= level + EPS)
+        if not hit.any():
+            return None
+        at = hit & (np.abs(p - level) <= EPS)
+        through = hit & ~at
+        cleared = (np.cumsum(np.where(at, sz, 0.0)) >= queue_ahead + qty - EPS) | (np.cumsum(through) > 0)
+        ok = cleared & (np.cumsum(np.where(hit, sz, 0.0)) >= need - EPS)
+        if not ok.any():
+            return None
+        return float(self.trade_ts[lo + int(np.argmax(ok))])
+
     def side_won(self, side: str) -> bool:
         if self.result_yes is None:
             raise ValueError("unsettled tape")
@@ -230,7 +286,7 @@ class Trade:
 
 @dataclass(frozen=True)
 class Skip:
-    reason: str     # crossed / no_quote / cost_band / unfilled / too_late / post_only
+    reason: str     # crossed / no_quote / cost_band / unfilled / too_late / post_only / queue_unknown
 
 
 def _confirmed_breach(ts: np.ndarray, bad: np.ndarray, confirm_s: float,
@@ -262,7 +318,8 @@ def run_trade(tape: Tape, *, side: str, trigger_ts: float, entry_style: str, qty
               stop_c: Decimal | None = None, stop_confirm_s: float = 2.0,
               hold_s: float | None = None, barrier_exit: str = "settle",
               scratch_by_s: float | None = None, scratch_c: Decimal = ZERO,
-              min_print: float = MIN_PRINT, entry_limit: Decimal | None = None) -> Trade | Skip:
+              min_print: float = MIN_PRINT, entry_limit: Decimal | None = None,
+              queue_model: bool = False) -> Trade | Skip:
     """One trade from trigger to flat, under the canonical fill rules.
 
     Entry: taker crosses the book at arrival (fee charged), maker joins the side's
@@ -270,6 +327,9 @@ def run_trade(tape: Tape, *, side: str, trigger_ts: float, entry_style: str, qty
     instead rest at `entry_limit`, a price in held-side terms: it must not cross the
     book it arrives into (else Skip("post_only")), costs that price when it fills,
     and still has to clear the same cap, band and 50-contract print-through.
+    With `queue_model` a maker entry also waits its turn: `Tape.queue_ahead` gives the contracts resting at its price when it
+    arrives (Skip("queue_unknown") when the tape cannot say) and `Tape.queue_fill` fills it only once that queue and its own
+    size have printed there. Exit legs keep the plain print-through rule. Off by default, which leaves every result as before.
     Exits, raced on the same tape, earliest wins, take-profit and lock are
     one-cancels-other:
       tp_c    $0-fee post-only sell of the held side at entry + tp_c;
@@ -300,6 +360,8 @@ def run_trade(tape: Tape, *, side: str, trigger_ts: float, entry_style: str, qty
         raise ValueError(f"barrier_exit {barrier_exit!r}")
     if entry_limit is not None and entry_style != MAKER:
         raise ValueError("entry_limit is a resting bid: it needs entry_style='maker'")
+    if queue_model and entry_style != MAKER:
+        raise ValueError("queue_model is about a resting entry: it needs entry_style='maker'")
     qty = min(int(qty), MAX_QTY)
     if qty <= 0:
         return Skip("qty")
@@ -328,8 +390,14 @@ def run_trade(tape: Tape, *, side: str, trigger_ts: float, entry_style: str, qty
         fill_ts = order_ts
         fee_in = taker_fee(cost, qty)
     else:
-        fill_ts = tape.print_fill(order_ts, min(order_ts + patience_s, last_ts), side, BUY,
-                                  cost, need=min_print)
+        until = min(order_ts + patience_s, last_ts)
+        if queue_model:
+            ahead = tape.queue_ahead(order_ts, side, cost)
+            if ahead is None:
+                return Skip("queue_unknown")
+            fill_ts = tape.queue_fill(order_ts, until, side, BUY, cost, ahead, qty, need=min_print)
+        else:
+            fill_ts = tape.print_fill(order_ts, until, side, BUY, cost, need=min_print)
         if fill_ts is None:
             return Skip("unfilled")
     legs = [Leg("entry", side, BUY, entry_style, cost, qty, fill_ts, fee_in)]
