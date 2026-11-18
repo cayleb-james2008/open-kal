@@ -53,6 +53,7 @@ class RestingOrder:
     # size. A partial total is only booked once it has stopped growing.
     seen_fill: Decimal = Decimal("0")
     seen_ts: float = 0.0
+    p_at_trigger: float | None = None
 
 
 def passive_prints(store: Any, order: RestingOrder, now: float) -> Decimal:
@@ -297,7 +298,7 @@ class Executor:
         # The flow program is post-only by construction: its frozen evidence is a
         # maker entry at the touch, and a taker cross at that price would fill at a
         # price the book never offered.
-        taker = (decision.signal == "F2_taker_1s"
+        taker = (decision.signal in ("F2_taker_1s", "student_t_l2_settle")
                  or (slot.params.entry_style == "taker" and decision.signal != "z_obi_flow"))
         entry_side = None
         if taker:
@@ -325,7 +326,8 @@ class Executor:
             side = entry_side if self.venue_anchored else (decision.side or "YES")
             slot.position = Position(
                 ticker=quote.ticker, side=side, entry=price, contracts=qty,
-                opened_ts=now, p_entry=slot.p_up, stake=reserved,
+                opened_ts=now, p_entry=(decision.p_model if decision.signal == "student_t_l2_settle"
+                                        else slot.p_up), stake=reserved,
                 tp=min(Decimal("0.99"), tp_price),
                 sl=max(Decimal("0.01"), price - slot.params.stop_loss),
                 signal=decision.signal, entry_fee=fee,

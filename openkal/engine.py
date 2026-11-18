@@ -15,7 +15,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from . import features
+from . import features, sim_core
 from .auth import KalshiClient, money
 from .config import ROOT, SeriesConfig, Settings
 from .decision_gate import LayaGate, verdict_payload
@@ -25,7 +25,7 @@ from .kalshi_ws import INDEX_BY_SERIES, KalshiWS
 from .shr import Supervisor
 from .store import Store
 from .strategy import (Decision, Params, Position, Quote, contracts_for, decide,
-                       with_persistence)
+                       settlement_cost_ok, with_persistence)
 
 TICK = Decimal("0.01")
 
@@ -89,12 +89,13 @@ class SlotRuntime:
     gate: dict[str, Any] | None = None
     signal: str = ""
     signal_detail: str = ""
-    gate_ts: float = 0.0
     weak_ticks: int = 0
     edge_streak: int = 0
+    pending_settlement_entry: tuple[float, str, Decision] | None = None
     # Last fully printed settlement average for the current contract. A lock-in
     # position is settled at 1/0 from this, not marked at the next window's bid.
     lock_in_settlement: tuple[str, float, float] | None = None
+    settlement_poll_after: float = 0.0
     # Per-window budget for the promoted flow program: at most `max_window_trades`
     # entries in one 15-minute contract, and no re-entry once it has taken a loss.
     window_entries: int = 0
@@ -350,9 +351,11 @@ class Engine:
             return None
         index_id = INDEX_BY_SERIES.get(slot.cfg.series)
         pts = self.index_tape.get(index_id) or []
-        now = time.time()
+        now = quote.received_ts
         spot = _last_point(pts, now, slot.params.max_spot_age_s)
         if spot is None:
+            return None
+        if quote.age_s > features.STUDENT_T_MAX_DEPTH_AGE_S:
             return None
         index_sigma = features.trailing_sigma(pts, now)
         if index_sigma <= 0:
@@ -779,6 +782,7 @@ class Engine:
 
     async def _roll_slot(self, slot: SlotRuntime, old: Quote, now: float) -> None:
         """Window rolled: pull any resting order and settle or mark the survivor."""
+        slot.pending_settlement_entry = None
         if slot.order:
             self.cash += slot.order.reserved
             slot.quote = slot.quote or old
@@ -789,15 +793,32 @@ class Engine:
             pos = slot.position
             settlement = slot.lock_in_settlement
             settle_ok = settlement is not None and settlement[0] == pos.ticker
+            if pos.signal == "student_t_l2_settle":
+                # Never mark a settlement position at a quote or on a partial fixing.
+                # The market may roll early and the official result can arrive later.
+                if now < old.close_ts or now < slot.settlement_poll_after:
+                    return
+                slot.settlement_poll_after = now + 15.0
+                status, response = await self.client.get(f"/markets/{pos.ticker}")
+                outcome = (response.get("market") or {}).get("result") if status == 200 else None
+                if outcome not in ("yes", "no"):
+                    slot.state = "settle"
+                    slot.reason = "awaiting official settlement"
+                    return
+                current_quote = slot.quote
+                try:
+                    slot.quote = old
+                    self.executor.close(slot, Decimal(int(outcome.upper() == pos.side)),
+                                        "settled", maker=True)
+                finally:
+                    slot.quote = current_quote
             # A binary carried through expiry settles at 1/0 on the venue, so the
             # ledger must book 1/0 too. Booking the last bid instead (0.99 at best:
             # the venue caps prices at 99c) leaves a real, cent-level gap against
             # `/portfolio/fills`. `z_obi_flow` carries by design when its scratch
             # misses, so it settles like the lock-in thesis.
-            if settle_ok and (pos.hold_to_settle or pos.signal == "z_obi_flow"
-                              or pos.signal == "student_t_l2_settle"
-                              or (pos.signal == "final_minute"
-                                  and slot.params.settle_lock_in)):
+            elif settle_ok and (pos.hold_to_settle or pos.signal == "z_obi_flow"
+                                or (pos.signal == "final_minute" and slot.params.settle_lock_in)):
                 # The contract settles on the 60-second BRTI average. We have its last
                 # fully printed value, so the outcome is arithmetic, not a guess. The
                 # settlement is written as a tick so the replay closes at the same 1/0.
@@ -819,6 +840,7 @@ class Engine:
             else:
                 self.executor.close(slot, pos.side_bid(old), "window rolled", maker=False)
         slot.lock_in_settlement = None
+        slot.settlement_poll_after = 0.0
         slot.exit = None
         slot.consecutive_losses = 0
         slot.window_entries = 0
@@ -884,25 +906,6 @@ class Engine:
                 self.supervisor.fault = None
 
     # ---------- per-slot decision ----------
-    def _gate_recorder(self, slot: SlotRuntime, ticker: str) -> Any:
-        """The callback that files Laya's opinion when the background review lands.
-
-        The verdict is persisted on the trigger it judged: an offline ablation needs
-        the opinion the live lane actually saw, not a re-run with hindsight. It is
-        pinned to the contract the review was about, so a review still in flight
-        when the window rolls cannot be filed against the next contract.
-        """
-        def record(verdict: Any) -> None:
-            slot.gate = verdict_payload(verdict)
-            slot.gate_ts = time.time()
-            try:
-                self.store.set_tick_gate(series=slot.cfg.series, gate=json.dumps(slot.gate),
-                                          ticker=ticker)
-            except Exception:  # noqa: BLE001 - a logging failure is not a trading event
-                pass
-
-        return record
-
     def _gate_refresh(self, slot: SlotRuntime, quote: Quote, seconds_left: float,
                       decision: Decision) -> None:
         """Ask Laya for a fresh opinion without waiting for it.
@@ -915,42 +918,67 @@ class Engine:
         """
         if not self.gate.stale(quote.ticker, mid=float(quote.mid)):
             return
-        self.gate.schedule(slot, quote, seconds_left, decision,
-                           on_done=self._gate_recorder(slot, quote.ticker))
+        self.gate.schedule(slot, quote, seconds_left, decision)
 
-    def _gate_veto(self, slot: SlotRuntime, quote: Quote, decision: Decision) -> Decision:
+    def _gate_veto(self, slot: SlotRuntime, quote: Quote, decision: Decision,
+                   *, now: float | None = None) -> Decision:
         """Apply the cached Laya verdict to an entry. A cache read: 0ms.
 
         The gate can only veto: the kernel's numeric abstention still stands when Laya
-        votes enter. It never creates a trade the model did not ask for.
+        votes enter. It never creates a trade the model did not ask for, and a gate
+        that is offline is advisory unless the settlement program requires an allow.
 
         `Params.require_layagate_allow` turns the cached opinion into a hard filter
         for a promoted strategy, with no code edit. The fine-tuned ONNX build has
         always had veto power; the switch exists so a strategy that was promoted
         against the gate's own forward evidence can enforce it too.
 
-        A filter that is binding does not trade on an absence of opinion: before
-        the gate has answered for this contract there is nothing to enforce, and
-        the forward score keeps only the trades whose verdict was an allow, so the
-        two have to agree. A gate that is *down* is a different thing -- its own
-        verdict says the kernel's numeric edge decides -- so an unavailable gate
-        never blocks.
+        A stale opinion is absent, and a binding settlement filter also blocks
+        when the gate explicitly reports itself unavailable.
         """
         params = slot.params
         if not (params.require_layagate_allow or self.gate.mode == "onnx"):
             return decision
-        verdict = self.gate.cached(quote.ticker)
+        verdict = self.gate.current(quote.ticker, float(quote.mid), now=now)
         if verdict is None:
-            return Decision("abstain", "laya gate: no verdict yet",
-                            side=decision.side, price=decision.price, p_model=decision.p_model,
-                            confidence=decision.confidence, edge=decision.edge, regime="gate")
-        if not verdict.available:
+            note = "no verdict current for this ticker"
+        elif not verdict.available:
+            if not (params.require_layagate_allow and decision.signal == "student_t_l2_settle"):
+                return decision
+            note = "no current available verdict"
+        elif verdict.allow and verdict.confidence >= params.layagate_min_confidence:
             return decision
-        if verdict.allow and verdict.confidence >= params.layagate_min_confidence:
-            return decision
-        return Decision("abstain", f"laya gate: {verdict.note or 'skip'}",
+        else:
+            note = verdict.note or "skip"
+        return Decision("abstain", f"laya gate: {note}",
                         side=decision.side, price=decision.price, p_model=decision.p_model,
                         confidence=decision.confidence, edge=decision.edge, regime="gate")
+
+    @staticmethod
+    def _settlement_arrival(slot: SlotRuntime, quote: Quote, decision: Decision,
+                            now: float, *, ready: bool) -> Decision:
+        """Let the normal tick loop release the original signal at T+1, never earlier."""
+        wait = Decision("wait", "settlement IOC awaiting T+1", regime="settlement")
+        pending = slot.pending_settlement_entry
+        if pending is not None:
+            due, ticker, original = pending
+            if ticker != quote.ticker or not ready or slot.position is not None or slot.order is not None:
+                slot.pending_settlement_entry = None
+                return Decision("abstain", "settlement arrival no longer eligible")
+            if now < due:
+                return wait
+            slot.pending_settlement_entry = None
+            price = quote.yes_ask if original.side == "YES" else Decimal(1) - quote.yes_bid
+            if (now >= quote.close_ts - sim_core.EXIT_BUFFER_S
+                    or not Decimal(0) < quote.yes_bid < quote.yes_ask < Decimal(1)
+                    or quote.age_s > features.STUDENT_T_MAX_DEPTH_AGE_S
+                    or not settlement_cost_ok(price, slot.params)):
+                return Decision("abstain", "settlement arrival outside the book or cost band")
+            return replace(original, price=price)
+        if ready and decision.action == "entry" and decision.signal == "student_t_l2_settle":
+            slot.pending_settlement_entry = (now + sim_core.LAG_S, quote.ticker, decision)
+            return wait
+        return decision
 
     async def _venue_snapshot(self) -> dict[str, Any]:
         """One read of the venue's resting book and fills tape, shared by every lane."""
@@ -1015,6 +1043,8 @@ class Engine:
         quote = slot.quote
         if quote is None:
             return
+        if slot.params.strategy_mode == "student_t_l2_settle":
+            now = time.time()
         # A position belongs to one contract. If the lane has already moved on to the
         # next window, settle the old one against its own last quote before doing
         # anything else — never price an exit off a different market's ladder.
@@ -1078,7 +1108,9 @@ class Engine:
             slot.signal_detail = fv and f"z {fv.z:+.2f}" or ""
         # A probability that will price money goes through the validated calibrator
         # before any edge is computed. Identity today; the path is what matters.
-        slot.p_up = features.calibrate(slot.p_up, self.calibrators.get(slot.cfg.series))
+        settlement_signal = signal is not None and signal.name == "student_t_l2_settle"
+        if not settlement_signal:
+            slot.p_up = features.calibrate(slot.p_up, self.calibrators.get(slot.cfg.series))
 
         # A crossed book (bid >= ask) is a stale side, not a gift. The paper executor
         # would otherwise buy the stale ask and instantly sell it at the real bid — the
@@ -1088,6 +1120,8 @@ class Engine:
         # cannot pick the direction for the correlation guard: the move does.
         if signal is not None and signal.name == "F2_taker_1s":
             prospective = "YES" if slot.spot >= quote.strike else "NO"
+        elif settlement_signal:
+            prospective = "YES" if signal.l2_obi > 0 else "NO"
         else:
             prospective = "YES" if slot.p_up >= quote.mid else "NO"
         # Live is configured but readiness has not flipped live_armed yet. Opening a
@@ -1104,7 +1138,8 @@ class Engine:
                     and self._capacity_ok(slot, prospective))
         hurdle = self._edge_hurdle(slot)
         decision = decide(
-            quote=quote, p_up=slot.p_up, seconds_left=seconds_left, spot_age=spot_age,
+            quote=quote, p_up=slot.p_up, seconds_left=seconds_left,
+            spot_age=0.0 if settlement_signal else spot_age,
             params=slot.params, position=slot.position, edge_hurdle=hurdle,
             can_open=can_open, signal=slot.signal, now=now, spot=slot.spot,
             impulse_bps=impulse_bps,
@@ -1118,8 +1153,18 @@ class Engine:
         # cached per ticker. The entry path below reads that cache, so the tick
         # loop never waits on a forward pass.
         self._gate_refresh(slot, quote, seconds_left, decision)
+        # Snapshot what the decision could see before any awaited executor work.
+        # Never backfill an earlier tick from the review's completion callback.
+        slot.gate = verdict_payload(self.gate.current(quote.ticker, float(quote.mid), now=now))
         if decision.action == "entry":
-            decision = self._gate_veto(slot, quote, decision)
+            decision = self._gate_veto(slot, quote, decision, now=now)
+        if slot.params.strategy_mode == "student_t_l2_settle":
+            pending = slot.pending_settlement_entry
+            side = pending[2].side if pending else prospective
+            decision = self._settlement_arrival(
+                slot, quote, decision, now, ready=not slot.halted and not awaiting_arm
+                and not self.kill_reason and slot.window_entries < slot.params.sl2_max_window_trades
+                and self._capacity_ok(slot, side))
         slot.decision = decision
         slot.state = "halted" if slot.halted else decision.regime
         slot.reason = decision.reason

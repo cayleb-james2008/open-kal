@@ -186,7 +186,8 @@ class Params:
     # The gate's opinion is cached per ticker and read on the entry path in 0ms,
     # so enforcing it costs no latency. `require_layagate_allow` turns that
     # cached opinion into a hard filter: an entry is refused when the gate is
-    # available and says skip. It is off by default because the shipped build
+    # available and says skip. The settlement strategy with this switch on
+    # requires an affirmative, available verdict. It is off because this build
     # has no fine-tuned ONNX model, so the gate is still a shadow here; a
     # strategy promoted against the gate's own forward evidence turns it on
     # without touching a line of code.
@@ -664,6 +665,8 @@ def _student_t_l2_entry(quote: Quote, params: Params, p_yes: float, seconds_left
     so it pays the taker fee and nothing else, and that fee is charged here
     because the premium a hold-to-settlement binary risks is the whole entry cost.
     """
+    if not (0 <= p_yes <= 1 and all(-1 <= x <= 1 for x in (l2_obi, flow_fast, flow_slow))):
+        return Decision("abstain", "invalid settlement evidence")
     if not (params.sl2_min_seconds_left <= seconds_left <= params.sl2_max_seconds_left):
         return Decision("abstain", "outside the settlement window", p_model=p_yes)
     if quote.spread > params.sl2_max_spread:
@@ -679,7 +682,7 @@ def _student_t_l2_entry(quote: Quote, params: Params, p_yes: float, seconds_left
         if price > HARD_MAX_ENTRY_PRICE:
             misses.append(f"{side} cost {price:.2f} over the {HARD_MAX_ENTRY_PRICE} cap")
             continue
-        if not (params.sl2_min_price <= price <= params.sl2_max_price):
+        if not settlement_cost_ok(price, params):
             misses.append(f"{side} cost {price:.2f} outside "
                           f"{params.sl2_min_price}-{params.sl2_max_price}")
             continue
@@ -708,7 +711,12 @@ def _student_t_l2_entry(quote: Quote, params: Params, p_yes: float, seconds_left
     if best is not None:
         return best
     return Decision("abstain", "; ".join(misses[:2]) or "no side inside the settlement band",
-                    p_model=p_yes)
+                     p_model=p_yes)
+
+
+def settlement_cost_ok(price: Decimal, params: Params) -> bool:
+    return max(Decimal("0.35"), params.sl2_min_price) <= price <= min(
+        Decimal("0.60"), HARD_MAX_ENTRY_PRICE, params.sl2_max_price)
 
 
 def _student_t_l2_exit(quote: Quote, position: Position, params: Params, p_up: float,

@@ -1067,27 +1067,19 @@ def control_layagate_filter() -> None:
     import numpy as np
 
     from scripts import forward_oos as F
-    ts = np.array([100.0, 200.0, 300.0])
-    allow = np.array([1.0, 0.0, 1.0])
-    conf = np.array([0.9, 0.9, 0.9])
-    by_ticker = {"KXBTC15M|KX-A": (ts, allow, conf)}
-    by_series = {"KXBTC15M": (ts, allow, conf)}
+    verdicts = {"KXBTC15M-TICKER": (np.array([100.0, 200.0, 300.0]),
+                                   np.array([1.0, 0.0, 1.0]),
+                                   np.array([100.0, 200.0, 300.0]))}
     check("gate: the forward filter takes the verdict in force at the trigger",
-          F._gate_allow(by_ticker, by_series, "KXBTC15M", "KX-A", 150.0) is True
-          and F._gate_allow(by_ticker, by_series, "KXBTC15M", "KX-A", 250.0) is False
-          and F._gate_allow(by_ticker, by_series, "KXBTC15M", "KX-A", 350.0) is True,
-          "the last verdict at or before the trigger")
+           F._gate_allow(verdicts, "KXBTC15M-TICKER", 105.0) is True
+           and F._gate_allow(verdicts, "KXBTC15M-TICKER", 205.0) is False
+           and F._gate_allow(verdicts, "KXBTC15M-TICKER", 305.0) is True,
+           "the last verdict at or before the trigger")
     check("gate: a trigger before the first verdict has no opinion to read",
-          F._gate_allow(by_ticker, by_series, "KXBTC15M", "KX-A", 50.0) is None
-          and F._gate_allow(by_ticker, {}, "KXETH15M", "KX-A", 150.0) is None,
+           F._gate_allow(verdicts, "KXBTC15M-TICKER", 50.0) is None
+           and F._gate_allow(verdicts, "KXBTC15M-TICKER", 315.0) is None
+           and F._gate_allow(verdicts, "KXETH15M-TICKER", 105.0) is None,
           "no verdict in force")
-    check("gate: the forward filter reads the contract's own verdict first",
-          F._gate_allow(by_ticker, by_series, "KXBTC15M", "KX-B", 150.0) is True,
-          "the lane index is the fallback for rows with no contract-keyed verdict")
-    weak = {"KXBTC15M|KX-A": (ts, allow, np.array([0.1, 0.1, 0.1]))}
-    check("gate: the forward filter honours a minimum confidence",
-          F._gate_allow(weak, {}, "KXBTC15M", "KX-A", 150.0, 0.5) is False,
-          "an allow below the confidence floor is not an allow")
 
     # A filter that is binding refuses an absent opinion, and the forward score
     # drops the same trades: the two have to keep the same trades.
@@ -1276,8 +1268,203 @@ def control_settlement_program() -> None:
                   spot_age=0.1, params=params, position=pos, edge_hurdle=Decimal("0.015"),
                   can_open=True, signal="student_t_l2_settle", now=NOW, spot=70.0)
     check("settlement: the position is held to expiry, never taken off early",
-          held.action == "hold" and held.regime == "settle",
-          f"action={held.action} regime={held.regime} reason={held.reason!r}")
+           held.action == "hold" and held.regime == "settle",
+           f"action={held.action} regime={held.regime} reason={held.reason!r}")
+
+    bad_depth = entry(settlement_quote("0.46", "0.48"), obi=float("nan"))
+    bad_flow = entry(settlement_quote("0.46", "0.48"), flow_slow=float("nan"))
+    check("settlement: non-finite evidence cannot authorize risk",
+          features.l2_imbalance(float("inf"), 10) is None
+          and bad_depth.action == bad_flow.action == "abstain",
+          f"depth={bad_depth.action} flow={bad_flow.action}")
+
+    strict = gate_engine(LayaGate(mode="shadow"))
+    q = settlement_quote("0.46", "0.48")
+    strict_slot = SimpleNamespace(params=Params(require_layagate_allow=True))
+    check("settlement: a required but missing Laya verdict cannot authorize entry",
+          strict._gate_veto(strict_slot, q, good).action == "abstain",
+          "no cache entry for the ticker")
+
+    # Delay only this strategy: the triggered order must not exist at T or
+    # T+0.99s and must enforce the real arrival quote for the original side.
+    arrival = getattr(Engine, "_settlement_arrival", None)
+    if arrival is None:
+        check("settlement: original signal waits a full second and reprices at arrival",
+              False, "no live/paper arrival path")
+    else:
+        slot = SimpleNamespace(params=Params(strategy_mode="student_t_l2_settle"),
+                               pending_settlement_entry=None, position=None, order=None)
+        later = settlement_quote("0.48", "0.50")
+        early = arrival(slot, q, good, NOW, ready=True)
+        before = arrival(slot, later, Decision("wait", "not a new signal"), NOW + .99, ready=True)
+        at = arrival(slot, later, Decision("wait", "not a new signal"), NOW + 1, ready=True)
+        check("settlement: original signal waits a full second and reprices at arrival",
+              early.action == before.action == "wait" and at.action == "entry"
+              and at.side == "YES" and at.price == Decimal("0.50"),
+              f"actions={early.action}/{before.action}/{at.action}; arrival={at.price}")
+        arrival(slot, q, good, NOW + 2, ready=True)
+        too_high = settlement_quote("0.59", "0.61")
+        check("settlement: T+1 entry outside the strategy band is rejected",
+              arrival(slot, too_high, good, NOW + 3, ready=True).action == "abstain",
+              "61c arrival")
+
+
+def control_causal_gate_tape() -> None:
+    from tempfile import TemporaryDirectory
+    from openkal.store import Store
+    from scripts import forward_oos as F
+
+    def payload(ticker, ts, allow=True, available=True):
+        import json
+        return json.dumps({"ticker": ticker, "ts": ts, "allow": allow, "available": available,
+                           "confidence": .8})
+
+    with TemporaryDirectory() as tmp:
+        path = Path(tmp) / "causal-gates.db"
+        store = Store(path)
+        for ts, ticker, gate in (
+            (100., "A", payload("A", 101.)),
+            (101., "B", payload("A", 100.)),
+            (102., "A", payload("A", 101.)),
+            (103., "A", payload("A", 103., available=False)),
+            (104., "A", ""),
+            (105., "A", payload("A", 105., allow=False)),
+            (106., "A", payload("A", 106.)),
+        ):
+            store.tick(ts=ts, series="KXSOL15M", ticker=ticker, yes_bid=".45",
+                       yes_ask=".47", last=".46", spot=70., p_model=.5,
+                       edge=0., secs_left=100., spread=.02, gate=gate)
+        store._db.close()
+        tape = F._gate_verdicts(path)
+        weak_tape = F._gate_verdicts(path, min_confidence=.9)
+    got = [F._gate_allow(tape, ticker, t) for ticker, t in
+           (("A",100.), ("B",101.), ("A",102.), ("A",103.), ("A",104.), ("A",105.), ("A",106.))]
+    check("gate: forward tape rejects future, wrong-ticker, offline and blank snapshots",
+          got == [None, None, True, None, None, False, True], f"snapshots={got}")
+    check("gate: the forward filter honours a minimum confidence",
+          F._gate_allow(weak_tape, "A", 106.) is False,
+          "an allow below the confidence floor is not an allow")
+
+    async def captured_ticks(path):
+        from dataclasses import replace
+        import json
+        from openkal.engine import SlotRuntime
+
+        gate = LayaGate(mode="shadow")
+        engine = gate_engine(gate)
+        engine.store = Store(path)
+        engine.ws = None
+        engine.live_armed = False
+        engine.settings = SimpleNamespace(live=False, arm_live=False)
+        engine.index_prints = engine.calibrators = {}
+        engine.tape = features.SpotTape()
+        engine.feed = SimpleNamespace(age=lambda _: 0.)
+        noop = lambda *args: None
+        engine.executor = SimpleNamespace(review_order=noop, manage_order=noop,
+                                          poll_exit=noop, execute=noop)
+        slot = SlotRuntime(SimpleNamespace(series="KXSOL15M", feed_symbol=""), Params(),
+                           Decimal(10), Decimal(10), quote=quote("0.45", "0.47"))
+        finish = asyncio.Event()
+
+        async def review(*args):
+            await finish.wait()
+            return Verdict(True, True, .8, "fixture", "fixture", 650.)
+
+        gate.review = review
+        await engine._step_slot_inner(slot, time.time())
+        first = gate.tasks[TICKER]
+        finish.set()
+        await first
+        await engine._step_slot_inner(slot, time.time())
+        slot.quote = replace(slot.quote, ticker="KXSOL15M-NEXT")
+        await engine._step_slot_inner(slot, time.time())
+        await gate.tasks[slot.quote.ticker]
+        rows = engine.store._db.execute("SELECT ts, ticker, gate FROM ticks ORDER BY rowid").fetchall()
+        engine.store._db.close()
+        return [(ts, ticker, json.loads(raw) if raw else None) for ts, ticker, raw in rows]
+
+    with TemporaryDirectory() as tmp:
+        ticks = asyncio.run(captured_ticks(Path(tmp) / "tick-snapshots.db"))
+    check("gate: background completion never edits an earlier tick or bleeds across a roll",
+          ticks[0][2] is None and ticks[1][2]["ticker"] == ticks[1][1] == TICKER
+          and ticks[1][2]["ts"] <= ticks[1][0] and ticks[2][2] is None,
+          f"recorded verdicts={[bool(row[2]) for row in ticks]}")
+
+
+def control_forward_settlement_filter() -> None:
+    from tempfile import TemporaryDirectory
+    from unittest.mock import patch
+    import json
+    import numpy as np
+    from openkal.store import Store
+    from scripts import forward_oos as F
+
+    lane_name = "KXSOL15M"
+    lane = _synthetic_lane(bid=.46, ask=.48, close=1100.)
+    idx_ts = np.arange(950., 1100.)
+    lane.index = {"ts": idx_ts, "value": np.full(len(idx_ts), 101.)}
+    lane.trade_ts[0] = 999.5
+    with TemporaryDirectory() as tmp:
+        db = Path(tmp) / "forward-gates.db"
+        store = Store(db)
+        for t, allow in ((1000., False), (1002., True)):
+            store.tick(ts=t, ticker="KX-A", series=lane_name, yes_bid=".46", yes_ask=".48",
+                       last=".47", spot=101., p_model=.99, edge=.50, secs_left=1100.-t, spread=.02,
+                       gate=json.dumps({"ticker": "KX-A", "ts": t, "available": True,
+                                        "allow": allow, "confidence": .9}))
+        store._db.close()
+        with patch.object(F, "LANES", (lane_name,)), patch.object(F, "Lane", return_value=lane), \
+                patch.object(F, "_lane_depth", return_value=(np.full(len(lane.ts), 80.), np.full(len(lane.ts), 20.))):
+            plain = F.score_student_t_l2(1050., 1150., db_path=db)
+            gated = F.score_student_t_l2(1050., 1150., gate_filter=True, db_path=db)
+    got = [(r["ts"], r["exit_ts"], r["reason"], Decimal(r["exit"])) for r in gated["rows"]]
+    check("settlement: the gate precedes execution; first allowed fill carries alone to settlement",
+          len(plain["rows"]) == 1 and plain["rows"][0]["ts"] == 1001.
+          and gated["skips"].get("gate_refused") == 1
+          and got == [(1003., 1100., "settle", Decimal(1))],
+          f"unfiltered_first={[r['ts'] for r in plain['rows']]}, gated={got}")
+
+
+def control_official_settlement() -> None:
+    async def exercise():
+        q = settlement_quote("0.46", "0.48")
+        slot = slot_for(q)
+        slot.position.signal = "student_t_l2_settle"
+        slot.settlement_poll_after = 0.
+        prices = []
+        replies = iter(("", "yes"))
+        requested = []
+
+        async def market(path):
+            requested.append(path)
+            return 200, {"market": {"result": next(replies)}}
+
+        def close(slot, price, reason, *, maker):
+            prices.append((price, reason, maker))
+            slot.position = None
+
+        async def rebalance(now):
+            pass
+
+        engine = Engine.__new__(Engine)
+        engine.client = SimpleNamespace(get=market)
+        engine.executor = SimpleNamespace(close=close)
+        engine._rebalance_window = rebalance
+        slot.lock_in_settlement = None
+        for t in (q.close_ts - 1, q.close_ts, q.close_ts + 14):
+            await engine._roll_slot(slot, q, t)
+        waiting = slot.position is not None and len(requested) == 1 and not prices
+        await engine._roll_slot(slot, q, q.close_ts + 15)
+        return waiting, requested, prices
+
+    waiting, requested, prices = asyncio.run(exercise())
+    check("settlement: hold across roll until official outcome, then book $0/$1 with no exit fee",
+          waiting and requested == [f"/markets/{TICKER}"] * 2
+          and prices == [(Decimal(0), "settled", True)], f"waiting={waiting}, closes={prices}")
+
+
+def control_settlement_parity() -> None:
+    import numpy as np
 
     # The volatility is one estimator in both places. The live engine priced the
     # contract with the whole index buffer and the scorer with a 150-second
@@ -1515,6 +1702,10 @@ def main() -> int:
     control_depth_clipping()
     control_layagate_cache()
     control_layagate_filter()
+    control_causal_gate_tape()
+    control_forward_settlement_filter()
+    control_official_settlement()
+    control_settlement_parity()
     control_settlement_program()
 
     width = max(len(n) for n, _, _ in RESULTS)

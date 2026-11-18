@@ -16,7 +16,7 @@ from .broker import VenueOrder
 from .config import (HARD_MAX_ENTRY_PRICE, peak_drawdown_tripped, stage_for,
                      staged_risk_cap)
 from .execution import Executor, RestingExit, RestingOrder
-from .strategy import Decision, Position, Quote, contracts_for
+from .strategy import Decision, Position, Quote, contracts_for, settlement_cost_ok
 
 
 def sized_contracts(bankroll: Decimal, price: Decimal, params: Any,
@@ -173,7 +173,7 @@ class LiveExecutor(Executor):
                             Decimal("0"), "settlement pin: ask moved down")
                 return
             price = pin
-            if not (slot.params.sl2_min_price <= price <= slot.params.sl2_max_price):
+            if not settlement_cost_ok(price, slot.params):
                 self.note = f"settlement entry refused: pinned cost {price} outside the band"
                 self.record(slot, "cancel", decision.side or "YES", price, 0, Decimal("0"),
                             "settlement band")
@@ -209,8 +209,8 @@ class LiveExecutor(Executor):
             return
         # Post-only for the flow program: the frozen evidence is a maker entry at
         # the touch, and a taker cross would pay a fee the study never charged.
-        # F2 is taker by construction, independent of a generic entry-style default.
-        taker = (decision.signal == "F2_taker_1s"
+        # F2 and the settlement program are takers regardless of the generic style.
+        taker = (decision.signal in ("F2_taker_1s", "student_t_l2_settle")
                  or (slot.params.entry_style == "taker" and decision.signal != "z_obi_flow"))
         tif = "immediate_or_cancel" if taker else "good_till_canceled"
         order = await self.broker.place(
@@ -228,7 +228,9 @@ class LiveExecutor(Executor):
         slot.order = RestingOrder(ticker=quote.ticker, side=decision.side or "YES", price=price,
                                   signal=decision.signal,
                                   contracts=qty, placed_ts=now, reserved=reserved,
-                                  print_cursor=now, order_id=order.order_id, tif=tif)
+                                  print_cursor=now, order_id=order.order_id, tif=tif,
+                                  p_at_trigger=(decision.p_model if decision.signal == "student_t_l2_settle"
+                                                else None))
         self.record(slot, "quote", decision.side or "YES", price, qty, Decimal("0"),
                     f"live {'IOC' if taker else 'post_only'} {order.order_id[:8]}")
 
@@ -324,9 +326,11 @@ class LiveExecutor(Executor):
             self.ctx.cash += slot.order.reserved - price * qty - filled_fee
             tp_price = price + (slot.params.f2_take_profit
                                 if sig == "F2_taker_1s" else slot.params.take_profit)
+            p_at_trigger = getattr(slot.order, "p_at_trigger", None)
             slot.position = Position(
                 ticker=slot.order.ticker, side=side, entry=price, contracts=qty,
-                opened_ts=now, p_entry=slot.p_up, stake=price * qty,
+                opened_ts=now, p_entry=slot.p_up if p_at_trigger is None else p_at_trigger,
+                stake=price * qty,
                 tp=min(Decimal("0.99"), tp_price),
                 sl=max(Decimal("0.01"), price - slot.params.stop_loss),
                 signal=sig, entry_fee=filled_fee,

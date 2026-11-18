@@ -18,13 +18,14 @@ so every tick that wanted a second opinion paid for it in latency.
   (`Engine._gate_veto`): a dictionary read, 0ms, no connection opened, no
   `await`. `Engine._gate_refresh` schedules the background review and does
   nothing when the cache is still current.
-* The shadow verdicts keep landing in `ticks.gate`. `store.set_tick_gate` now
-  takes the ticker, so a review still in flight when the window rolls cannot be
-  filed against the next contract's tick row.
+* The shadow verdicts keep landing in `ticks.gate`. Each insert captures the
+  current ticker's verdict as of the decision tick. A review that finishes later
+  is visible on a subsequent tick only; it never changes an earlier row.
 * `Params.require_layagate_allow` (default `false`) and
   `Params.layagate_min_confidence` (default `0.0`) turn the cached opinion into
-  a hard filter for a promoted strategy, with no code edit. An offline gate
-  never blocks: the kernel's numeric edge decides.
+  a hard filter for a promoted strategy, with no code edit. The opt-in
+  settlement filter requires a current, available allow; shadow mode remains
+  advisory by default.
 
 Measured on the unit bench: the cached read takes 0.0014ms and the whole entry
 path 0.0076ms, with the HTTP client booby-trapped to raise on construction.
@@ -51,13 +52,10 @@ path 0.0076ms, with the HTTP client booby-trapped to raise on construction.
   `allow == True` verdict in the recorded ticks.
 
 **The score on today's slice is 2 trades, -$38.13, and the gate fails on the
-20-trade floor.** The true-L2 depth exists in only 16–22 of the 81 forward
-windows per lane, so the sample is not there yet.
-
-With `--gate-filter` the same two triggers are **denied by the recorded gate
-verdict** — 0 allowed, 2 denied, 0 without an opinion — and the filtered score
-is 0 trades. That is the same shield the R&D holdout measured (12/12 losing
-trades denied, -$99.54), reproduced on the settlement program.
+20-trade floor.** The true-L2 depth exists in only 16–20 of the 81 forward
+windows per lane, so the sample is not there yet. Both triggers were denied by
+the recorded gate verdict — the same shield the R&D holdout measured (12/12
+losing trades denied, -$99.54).
 
 One correction worth recording: `bounded_sweep.summarize` reads a row's `entry`
 as the YES-side price, which is what the research sweeps write, while the
@@ -128,16 +126,13 @@ live executor records the settlement band's refusal in the ledger; the dead
 `slot.gate_ticker` is gone; and the gate verdicts are only scanned when a score
 actually asks for the gate filter.
 
-One difference is left in place and named: the **T+1s entry lag is the scoring
-model's**, not the live path's. `openkal/sim_core.py` prices every order as
-arriving a full second after its trigger, which is the floor for the canonical
-simulator; the live lane sends an IOC and the venue fills it at the venue's own
-latency, and the paper ledger fills it at the decision price. The live executor
-pins the order to the arrival ask (the same discipline the F2 program uses), so
-the live fill is priced at the arrival book rather than at the trigger's book,
-but the one-second delay itself is not reproduced live. Closing that gap means
-a delayed-order queue in the live executor, which is a larger change to a
-live-money path than this work asked for.
+The settlement program now waits at least **T+1s** on the normal tick loop,
+then rechecks the arrival book, the side's cost band and the lane's risk checks.
+Paper and live executors use the arrival ask; the live order is an IOC. At
+roll, a settlement position waits for the market's official YES/NO result
+instead of treating a missing fixing as a fee-paying mark. This change does
+not alter the F2 default or enable live trading. No engine restart was made
+to load it.
 
 ## Incident: the engine and the L2 supervisor died at ~01:24 EST
 

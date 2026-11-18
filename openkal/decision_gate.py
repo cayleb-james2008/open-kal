@@ -20,6 +20,7 @@ describes a book that has since moved.
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -87,12 +88,13 @@ class LayaGate:
         """The last verdict for `ticker`. A dictionary read: no I/O, no await."""
         return self.cache.get(ticker)
 
-    def stale(self, ticker: str, mid: float | None = None) -> bool:
+    def stale(self, ticker: str, mid: float | None = None, *, now: float | None = None) -> bool:
         """True when the cached verdict for `ticker` should be refreshed."""
         verdict = self.cache.get(ticker)
         if verdict is None:
             return True
-        if time.time() - verdict.ts >= self.refresh_s:
+        age = (time.time() if now is None else now) - verdict.ts
+        if not 0 <= age < self.refresh_s:
             return True
         ref = self.mid_ref.get(ticker)
         if mid is not None and ref is not None:
@@ -102,6 +104,10 @@ class LayaGate:
             if abs(float(mid) - ref) >= self.mid_move_c - 1e-9:
                 return True
         return False
+
+    def current(self, ticker: str, mid: float, *, now: float | None = None) -> Verdict | None:
+        """The cached verdict usable at this tick, not a prediction from a future tick."""
+        return None if self.stale(ticker, mid, now=now) else self.cached(ticker)
 
     # ---------- the background path ----------
     def _prune(self) -> None:
@@ -156,9 +162,10 @@ class LayaGate:
                     pass
 
         try:
-            self.tasks[ticker] = asyncio.create_task(run(), name=f"laya-gate-{ticker}")
+            loop = asyncio.get_running_loop()
         except RuntimeError:  # no running loop: there is nothing to schedule onto
             return
+        self.tasks[ticker] = loop.create_task(run(), name=f"laya-gate-{ticker}")
 
     async def review(self, slot: Any, quote: Any, seconds_left: float, decision: Any) -> Verdict:
         state = self._state(slot, quote, seconds_left, decision)
@@ -189,7 +196,9 @@ class LayaGate:
             answer = (payload.get("answers") or {}).get("open") or {}
             choice = str(answer.get("choice") or "").strip().lower()
             probs = answer.get("probabilities") or {}
-            p_enter = float(probs.get("enter") or (1.0 if "enter" in choice else 0.0))
+            p_enter = float(probs.get("enter", 1.0 if choice == "enter" else 0.0))
+            if not math.isfinite(p_enter) or not 0 <= p_enter <= 1:
+                raise ValueError("invalid gate probability")
             note = str(answer.get("noul") or "").strip()[:180]
             # `confidence` on a choice is normalized entropy; the decision is the
             # probability the model actually assigned to "enter".
@@ -236,7 +245,7 @@ def verdict_payload(verdict: Verdict | None) -> dict[str, Any] | None:
         return None
     return {
         "available": verdict.available, "allow": verdict.allow,
-        "confidence": round(verdict.confidence, 3), "note": verdict.note,
+        "confidence": verdict.confidence, "note": verdict.note,
         "model": verdict.model, "latency_ms": round(verdict.latency_ms, 1),
         "error": verdict.error, "ticker": verdict.ticker, "ts": verdict.ts,
     }

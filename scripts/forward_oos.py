@@ -45,7 +45,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from openkal import features, sim_core  # noqa: E402
-from openkal.config import load_settings  # noqa: E402
+from openkal.config import HARD_MAX_ENTRY_PRICE  # noqa: E402
+from openkal.decision_gate import GATE_REFRESH_S  # noqa: E402
 from openkal.strategy import (Params, Quote, decide, exit_cost,  # noqa: E402
                               taker_fee_per_contract)
 from scripts import alpha_discover as AD  # noqa: E402
@@ -334,8 +335,7 @@ def score(since: float, until: float | None = None) -> dict:
 # ---------------------------------------------------------------------------
 
 SL2_COST_LO, SL2_COST_HI = 0.35, 0.60
-SL2_CAP = 0.62
-SL2_COOLDOWN, SL2_PER_WINDOW = 60.0, 2
+SL2_CAP = float(HARD_MAX_ENTRY_PRICE)
 SL2_SECS_LO, SL2_SECS_HI = 60.0, 780.0
 # The settlement program is sampled on a 2-second grid: the thesis is priced off
 # an average that is left to print, not off a single book row, and a grid keeps
@@ -343,7 +343,7 @@ SL2_SECS_LO, SL2_SECS_HI = 60.0, 780.0
 SL2_GRID_S = 2.0
 # The resting size must be this fresh: an imbalance read off a ladder that has
 # already moved is not the book the decision was made against.
-SL2_MAX_L2_AGE_S = 2.0
+SL2_MAX_L2_AGE_S = features.STUDENT_T_MAX_DEPTH_AGE_S
 
 
 def _lane_depth(name: str) -> tuple[np.ndarray, np.ndarray]:
@@ -371,73 +371,49 @@ def _flow_at(trade_ts: np.ndarray, cum_signed: np.ndarray, cum_size: np.ndarray,
     return float((cum_signed[hi] - cum_signed[lo]) / den)
 
 
-def _gate_verdicts(db_path: Path):
-    """The LayaGate verdicts the live engine recorded, by ticker and by series.
-
-    Two indexes of the same rows: one keyed by the contract the verdict was
-    about, one keyed by the lane. The contract is the honest key -- a verdict
-    belongs to the contract it judged -- and the lane index is the fallback for
-    the rows written before the recorder pinned its verdicts to their ticker.
-
-    Each entry is `(ts, allow, confidence)`: the tick timestamp, whether the gate
-    said enter (1) or skip (0), and how sure it was. This is the shadow opinion
-    the lane actually saw at the time -- the same rows the offline ablation
-    reads -- so a gate filter on a forward score is the same filter the live path
-    applies.
-    """
+def _gate_verdicts(db_path: Path, since: float = float("-inf"),
+                   until: float = float("inf"), min_confidence: float = 0.0) -> dict:
+    """Replay only the current-ticker snapshot known to the decision at that tick."""
     by_ticker: dict[str, list[tuple[float, float, float]]] = {}
-    by_series: dict[str, list[tuple[float, float, float]]] = {}
     if not db_path.exists():
-        return {}, {}
-    con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        return {}
+    con = sqlite3.connect(db_path.resolve().as_uri() + "?mode=ro", uri=True)
     try:
-        rows = con.execute(
-            "SELECT series, ticker, ts, gate FROM ticks "
-            "WHERE gate IS NOT NULL AND gate != '' ORDER BY ts").fetchall()
+        for series in LANES:
+            # Include empty ticks: otherwise the last available vote continues
+            # to vote after the engine has invalidated it.
+            for ticker, ts, gate in con.execute(
+                "SELECT ticker, ts, gate FROM ticks WHERE series=? AND ts>=? AND ts<? ORDER BY ts, rowid",
+                (series, since, until),
+            ):
+                allow = verdict_ts = float("nan")
+                if gate:
+                    try:
+                        value = json.loads(gate)
+                        stamp = float(value["ts"])
+                        confidence = float(value["confidence"])
+                        if (value["ticker"] == ticker and value["available"] is True
+                                and isinstance(value["allow"], bool) and 0 <= ts - stamp < GATE_REFRESH_S
+                                and 0 <= confidence <= 1):
+                            allow = float(value["allow"] and confidence >= min_confidence)
+                            verdict_ts = stamp
+                    except (KeyError, TypeError, ValueError):
+                        pass
+                by_ticker.setdefault(ticker, []).append((ts, allow, verdict_ts))
     finally:
         con.close()
-    for series, ticker, ts, gate in rows:
-        try:
-            payload = json.loads(gate)
-        except (TypeError, ValueError):
-            continue
-        allow = payload.get("allow")
-        if allow is None:
-            continue
-        confidence = float(payload.get("confidence") or 0.0)
-        item = (float(ts), 1.0 if allow else 0.0, confidence)
-        by_ticker.setdefault(f"{series}|{ticker}", []).append(item)
-        by_series.setdefault(str(series), []).append(item)
-
-    def _index(items: list[tuple[float, float, float]]):
-        return (np.array([t for t, _, _ in items], dtype=np.float64),
-                np.array([a for _, a, _ in items], dtype=np.float64),
-                np.array([c for _, _, c in items], dtype=np.float64))
-
-    return ({k: _index(v) for k, v in by_ticker.items()},
-            {k: _index(v) for k, v in by_series.items()})
+    return {ticker: np.asarray(items, dtype=np.float64).T for ticker, items in by_ticker.items()}
 
 
-def _gate_allow(by_ticker: dict, by_series: dict, series: str, ticker: str, t: float,
-                min_confidence: float = 0.0) -> bool | None:
-    """The verdict in force at `t`: the last one recorded at or before it.
-
-    `None` means the gate had no opinion at that moment. The live path refuses
-    an absent opinion when the filter is binding, so the forward score drops the
-    trade the same way: the two have to keep the same trades or they are not the
-    same program.
-    """
-    for index in (by_ticker.get(f"{series}|{ticker}"), by_series.get(series)):
-        if not index:
-            continue
-        ts, allow, confidence = index
-        idx = int(np.searchsorted(ts, t, "right")) - 1
-        if idx < 0:
-            continue
-        if float(confidence[idx]) < min_confidence:
-            return False
-        return bool(float(allow[idx]) >= 0.5)
-    return None
+def _gate_allow(verdicts: dict, ticker: str, t: float) -> bool | None:
+    snapshots = verdicts.get(ticker)
+    if snapshots is None:
+        return None
+    ts, allow, verdict_ts = snapshots
+    idx = int(np.searchsorted(ts, t, "right")) - 1
+    if idx < 0 or not 0 <= t - verdict_ts[idx] < GATE_REFRESH_S:
+        return None
+    return bool(allow[idx])
 
 
 def simulate_settlement(lane: Lane, trig: dict):
@@ -488,10 +464,11 @@ def _settlement_triggers(lane: Lane, name: str, closes: set[float],
         ts = lane.ts[a:b]
         bid = lane.bid[a:b]
         ask = lane.ask[a:b]
-        spots = A.index_at_past(lane, close - grid)
+        spots = A.index_at_past(lane, close - grid, tol=params.max_spot_age_s)
         lo_tr, hi_tr = int(lane.trade_bounds[tid]), int(lane.trade_bounds[tid + 1])
         trade_ts = lane.trade_ts[lo_tr:hi_tr]
-        sizes = np.where(lane.trade_sz[lo_tr:hi_tr] > 0, lane.trade_sz[lo_tr:hi_tr], 0.0)
+        size = lane.trade_sz[lo_tr:hi_tr]
+        sizes = np.where(np.isfinite(size) & (size > 0), size, 0.0)
         signed = np.where(lane.trade_ty[lo_tr:hi_tr] == 1, sizes, -sizes)
         cum_signed = np.concatenate(([0.0], np.cumsum(signed)))
         cum_size = np.concatenate(([0.0], np.cumsum(sizes)))
@@ -517,22 +494,26 @@ def _settlement_triggers(lane: Lane, name: str, closes: set[float],
                 skips["quote_no_quote"] += 1
                 continue
             bid_sz, ask_sz = float(depth_bid[a + j]), float(depth_ask[a + j])
-            if not (bid_sz > 0 and ask_sz > 0):
+            obi = features.l2_imbalance(bid_sz, ask_sz)
+            if obi is None:
                 skips["no_l2"] += 1
                 continue
-            obi = (bid_sz - ask_sz) / (bid_sz + ask_sz)
             flow_fast = _flow_at(trade_ts, cum_signed, cum_size, t, params.sl2_flow_fast_s)
             flow_slow = _flow_at(trade_ts, cum_signed, cum_size, t, params.sl2_flow_slow_s)
             sigma = features.trailing_sigma(index_tape, t)
-            p_up = features.student_t_settlement_p_up(
+            signal = features.student_t_l2_settle(
                 spot=spot, strike=strike, seconds_left=float(secs),
-                sigma=sigma, nu=nu, s=s)
+                sigma=sigma, nu=nu, s=s, l2_obi=obi, flow_fast=flow_fast, flow_slow=flow_slow)
+            if signal is None:
+                skips["no_settlement_signal"] += 1
+                continue
+            p_up = signal.p_up
             quote = Quote(
                 ticker=ticker, series=name, strike=strike, close_ts=close,
                 yes_bid=sim_core.px(bid[j]), yes_ask=sim_core.px(ask[j]),
                 last=sim_core.px((float(bid[j]) + float(ask[j])) / 2.0),
-                updated_ts=t, received_ts=t,
-                yes_bid_sz=Decimal(str(int(bid_sz))), yes_ask_sz=Decimal(str(int(ask_sz))))
+                updated_ts=float(ts[j]), received_ts=t,
+                yes_bid_sz=Decimal(str(bid_sz)), yes_ask_sz=Decimal(str(ask_sz)))
             decision = decide(
                 quote=quote, p_up=p_up, seconds_left=float(secs), spot_age=0.0,
                 params=params, position=None, edge_hurdle=params.edge_hurdle,
@@ -550,18 +531,7 @@ def _settlement_triggers(lane: Lane, name: str, closes: set[float],
                 "obi": obi, "flow_fast": flow_fast,
                 "flow_slow": flow_slow, "secs_left": float(secs),
             })
-    # One entry per contract per minute, at most `sl2_max_window_trades` in a
-    # window: the cap is the strategy's own, read from the same Params the live
-    # lane runs, so the score and the lane cannot disagree about it.
-    kept: list[dict] = []
-    for row in triggers:
-        same = [k for k in kept if k["tid"] == row["tid"]]
-        if len(same) >= params.sl2_max_window_trades:
-            continue
-        if same and row["ts"] - same[-1]["ts"] < SL2_COOLDOWN:
-            continue
-        kept.append(row)
-    return kept, skips
+    return triggers, skips
 
 
 def score_student_t_l2(since: float, until: float | None = None,
@@ -588,19 +558,17 @@ def score_student_t_l2(since: float, until: float | None = None,
     # The gate verdicts are only read when the filter is asked for: the scan is
     # over every recorded tick, and a score that does not use the gate has no
     # business paying for it.
-    by_ticker, by_series = ({}, {})
+    verdicts = {}
     if gate_filter:
-        by_ticker, by_series = _gate_verdicts(db_path or load_settings().db_path)
+        verdicts = _gate_verdicts(db_path or ROOT / "data/openkal-prod.db", since - 900.0,
+                                  until if until is not None else float("inf"), gate_min_confidence)
     lanes = {name: Lane(name) for name in LANES}
     rows: list[dict] = []
     skips: Counter = Counter()
     windows: set[float] = set()
     pools_ok: dict[str, int] = {}
     events = 0
-    # The gate's opinion on each trade is only read when the filter asks for it:
-    # an unfiltered score has no business scanning the recorded verdicts.
-    gate_counts: dict = {"evaluated": False} if not gate_filter else \
-        {"allowed": 0, "denied": 0, "no_opinion": 0}
+    gate_counts = {"allowed": 0, "denied": 0, "no_opinion": 0} if gate_filter else {"evaluated": False}
     for name, lane in lanes.items():
         closes = {float(m["close"]) for m in lane.meta.values()
                   if float(m["close"]) >= since
@@ -611,21 +579,27 @@ def score_student_t_l2(since: float, until: float | None = None,
         index_tape = ([(float(t), float(v)) for t, v in zip(lane.index["ts"], lane.index["value"])]
                       if lane.index else [])
         triggers, lane_skips = _settlement_triggers(lane, name, closes, index_tape, params)
-        events += len(triggers)
         for key, value in lane_skips.items():
             skips[key] += value
+        carried = set()
         for trig in triggers:
+            if trig["tid"] in carried:
+                continue
+            allow = None
+            if gate_filter:
+                allow = _gate_allow(verdicts, str(trig["ticker"]), float(trig["ts"]))
+                gate_counts["allowed" if allow is True else
+                            "denied" if allow is False else "no_opinion"] += 1
+                if allow is not True:
+                    skips["gate_refused"] += 1
+                    continue
+            events += 1
             res = simulate_settlement(lane, trig)
             if isinstance(res, sim_core.Skip):
                 skips[res.reason] += 1
                 continue
+            carried.add(trig["tid"])
             windows.add(float(trig["close"]))
-            allow = None
-            if gate_filter:
-                allow = _gate_allow(by_ticker, by_series, name, str(trig["ticker"]),
-                                    float(trig["ts"]), gate_min_confidence)
-                gate_counts["allowed" if allow is True else
-                            "denied" if allow is False else "no_opinion"] += 1
             rows.append({
                 "lane": name, "ticker": trig["ticker"], "tid": trig["tid"],
                 "ts": float(res.order_ts), "fill_ts": float(res.legs[0].ts),
@@ -641,7 +615,7 @@ def score_student_t_l2(since: float, until: float | None = None,
                 "secs_left": trig["secs_left"], "gate_allow": allow,
             })
 
-    kept = [r for r in rows if r["gate_allow"] is True] if gate_filter else rows
+    kept = rows
     hours = ((max(windows) - min(windows)) / 3600.0) if len(windows) > 1 else 0.0
     summary = summarize(kept, hours) if kept else summarize([], 0.0)
     summary = _with_true_side_costs(summary, kept)
@@ -649,7 +623,7 @@ def score_student_t_l2(since: float, until: float | None = None,
     # This program's probability describes the contract's own settlement, so the
     # calibration error is measured against the settlement outcome -- which is
     # what `summarize`'s own settlement ECE does.
-    settlement_ece = float(summary.get("ece") or 1.0) if kept else 1.0
+    settlement_ece = float(summary["ece"]) if kept else 1.0
     lanes_pos = sum(1 for v in (summary.get("by_lane") or {}).values()
                     if float(v.get("net") or 0) > 0)
     gate = gate_from_summary(summary, settlement_ece, lanes_pos)
@@ -673,8 +647,7 @@ def score_student_t_l2(since: float, until: float | None = None,
             "entry_lag_s": LAG_S,
             "exit": "settlement ($0 exit fee)",
             "grid_s": SL2_GRID_S,
-            "cooldown_s": SL2_COOLDOWN,
-            "per_window": SL2_PER_WINDOW,
+            "simultaneous_positions_per_lane": 1,
         },
         "fill_rules": {
             "entry_lag_s": LAG_S,

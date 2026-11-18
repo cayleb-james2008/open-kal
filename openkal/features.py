@@ -808,6 +808,7 @@ STUDENT_T_FIT: dict[str, tuple[float, float]] = {
 # The settlement reference is a 60s average, so the variance of the time that is
 # left to average is the window minus its own fixings.
 STUDENT_T_TAU_OFFSET_S = 40.0
+STUDENT_T_MAX_DEPTH_AGE_S = 2.0
 
 
 def _betacf(a: float, b: float, x: float) -> float:
@@ -906,7 +907,7 @@ def l2_imbalance(yes_bid_sz: float | None, yes_ask_sz: float | None) -> float | 
     if yes_bid_sz is None or yes_ask_sz is None:
         return None
     bid, ask = float(yes_bid_sz), float(yes_ask_sz)
-    if bid <= 0 or ask <= 0:
+    if not (math.isfinite(bid + ask) and bid > 0 and ask > 0):
         return None
     return (bid - ask) / (bid + ask)
 
@@ -925,11 +926,11 @@ def student_t_l2_settle(*, spot: float, strike: float, seconds_left: float, sigm
     `None` means "no thesis": the window is closed, the index is unusable, or the
     tape carries no resting size to read an imbalance from.
     """
-    if strike <= 0 or spot <= 0 or sigma <= 0:
+    if not all(math.isfinite(x) and x > 0 for x in (strike, spot, sigma, nu, s)):
         return None
     if not (min_seconds_left <= seconds_left <= max_seconds_left):
         return None
-    if l2_obi is None:
+    if l2_obi is None or not all(-1 <= x <= 1 for x in (l2_obi, flow_fast, flow_slow)):
         return None
     p_up = student_t_settlement_p_up(spot=spot, strike=strike, seconds_left=seconds_left,
                                      sigma=sigma, nu=nu, s=s)
