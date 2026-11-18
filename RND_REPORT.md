@@ -37,7 +37,7 @@ Reading: **the variance laws and mean construction are correct** — ETH's z is 
 | h0.09 | 30 | −99.24 | 0.76 | 0.40 | 1 (ETH) | 0.58 |
 | h0.12 | 15 | −235.71 | 0.20 | 0.13 | 1 (ETH) | 0.58 |
 
-Champion-by-net `h0.09` is not eligible (bar: ≥30 trades, PF ≥ 1.25, ≥2 lanes; 0 crossed fills). Only ETH is profitable at every hurdle — matching the diagnostics above. Model-vs-market on IS cost-band pairs: p 0.474 vs realised 0.455 (ECE 0.037). **No IS-eligible champion → no OOS look.**
+Champion-by-net `h0.09` is not eligible (bar: ≥30 trades, PF ≥ 1.25, ≥2 lanes; 0 crossed fills). Only ETH is profitable at every hurdle — matching the diagnostics above. Model-vs-market on IS cost-band pairs: p 0.474 vs realised 0.455 (ECE 0.037). **No IS-eligible champion → no OOS look.** An independent second sweep of the same family (`scripts/track1_asian_pin.py`, an 18-cell grid over hurdles × secs-windows [15,60]/[15,90]/[15,120] × taker/maker, same cut and cost band, committed separately in `d0d9711`) reaches the same verdict: best cell 8 trades / −26.50 / PF 0.77, `is_eligible: false`, OOS unspent — two instruments, one conclusion.
 
 ### Track 3 — LayaGate shadow-score filter: **blocked**
 
