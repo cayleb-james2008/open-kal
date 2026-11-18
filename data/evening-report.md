@@ -1,6 +1,6 @@
 # Open-Kal 24/7 report
 
-Updated 2026-11-17T19:19:22-05:00 by `scripts/daemon_247.py`.
+Updated 2026-11-17T19:31:26-05:00 by `scripts/daemon_247.py`.
 
 ## State
 
@@ -33,6 +33,7 @@ Updated 2026-11-17T19:19:22-05:00 by `scripts/daemon_247.py`.
 | 2026-11-17T18:31:21-05:00 | False | 121.46 | 121.4563 | 0.00 | 131.54 |
 | 2026-11-17T18:46:24-05:00 | False | 121.46 | 121.4563 | 0.00 | 131.54 |
 | 2026-11-17T19:00:28-05:00 | False | 121.46 | 121.4563 | 0.00 | 131.54 |
+| 2026-11-17T19:31:26-05:00 | False | 121.46 | 121.4563 | 0.00 | 131.54 |
 
 ## Afternoon audit · 15:08–18:00 EST (final 18:00 snapshot)
 
@@ -52,7 +53,6 @@ Updated 2026-11-17T19:19:22-05:00 by `scripts/daemon_247.py`.
 
 ## Events
 
-- 2026-11-17T16:45:11-05:00 **report**: promotion stopped before arming
 - 2026-11-17T17:08:02-05:00 **candidate_ready_for_operator_approval**: 
 - 2026-11-17T17:08:02-05:00 **report**: candidate ready; no arm (operator lock)
 - 2026-11-17T18:00:19-05:00 **report**: unarmed 15-minute reconcile
@@ -64,3 +64,4 @@ Updated 2026-11-17T19:19:22-05:00 by `scripts/daemon_247.py`.
 - 2026-11-17T19:00:28-05:00 **report**: unarmed 15-minute reconcile
 - 2026-11-17T19:19:22-05:00 **gate refused**: ['forward net $-19.42 <= 0', 'forward PF 0.625 < 1.15', 'payoff ECE 0.4094 > 0.08', '1 profitable lane(s) < 2']
 - 2026-11-17T19:19:22-05:00 **report**: gate refused at the hourly check
+- 2026-11-17T19:31:26-05:00 **report**: unarmed 15-minute reconcile
