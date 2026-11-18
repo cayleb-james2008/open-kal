@@ -847,7 +847,8 @@
    "owner_questions": [
     "which family is the 'energy/opposite-side fade'? passive_mm_fade was assumed",
     "may a diagnostic score the 0.62-0.84 band outside sim_core's ceiling?"
-   ]
+   ],
+   "timestamp_note": "typed registration timestamps in Track 9 (all three) and Track 10 do not match their commits; commit times are authoritative (see the report)"
   },
   "track11_queue_short_favourite_bid": {
    "status": "pre-registered, scored in sample only: 10 fills, net -17.50, PF 0.87; bar missed; OOS sealed (oos_scored null)",
