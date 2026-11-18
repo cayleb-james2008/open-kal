@@ -53,14 +53,20 @@ DRAWS, SEED, MIN_TRADES, FOLDS_PRE = 10_000, 0, 30, 5            # the registere
 FADE_RECEIPT = ROOT / "data" / "passive-mm-fade-is.json"
 FADE_IS_CUT = 1794881700.0                                        # the fade's own IS/OOS cut, from its receipt
 POOL_KEYS = tuple(RB.KEEP)
+POOL_PIN = "pool-pin.json"                                         # which pinned tape a pool directory was built from
 REASON = "Track 10: frozen champion re-scored on post-freeze windows at a scenario latency (not an OOS look of the family)"
 # recorded before this track existed; the new pools must rebuild them (a validity gate, not a registered threshold)
 RECORDED = {"F2_taker_1s_pre_freeze_triggers": 66 + 45, "passive_mm_fade_is_triggers": 56}
+# F2's forward look (scripts/forward_oos.py, the 'forward' block of data/strategy-verdict.json): the frozen rule was scored once, nothing
+# fitted, on every settled window from 2026-11-17 05:00. The artifact data/forward-oos.json is not on this machine; the end is inferred
+# from the block's 27 trades at 2.7 trades an hour, about 10 hours, i.e. to about 15:00, which is after the freeze.
+F2_FORWARD_LOOK = {"slice_start": 1794909600.0, "inferred_hours": 10.0, "inferred_end_close": 1794909600.0 + 10 * 3600.0}
 EVIDENCE = {
-    "F2_taker_1s": [("data/f2-structural.json", "frozen rule, IS and OOS on the frozen 60/40 split"),
+    "F2_taker_1s": [("/home/cayleb/open-kal/data/f2-structural.json", "frozen rule, IS and OOS on the frozen 60/40 split"),
                     ("data/evolve-f2-variants.json", "peg, take-profit and ETH variants, IS and OOS"),
                     ("data/sim-core-parity.json", "sim_core rerun of the rule, IS and OOS (unlogged)"),
-                    ("data/alpha-evolve-v2.json", "seed of the evolutionary search (IS)")],
+                    ("data/alpha-evolve-v2.json", "seed of the evolutionary search (IS)"),
+                    ("/home/cayleb/open-kal/data/strategy-verdict.json", "promotion verdict: payoff calibrator fitted, forward slice scored once by scripts/forward_oos.py")],
     "passive_mm_fade": [("data/passive-mm-fade-is.json", "IS grid, champion frozen")],
     "zobi_xrp_carry": [("/home/cayleb/open-kal/data/strategy-verdict.prev-rejected.json", "z_obi_flow verdict on the frozen split")],
     "zobi_band_084": [("/home/cayleb/open-kal/data/strategy-verdict.prev-rejected.json", "z_obi_flow verdict on the frozen split")],
@@ -83,7 +89,9 @@ def build_pools(tape: Path = TAPE, out: Path = POOL, lanes=LANES) -> dict:
     """Causal-spot trigger pools for the pinned tape, one lane at a time, written to `out` (never to data/rnd-pool)."""
     if out.resolve() == RB.POOL.resolve():
         raise RuntimeError("refusing to overwrite data/rnd-pool: earlier receipts depend on it")
-    T.pin_tape(tape)
+    if out.exists() and any(out.iterdir()):
+        raise RuntimeError(f"{out} already holds pools; build a later pin into a new directory")
+    pin = T.pin_tape(tape)
     A.index_at = RB.causal_index_at                      # obi_pool resolves A.index_at at call time
     out.mkdir(parents=True, exist_ok=True)
     rows = {}
@@ -98,6 +106,7 @@ def build_pools(tape: Path = TAPE, out: Path = POOL, lanes=LANES) -> dict:
         print(f"{name}: {len(idx):,} rows ({time.time() - t0:.0f}s)", flush=True)
         del lane_set, pool
         gc.collect()
+    (out / POOL_PIN).write_text(json.dumps({"tape_sha256": pin["sha256"]}) + "\n")
     return rows
 
 
@@ -114,7 +123,7 @@ def f2_triggers(name: str, lane, pool: dict) -> list[dict]:
     for i in pick(pool, mask, cooldown=F.COOLDOWN, per_window=F.PER_WINDOW):
         tid = int(pool["tid"][i])
         out.append({"family": "F2_taker_1s", "lane": name, "tid": tid, "ticker": lane.tickers[tid], "close": float(pool["close"][i]),
-                    "ts": float(pool["ts"][i]), "side": S.YES if bool(long_yes[i]) else S.NO})
+                    "ts": float(pool["ts"][i]), "side": S.YES if bool(long_yes[i]) else S.NO, "feat": F.feature_row(pool, i)})
     return out
 
 
@@ -170,7 +179,7 @@ def score_cell(triggers: list[dict], tapes: dict, lag: float) -> tuple[list[dict
         if isinstance(res, S.Skip):
             skips[slice_name][res.reason] += 1
             continue
-        rows.append(RC.trade_row(res, lane=t["lane"], ticker=t["ticker"], close=t["close"], slice_name=slice_name,
+        rows.append(RC.trade_row(res, lane=t["lane"], ticker=t["ticker"], close=t["close"], slice_name=slice_name, feat=t.get("feat"),
                                  family=t["family"], latency_s=lag))
     return rows, {k: dict(v) for k, v in skips.items()}
 
@@ -243,6 +252,11 @@ def window_ledger(closes: list[float], triggers: dict, scored: dict) -> dict:
             "post_freeze": {"windows": len(post), "first": post[0], "last": post[-1], "seen_before_this_run": False,
                             "scored_this_run": fam in SCORED, "windows_with_a_trade": sorted({t for t in scored.get(fam, set())})},
         }
+    early = [c for c in post if c <= F2_FORWARD_LOOK["inferred_end_close"]]
+    out["F2_taker_1s"]["post_freeze"].update({
+        "seen_before_this_run": bool(early),
+        "forward_look": {**F2_FORWARD_LOOK, "windows_possibly_scored_by_that_look": early, "fitted_on": "nothing",
+                         "note": "inferred end, see F2_FORWARD_LOOK; these windows were scored once for F2 before this run but never selected or fitted on"}})
     return out
 
 
@@ -261,12 +275,16 @@ def run(tape: Path = TAPE, pool_dir: Path = POOL, out_dir: Path = ROOT / "data")
     t0 = time.time()
     pin = T.pin_tape(tape)
     closes = T.window_closes(tape)
-    receipt_path = out_dir / f"track10-rescore-{int(closes[-1])}.json"
+    stamp = int(closes[-1])
+    receipt_path = out_dir / f"track10-rescore-{stamp}.json"
     if receipt_path.exists():
         raise RuntimeError(f"{receipt_path.name} exists: this pin was already scored; pin a later tape to extend the test")
     post = [c for c in closes if c > FREEZE_CLOSE]
     if not post:
         raise RuntimeError("the pinned tape has no post-freeze window")
+    pool_pin = pool_dir / POOL_PIN
+    if not pool_pin.exists() or json.loads(pool_pin.read_text())["tape_sha256"] != pin["sha256"]:
+        raise RuntimeError(f"the pools in {pool_dir} were not built from this pinned tape; build them with --build-pools into a new directory")
     lanes, norm = RC.load_lanes(), fade_norm()
     triggers = {fam: [] for fam in SCORED}
     for name in LANES:
@@ -317,12 +335,24 @@ def run(tape: Path = TAPE, pool_dir: Path = POOL, out_dir: Path = ROOT / "data")
            "holm": {"m": M, "alpha": ALPHA, "scored_cells": len(p_by_cell)},
            "cells": {fam: {f"{lag:g}": v for lag, v in cells[fam].items()} for fam in SCORED}, "seconds": round(time.time() - t0, 1)}
     wl = window_ledger(closes, triggers, scored_windows)
-    RC.dump(out_dir / "track10-window-ledger.json", wl)
-    with (out_dir / "track10-rescore-trades.jsonl").open("w") as fh:
+    RC.dump(out_dir / f"track10-window-ledger-{stamp}.json", wl)
+    with (out_dir / f"track10-rescore-trades-{stamp}.jsonl").open("w") as fh:
         for r in all_rows:
             fh.write(json.dumps(r, default=RC._json_default) + "\n")
     RC.dump(receipt_path, out)
     return out
+
+
+def rebuild_window_ledger(tape: Path = TAPE, out_dir: Path = ROOT / "data") -> dict:
+    """Rewrite only the window ledger from the pin and the scored trades (no scoring, no OOS ledger line)."""
+    T.pin_tape(tape)
+    closes = T.window_closes(tape)
+    stamp = int(closes[-1])
+    rows = [json.loads(x) for x in (out_dir / f"track10-rescore-trades-{stamp}.jsonl").read_text().splitlines() if x.strip()]
+    traded = {fam: {r["close"] for r in rows if r["family"] == fam and r["slice"] == "post"} for fam in SCORED}
+    wl = window_ledger(closes, {}, traded)
+    RC.dump(out_dir / f"track10-window-ledger-{stamp}.json", wl)
+    return wl
 
 
 def table(out: dict) -> str:
@@ -342,12 +372,16 @@ def main() -> int:
     ap.add_argument("--pool", type=Path, default=POOL)
     ap.add_argument("--build-tape", action="store_true", help="pin the tape (cache snapshot) and stop")
     ap.add_argument("--build-pools", action="store_true", help="build the causal pools for the pinned tape and stop")
+    ap.add_argument("--rebuild-ledger", action="store_true", help="rewrite only the window ledger from the pin and the scored trades")
     args = ap.parse_args()
     if args.build_tape:
         print(json.dumps(build_tape(args.tape), indent=1))
         return 0
     if args.build_pools:
         print(json.dumps(build_pools(args.tape, args.pool)))
+        return 0
+    if args.rebuild_ledger:
+        print(json.dumps({k: v["post_freeze"]["seen_before_this_run"] for k, v in rebuild_window_ledger(args.tape).items()}))
         return 0
     out = run(args.tape, args.pool)
     print(table(out))

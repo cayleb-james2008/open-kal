@@ -247,7 +247,8 @@ class Trading(unittest.TestCase):
         self.assertNotEqual(M.PM.POOL_DIR, Path("/pools"))                                   # the module's own pool dir is put back
 
     def test_f2_triggers_take_the_side_of_the_spot_and_the_frozen_cooldown(self):
-        pool = {"tid": np.array([0, 0]), "ts": np.array([1.0, 2.0]), "close": np.array([900.0, 900.0])}
+        pool = {"tid": np.array([0, 0]), "ts": np.array([1.0, 2.0]), "close": np.array([900.0, 900.0]), "z": np.array([0.5, -0.5]),
+                "flow": np.array([0.2, -0.2]), "rev": np.array([0.1, -0.1]), "delta": np.array([0.05, 0.05]), "spot": np.array([100.0, 100.0])}
         lane = type("L", (), {"tickers": ["T0"]})()
         asked = []
 
@@ -259,6 +260,7 @@ class Trading(unittest.TestCase):
             out = M.f2_triggers("KXXRP15M", lane, pool)
         self.assertEqual([t["side"] for t in out], [S.YES, S.NO])
         self.assertEqual(asked, [(90.0, 3)])
+        self.assertEqual([t["feat"] for t in out], [[0.5, 0.2, 0.1, 5.0], [-0.5, 0.2, 0.1, 5.0]])           # signed by the trade's direction: z, flow, rev, delta in bp
 
 
 class Run(unittest.TestCase):
@@ -270,6 +272,7 @@ class Run(unittest.TestCase):
         self.pre = [FREEZE - 900.0 * k for k in range(168)]
         self.post = [FREEZE + 900.0 * (k + 1) for k in range(70)]
         self.closes = sorted(self.pre + self.post)
+        self.pool_for = {"x": "y"}                                                           # the pool directory was built from the pinned tape
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -293,6 +296,9 @@ class Run(unittest.TestCase):
             return [row(self.post[0], 1.5, fam), row(self.pre[0], -1.0, fam)], {"pre": {"cost_band": 1}, "post": {}}
 
         pools = patch.object(M, "load_pool", lambda name, d: {})
+        pool_dir = self.dir / "pool"
+        pool_dir.mkdir(exist_ok=True)
+        (pool_dir / M.POOL_PIN).write_text(json.dumps({"tape_sha256": self.pool_for}) + "\n")
         with patch.object(M.T, "pin_tape", lambda tape: {"sha256": {"x": "y"}}), patch.object(M.T, "window_closes", lambda tape: self.closes), \
                 patch.object(M.RC, "load_lanes", lambda: {n: object() for n in M.LANES}), patch.object(M, "fade_norm", lambda: {}), pools, \
                 patch.object(M, "f2_triggers", lambda n, l, p: f2 if n == "KXBTC15M" else []), \
@@ -317,16 +323,18 @@ class Run(unittest.TestCase):
         f2, fade = self.triggers()
         out, _, _ = self.go(f2, fade)
         receipt = self.dir / f"track10-rescore-{int(self.closes[-1])}.json"
-        self.assertTrue(receipt.exists() and (self.dir / "track10-window-ledger.json").exists())
-        self.assertEqual(len((self.dir / "track10-rescore-trades.jsonl").read_text().splitlines()), 12)
+        stamp = int(self.closes[-1])
+        self.assertTrue(receipt.exists() and (self.dir / f"track10-window-ledger-{stamp}.json").exists())
+        self.assertEqual(len((self.dir / f"track10-rescore-trades-{stamp}.jsonl").read_text().splitlines()), 12)
         cell = out["cells"]["F2_taker_1s"]["5"]
         self.assertEqual((cell["post"]["trades"], cell["pre"]["trades"], cell["triggers"]), (1, 1, {"pre": 111, "post": 3}))
         self.assertEqual(cell["verdict"], "underpowered")
         self.assertEqual(out["windows"]["post_freeze"], 70)
-        ledger = json.loads((self.dir / "track10-window-ledger.json").read_text())
+        ledger = json.loads((self.dir / f"track10-window-ledger-{stamp}.json").read_text())
         self.assertEqual(sorted(ledger), ["F2_taker_1s", "passive_mm_fade", "zobi_band_084", "zobi_xrp_carry"])
         self.assertTrue(ledger["zobi_band_084"]["pre_freeze"]["seen"])
-        self.assertFalse(ledger["F2_taker_1s"]["post_freeze"]["seen_before_this_run"])
+        self.assertTrue(ledger["F2_taker_1s"]["post_freeze"]["seen_before_this_run"])                  # its forward look reached past the freeze
+        self.assertFalse(ledger["passive_mm_fade"]["post_freeze"]["seen_before_this_run"])
         self.assertEqual(ledger["F2_taker_1s"]["pre_freeze"]["windows"], 168)
         with self.assertRaisesRegex(RuntimeError, "already scored"):
             self.go(f2, fade)
@@ -347,10 +355,45 @@ class Run(unittest.TestCase):
             self.go(f2, fade)
 
 
+    def test_a_later_pin_does_not_overwrite_the_first_pins_trades_or_ledger(self):
+        f2, fade = self.triggers()
+        self.go(f2, fade)
+        first = self.dir / f"track10-rescore-trades-{int(self.closes[-1])}.jsonl"
+        before = first.read_text()
+        self.closes = self.closes + [self.closes[-1] + 900.0]                                 # a later pin: one more window
+        self.go(f2, fade)
+        self.assertEqual(first.read_text(), before)
+        self.assertTrue((self.dir / f"track10-rescore-trades-{int(self.closes[-1])}.jsonl").exists())
+
+    def test_pools_built_from_another_tape_or_with_no_pin_record_are_refused_before_anything_is_logged(self):
+        f2, fade = self.triggers()
+        self.pool_for = {"x": "other"}
+        with self.assertRaisesRegex(RuntimeError, "not built from this pinned tape"):
+            self.go(f2, fade)
+        self.assertFalse((self.dir / "ledger.jsonl").exists())
+        self.pool_for = {"x": "y"}
+        (self.dir / "pool" / M.POOL_PIN).unlink()
+        with patch.object(M.T, "pin_tape", lambda tape: {"sha256": {"x": "y"}}), patch.object(M.T, "window_closes", lambda tape: self.closes), \
+                patch.object(M.RC, "LEDGER", self.dir / "ledger.jsonl"):
+            with self.assertRaisesRegex(RuntimeError, "not built from this pinned tape"):
+                M.run(self.dir / "tape", self.dir / "pool", self.dir)
+
+
 class Building(unittest.TestCase):
-    def test_the_pool_builder_never_overwrites_the_older_pools(self):
+    def test_the_pool_builder_never_overwrites_the_older_pools_or_a_directory_that_already_holds_pools(self):
         with self.assertRaisesRegex(RuntimeError, "rnd-pool"):
             M.build_pools(M.TAPE, M.RB.POOL)
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "slim_KXBTC15M.npz").write_bytes(b"x")
+            with self.assertRaisesRegex(RuntimeError, "already holds pools"):
+                M.build_pools(M.TAPE, Path(d))
+
+    def test_a_pool_build_records_which_pinned_tape_it_came_from(self):
+        with tempfile.TemporaryDirectory() as d, patch.object(M.T, "pin_tape", lambda t: {"sha256": {"a": "b"}}), \
+                patch.object(M.RC, "load_lanes", lambda names: {names[0]: object()}), \
+                patch.object(M.F, "build_pools", lambda lanes: {n: {"z": np.array([0.5]), **{k: np.array([1.0]) for k in M.RB.KEEP if k != "z"}} for n in lanes}):
+            M.build_pools(M.TAPE, Path(d) / "new", lanes=("KXBTC15M",))
+            self.assertEqual(json.loads((Path(d) / "new" / M.POOL_PIN).read_text()), {"tape_sha256": {"a": "b"}})
 
     def test_a_tape_is_pinned_once_and_only_from_a_consistent_snapshot(self):
         with tempfile.TemporaryDirectory() as d:
@@ -362,6 +405,68 @@ class Building(unittest.TestCase):
             self.assertEqual(json.loads((dest / "pin.json").read_text())["sha256"], {"a": "b"})
             with self.assertRaisesRegex(RuntimeError, "already pinned"):
                 M.build_tape(dest, snapshot=lambda p: {"a": "b"})
+
+
+class Features(unittest.TestCase):
+    def test_f2_features_travel_with_the_trade_row_and_the_fade_carries_none(self):
+        seen = []
+        trig = [{"family": "F2_taker_1s", "lane": "KXBTC15M", "tid": 0, "ticker": "T", "close": FREEZE + 900.0, "ts": 1.0, "side": S.YES, "feat": [1.0, 2.0, 3.0, 4.0]},
+                {"family": "passive_mm_fade", "lane": "KXBTC15M", "tid": 1, "ticker": "T", "close": FREEZE + 900.0, "ts": 1.0, "side": S.NO}]
+        with patch.object(M, "run_one", lambda t, tape, lag: object()), patch.object(M.RC, "trade_row", lambda tr, **kw: seen.append(kw) or kw):
+            M.score_cell(trig, {("KXBTC15M", 0): None, ("KXBTC15M", 1): None}, 1)
+        self.assertEqual([kw["feat"] for kw in seen], [[1.0, 2.0, 3.0, 4.0], None])
+
+
+class WindowLedger(unittest.TestCase):
+    PRE = [FREEZE - 900.0 * k for k in range(168)]
+    POST = [FREEZE + 900.0 * (k + 1) for k in range(70)]
+
+    def test_f2_windows_inside_its_forward_look_are_recorded_as_seen_and_the_others_are_not(self):
+        wl = M.window_ledger(sorted(self.PRE + self.POST), {}, {"F2_taker_1s": {FREEZE + 900.0}, "passive_mm_fade": set()})
+        f2 = wl["F2_taker_1s"]["post_freeze"]
+        end = M.F2_FORWARD_LOOK["inferred_end_close"]
+        early = [c for c in self.POST if c <= end]
+        self.assertTrue(f2["seen_before_this_run"])
+        self.assertEqual(f2["forward_look"]["windows_possibly_scored_by_that_look"], early)
+        self.assertTrue(0 < len(early) < len(self.POST))
+        self.assertEqual(f2["forward_look"]["fitted_on"], "nothing")
+        for fam in ("passive_mm_fade", "zobi_xrp_carry", "zobi_band_084"):
+            self.assertFalse(wl[fam]["post_freeze"]["seen_before_this_run"], fam)
+            self.assertNotIn("forward_look", wl[fam]["post_freeze"])
+
+    def test_the_forward_look_inference_is_ten_hours_from_five_in_the_morning(self):
+        self.assertEqual(M.F2_FORWARD_LOOK["slice_start"], 1794909600.0)                       # 2026-11-17 05:00 EST, forward_oos.FORWARD_OOS_START_TS
+        self.assertEqual(M.F2_FORWARD_LOOK["inferred_end_close"] - M.F2_FORWARD_LOOK["slice_start"], 36_000.0)
+        self.assertTrue(M.F2_FORWARD_LOOK["slice_start"] < FREEZE < M.F2_FORWARD_LOOK["inferred_end_close"])   # the look straddles the freeze
+
+    def test_every_evidence_file_is_looked_up_where_it_lives_and_a_missing_one_is_marked_missing(self):
+        wl = M.window_ledger(sorted(self.PRE + self.POST), {}, {})
+        for fam, entry in wl.items():
+            for ev in entry["pre_freeze"]["evidence"]:
+                path = Path(ev["path"]) if ev["path"].startswith("/") else ROOT / ev["path"]
+                self.assertEqual(ev["mtime"] is not None, path.exists(), (fam, ev["path"]))
+
+    def test_the_f2_evidence_that_exists_on_this_machine_is_found_with_its_time(self):
+        real = Path("/home/cayleb/open-kal/data/f2-structural.json")
+        if not real.exists():
+            self.skipTest("the first-session artifacts are not on this machine")
+        wl = M.window_ledger(sorted(self.PRE + self.POST), {}, {})
+        found = {ev["path"]: ev["mtime"] for ev in wl["F2_taker_1s"]["pre_freeze"]["evidence"]}
+        self.assertIsNotNone(found[str(real)])
+
+    def test_the_ledger_can_be_rebuilt_alone_from_the_pin_and_the_trades_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            rows = [{"family": "F2_taker_1s", "slice": "post", "close": FREEZE + 900.0}, {"family": "F2_taker_1s", "slice": "pre", "close": FREEZE},
+                    {"family": "passive_mm_fade", "slice": "post", "close": FREEZE + 1800.0}]
+            (d / f"track10-rescore-trades-{int(sorted(self.PRE + self.POST)[-1])}.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+            with patch.object(M.T, "pin_tape", lambda t: {}), patch.object(M.T, "window_closes", lambda t: sorted(self.PRE + self.POST)), \
+                    patch.object(M.RC, "LEDGER", d / "none.jsonl"):
+                wl = M.rebuild_window_ledger(d / "tape", d)
+            self.assertEqual(wl["F2_taker_1s"]["post_freeze"]["windows_with_a_trade"], [FREEZE + 900.0])
+            self.assertEqual(wl["passive_mm_fade"]["post_freeze"]["windows_with_a_trade"], [FREEZE + 1800.0])
+            self.assertTrue((d / f"track10-window-ledger-{int(sorted(self.PRE + self.POST)[-1])}.json").exists())
+            self.assertFalse((d / "none.jsonl").exists())                                       # no ledger line is written by a rebuild
 
 
 if __name__ == "__main__":
