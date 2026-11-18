@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-18T02:00:31-05:00",
+ "updated": "2026-11-18T02:38:35-05:00",
  "goal": "24/7 forward-OOS gate, live compounding, trailing drawdown breaker.",
  "state": {
   "decision": "waiting",
@@ -74,13 +74,5 @@
   "log": "data/daemon-247.log",
   "report": "data/evening-report.md",
   "cadence": "hourly gate / 15-minute live checks / 6-hour cache rebuild"
- },
- "production_readiness_2026_11_18": {
-  "done": "Non-blocking LayaGate cache (0ms entry read), student_t_l2_settle strategy + canonical forward scorer, 130/130 live-exit checks. Full write-up: docs/production-readiness-2026-11-18.md",
-  "artifact": "data/forward-oos-student-t-l2.json",
-  "result": "2 forward trades, -$38.13, gate fails on the 20-trade floor: true-L2 depth exists in only 16-20 of 81 forward windows per lane. Both triggers were denied by the recorded gate verdict.",
-  "unarmed": "data/strategy-verdict.json keeps promoted=false; F2_taker_1s is still the default program",
-  "incident": "run.py (1034236) and overnight_l2_supervisor.py (1425934) died at ~01:24 EST, before the first source edit of this session (01:29:17). Not restarted: the guardrails say keep run.py untouched and do not restart the L2 supervisor. Steps are in the doc.",
-  "next": "restart_flat.sh (paper, unarmed, $121.46 flat) then the L2 supervisor, then re-score with --strategy student_t_l2_settle --gate-filter"
  }
 }
