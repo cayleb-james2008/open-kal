@@ -74,5 +74,13 @@
   "log": "data/daemon-247.log",
   "report": "data/evening-report.md",
   "cadence": "hourly gate / 15-minute live checks / 6-hour cache rebuild"
+ },
+ "production_readiness_2026_11_18": {
+  "done": "Non-blocking LayaGate cache (0ms entry read), student_t_l2_settle strategy + canonical forward scorer, one shared volatility estimator, a gate filter that matches the live path, 146/146 live-exit checks. Write-up: docs/production-readiness-2026-11-18.md",
+  "artifact": "data/forward-oos-student-t-l2.json",
+  "result": "2 forward trades, -$38.13, gate fails on the 20-trade floor: true-L2 depth exists in only 16-22 of 81 forward windows per lane. With --gate-filter the recorded verdict denies both triggers (0 allowed, 2 denied).",
+  "unarmed": "data/strategy-verdict.json keeps promoted=false; F2_taker_1s is still the default program",
+  "incident": "run.py (1034236) and overnight_l2_supervisor.py (1425934) died at ~01:24 EST, before the first source edit of this session (01:29:17). Owner-approved restart at 05:01 EST: the engine is back paper/unarmed/$121.46 flat and the L2 supervisor runs in openkal-l2-supervisor.service until 08:00 EST. The R&D watcher unit was extended to 08:00 EST with its fences and RND_OOS_UNSEAL=lead unchanged.",
+  "next": "the 06:05 EST cache export should carry the true-L2 windows to 24/24; the R&D unit then runs Track 2C (which chains Track 2D) on its own. Re-score the settlement program afterwards with --strategy student_t_l2_settle --gate-filter."
  }
 }
