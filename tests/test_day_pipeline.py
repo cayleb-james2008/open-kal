@@ -936,6 +936,10 @@ def stage_seven() -> None:
         return 0, "stub restart (engine untouched)"
 
     until = datetime.now(timezone.utc) + timedelta(seconds=6.5)
+    # Stub the outside world here too: without `run`, the forward check this drill
+    # makes due would execute the production `rebuild_cache.sh` for real (hours of
+    # tape reads), not a unit test.
+    rec = Recorder(forward_trades=5)
     argv = [
         "day_supervisor.py", "--since", str(int(D.FORWARD_SINCE)),
         "--until", until.isoformat(), "--checks", "2026-11-17T23:00:00-05:00",
@@ -954,7 +958,7 @@ def stage_seven() -> None:
                  reconcile=lambda since=None: {"delta": "0.00"},
                  restart_flat=fake_restart,
                  epoch_start=lambda: float(D.FORWARD_SINCE),
-                 venue_flat=lambda: (True, "flat")):
+                 venue_flat=lambda: (True, "flat"), run=rec):
         sys.argv = argv
         D.main()
     state = read(d / "state.json")

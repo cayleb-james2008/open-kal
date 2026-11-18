@@ -25,6 +25,7 @@ then skips forever.
 """
 from __future__ import annotations
 
+import fcntl
 import gc
 import json
 import os
@@ -39,6 +40,12 @@ sys.path.insert(0, str(ROOT))
 from scripts.micro_study import LANES, MARKETS, connect  # noqa: E402
 
 CACHE = ROOT / "data" / "evolve-cache"
+# One writer at a time on the live cache. `daemon_247.py` and the overnight
+# supervisor both run this script against the same directory, and both write
+# `book_<lane>.tmp.npz` before renaming it into place: a second writer truncating
+# that temp file mid-save is the one race that can publish a corrupt book. A
+# proof run into `--out` is private, so only the live directory is locked.
+LOCK = ROOT / "data" / ".book-cache.lock"
 DEPTH_LEVELS = 3
 GATE_NOTE_CHARS = 48
 
@@ -250,22 +257,22 @@ def build(only: list[str] | None = None, force: bool = False, limit: int = 0,
     db.close()
 
 
-if __name__ == "__main__":
-    argv = sys.argv[1:]
+def main(argv: list[str] | None = None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
     lanes: list[str] = []
     force = False
     limit = 0
     out: Path | None = None
     i = 0
-    while i < len(argv):
-        arg = argv[i]
+    while i < len(args):
+        arg = args[i]
         if arg == "--force":
             force = True
-        elif arg == "--limit" and i + 1 < len(argv):
-            limit = int(argv[i + 1])
+        elif arg == "--limit" and i + 1 < len(args):
+            limit = int(args[i + 1])
             i += 1
-        elif arg == "--out" and i + 1 < len(argv):
-            out = Path(argv[i + 1])
+        elif arg == "--out" and i + 1 < len(args):
+            out = Path(args[i + 1])
             i += 1
         elif arg.startswith("--out="):
             out = Path(arg.split("=", 1)[1])
@@ -274,4 +281,29 @@ if __name__ == "__main__":
         elif not arg.startswith("--"):
             lanes.append(arg)
         i += 1
-    build(lanes or None, force=force, limit=limit, out=out)
+    # Hold the lock for the whole build, not just the write: the multi-hour read
+    # must not overlap another export either. A second invocation exits cleanly so
+    # the daemon's rebuild and the supervisor's export never stack, and neither
+    # treats the skip as a failure.
+    target = CACHE if out is None else Path(out)
+    lock_file = None
+    if target.resolve() == CACHE.resolve():
+        LOCK.parent.mkdir(parents=True, exist_ok=True)
+        lock_file = open(LOCK, "a+")
+        try:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print("cache export already active, skipping", flush=True)
+            lock_file.close()
+            return 0
+    try:
+        build(lanes or None, force=force, limit=limit, out=out)
+    finally:
+        if lock_file is not None:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            lock_file.close()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
