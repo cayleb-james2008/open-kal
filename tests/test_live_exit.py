@@ -1065,6 +1065,26 @@ def control_layagate_filter() -> None:
           and F._gate_allow(verdicts, "KXETH15M", 150.0) is None,
           "no verdict in force")
 
+    # The verdict is filed on the contract it judged. A review still in flight when
+    # the window rolls must not land on the next contract's tick row: an ablation
+    # reading that row would score the gate on a trade it never saw.
+    import tempfile
+
+    from openkal.store import Store
+    with tempfile.TemporaryDirectory() as tmp:
+        store = Store(Path(tmp) / "gate.db")
+        for ts, ticker in ((100.0, "KXSOL15M-OLD"), (101.0, "KXSOL15M-NEW")):
+            store.tick(ts=ts, series="KXSOL15M", ticker=ticker, yes_bid="0.45",
+                       yes_ask="0.47", last="0.46", spot=70.0, p_model=0.5, edge=0.0,
+                       secs_left=100.0, spread=0.02)
+        store.set_tick_gate(series="KXSOL15M", gate='{"allow": false}', ticker="KXSOL15M-OLD")
+        rows = store._db.execute(
+            "SELECT ticker, gate FROM ticks ORDER BY ts").fetchall()
+    check("gate: a verdict is filed on the contract it judged, not the next one",
+          rows[0]["ticker"] == "KXSOL15M-OLD" and rows[0]["gate"] == '{"allow": false}'
+          and rows[1]["gate"] in ("", None),
+          f"rows={[(r['ticker'], r['gate']) for r in rows]}")
+
 
 # --------------------------------------------------------------------------
 # 11. The settlement program: Student-t value, true-L2 imbalance, signed flow,

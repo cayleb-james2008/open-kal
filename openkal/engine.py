@@ -880,17 +880,20 @@ class Engine:
                 self.supervisor.fault = None
 
     # ---------- per-slot decision ----------
-    def _gate_recorder(self, slot: SlotRuntime) -> Any:
+    def _gate_recorder(self, slot: SlotRuntime, ticker: str) -> Any:
         """The callback that files Laya's opinion when the background review lands.
 
         The verdict is persisted on the trigger it judged: an offline ablation needs
-        the opinion the live lane actually saw, not a re-run with hindsight.
+        the opinion the live lane actually saw, not a re-run with hindsight. It is
+        pinned to the contract the review was about, so a review still in flight
+        when the window rolls cannot be filed against the next contract.
         """
         def record(verdict: Any) -> None:
             slot.gate = verdict_payload(verdict)
             slot.gate_ts = time.time()
             try:
-                self.store.set_tick_gate(series=slot.cfg.series, gate=json.dumps(slot.gate))
+                self.store.set_tick_gate(series=slot.cfg.series, gate=json.dumps(slot.gate),
+                                          ticker=ticker)
             except Exception:  # noqa: BLE001 - a logging failure is not a trading event
                 pass
 
@@ -909,7 +912,7 @@ class Engine:
         if not self.gate.stale(quote.ticker, mid=float(quote.mid)):
             return
         self.gate.schedule(slot, quote, seconds_left, decision,
-                           on_done=self._gate_recorder(slot))
+                           on_done=self._gate_recorder(slot, quote.ticker))
 
     def _gate_veto(self, slot: SlotRuntime, quote: Quote, decision: Decision) -> Decision:
         """Apply the cached Laya verdict to an entry. A cache read: 0ms.

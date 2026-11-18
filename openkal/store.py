@@ -149,14 +149,27 @@ class Store:
              signal, 1 if can_open else 0, stake, spot_age, hurdle, impulse_bps, gate),
         )
 
-    def set_tick_gate(self, *, series: str, gate: str) -> None:
+    def set_tick_gate(self, *, series: str, gate: str, ticker: str | None = None) -> None:
         """Attach a gate verdict to the newest tick for this lane.
 
         A shadow review is fire-and-forget, so its answer lands just after the tick
         row it judged was written. Updating the newest row keeps the verdict on the
         trigger it belongs to rather than the next one, which is the difference
         between an honest re-score and one that sees the future.
+
+        `ticker` pins it to the contract the verdict was about. A review that is
+        still in flight when the window rolls would otherwise land on the *next*
+        contract's tick row, and an ablation reading that row would score the
+        gate on a trade it never saw.
         """
+        if ticker:
+            self._exec(
+                "UPDATE ticks SET gate=? WHERE rowid=("
+                "SELECT rowid FROM ticks WHERE series=? AND ticker=? "
+                "ORDER BY ts DESC LIMIT 1)",
+                (gate, series, ticker),
+            )
+            return
         self._exec(
             "UPDATE ticks SET gate=? WHERE rowid=("
             "SELECT rowid FROM ticks WHERE series=? ORDER BY ts DESC LIMIT 1)",
