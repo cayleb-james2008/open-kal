@@ -17,7 +17,8 @@ from typing import Any
 
 from . import features, sim_core
 from .auth import KalshiClient, money
-from .config import ROOT, SeriesConfig, Settings
+from .config import (DECAY_WINDOW_TRADES, ROOT, SeriesConfig, Settings,
+                     rolling_decay_breaker)
 from .decision_gate import LayaGate, verdict_payload
 from .execution import Executor, RestingExit, RestingOrder
 from .feeds import SpotFeed
@@ -602,7 +603,11 @@ class Engine:
 
     async def _maybe_arm(self, now: float) -> None:
         """The only place `live_armed` can become true."""
-        if self.live_armed or not self.settings.arm_live or not self.settings.live:
+        # A killed process stays paper for its lifetime: `kill_reason` is set by
+        # `kill()`, which includes the decay breaker, and re-arming on the next
+        # readiness pass would undo the disarm before an operator ever saw it.
+        if (self.live_armed or self.kill_reason or not self.settings.arm_live
+                or not self.settings.live):
             return
         # 5s, not 30s, until armed. The first check runs before any quote exists (the
         # `feeds` row needs one), and a 30s retry left a whole window for a paper fill
@@ -702,6 +707,26 @@ class Engine:
             self.equity_curve = self.equity_curve[-720:]
             self._last_equity_store = now
         self.last_snapshot = now
+        await self._decay_check()
+
+    async def _decay_check(self) -> None:
+        """Disarm when the epoch's own last trades stop paying.
+
+        The forward gate is scored before arming; after it, the venue's closed
+        trades are the only evidence that the edge is still there. This runs in
+        the engine, not only in the supervisor: with no daemon running nothing
+        else would hand the account back to paper before the 20% trailing floor,
+        and a decayed 2-3 day edge can lose more than that inside ten trades.
+        """
+        if not self.live_armed:
+            return
+        trades = sorted(
+            (t for t in self.store.recent_trades(DECAY_WINDOW_TRADES * 2)
+             if float(t.get("closed_ts") or 0) >= float(self.epoch_start or 0)),
+            key=lambda t: float(t.get("closed_ts") or 0))
+        reason = rolling_decay_breaker([t.get("pnl") for t in trades], self.equity)
+        if reason:
+            await self.kill(f"rolling decay: {reason}")
 
     async def _refresh_market(self, slot: SlotRuntime) -> None:
         status, payload = await self.client.get(

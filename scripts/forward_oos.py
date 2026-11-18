@@ -34,6 +34,7 @@ import argparse
 import json
 import sqlite3
 import sys
+import time
 from collections import Counter
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -45,7 +46,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from openkal import features, sim_core  # noqa: E402
-from openkal.config import HARD_MAX_ENTRY_PRICE  # noqa: E402
+from openkal.config import (HARD_MAX_ENTRY_PRICE, REGIME_MAX_ECE,  # noqa: E402
+                            REGIME_MIN_PROFIT_FACTOR, REGIME_MIN_PROFITABLE_LANES,
+                            REGIME_MIN_TRADES, REGIME_WINDOW_HOURS)
 from openkal.decision_gate import GATE_REFRESH_S  # noqa: E402
 from openkal.strategy import (Params, Quote, decide, exit_cost,  # noqa: E402
                               taker_fee_per_contract)
@@ -171,7 +174,8 @@ def _with_true_side_costs(summary: dict, rows: list[dict]) -> dict:
 
 
 def gate_from_summary(summary: dict, payoff_ece: float,
-                      lanes_profitable: int | None = None) -> dict:
+                      lanes_profitable: int | None = None,
+                      regime: bool = False) -> dict:
     """The frozen gate, as a pure function of the scored numbers.
 
     Every condition is checked on its own, in the order a reader would: a rule
@@ -181,33 +185,48 @@ def gate_from_summary(summary: dict, payoff_ece: float,
     the gate exists to forbid. `scripts/day_supervisor.py` calls this again on
     the artifact before it promotes anything, so a hand-edited or stale result
     file cannot arm the engine on numbers nobody checked.
+
+    `regime=True` is the rolling 48h gate: the same seven conditions, with the
+    trade floor a 48h slice can reach (12), the PF a 2-3 day edge must show
+    (1.25) and the ECE a short, decile starved slice can still meet (0.10). The
+    crossed-fill and cost conditions are *not* relaxed: a fill model that
+    crossed a book is wrong at any sample size. Only the window and the counts
+    move, never the simulator.
     """
+    min_trades = REGIME_MIN_TRADES if regime else MIN_TRADES
+    required_pf = float(REGIME_MIN_PROFIT_FACTOR) if regime else REQUIRED_PF
+    required_ece = float(REGIME_MAX_ECE) if regime else REQUIRED_ECE
+    min_lanes = REGIME_MIN_PROFITABLE_LANES if regime else 2
     if lanes_profitable is None:
         lanes_profitable = sum(1 for v in (summary.get("by_lane") or {}).values()
                                if float(v.get("net") or 0) > 0)
     reasons: list[str] = []
-    if int(summary.get("trades") or 0) < MIN_TRADES:
-        reasons.append(f"{int(summary.get('trades') or 0)} forward trades < {MIN_TRADES}")
+    if int(summary.get("trades") or 0) < min_trades:
+        reasons.append(f"{int(summary.get('trades') or 0)} forward trades < {min_trades}")
     if float(summary.get("net_pnl") or 0) <= 0:
         reasons.append(f"forward net ${float(summary.get('net_pnl') or 0):.2f} <= 0")
     pf = float(summary.get("pf") or 0)
     # Exactly the seven conditions the plan names. No eighth condition is added
     # here and no condition is combined with another: a PF of 99 on two losers is
     # still PF 99 for this gate, because the trade floor is the protection.
-    if pf < REQUIRED_PF:
-        reasons.append(f"forward PF {pf:.3f} < {REQUIRED_PF}")
-    if float(payoff_ece) > REQUIRED_ECE:
-        reasons.append(f"payoff ECE {float(payoff_ece):.4f} > {REQUIRED_ECE}")
+    if pf < required_pf:
+        reasons.append(f"forward PF {pf:.3f} < {required_pf}")
+    if float(payoff_ece) > required_ece:
+        reasons.append(f"payoff ECE {float(payoff_ece):.4f} > {required_ece}")
     if int(summary.get("crossed_fills") or 0) != 0:
         reasons.append(f"{int(summary.get('crossed_fills') or 0)} crossed fills")
     if float(summary.get("max_side_cost") or 0) > CAP + 1e-9:
         reasons.append(f"max cost {float(summary.get('max_side_cost') or 0):.3f} > {CAP}")
-    if int(lanes_profitable) < 2:
-        reasons.append(f"{int(lanes_profitable)} profitable lane(s) < 2")
-    return {"pass": not reasons, "reasons": reasons, "lanes_profitable": int(lanes_profitable)}
+    if int(lanes_profitable) < min_lanes:
+        reasons.append(f"{int(lanes_profitable)} profitable lane(s) < {min_lanes}")
+    return {"pass": not reasons, "reasons": reasons,
+            "lanes_profitable": int(lanes_profitable),
+            "mode": "regime-48h" if regime else "frozen",
+            "min_trades": min_trades, "required_pf": required_pf,
+            "required_ece": required_ece, "min_lanes": min_lanes}
 
 
-def score(since: float, until: float | None = None) -> dict:
+def score(since: float, until: float | None = None, regime: bool = False) -> dict:
     """Score the frozen rule on windows closing in `[since, until)`.
 
     `until` exists for the pre-slice plumbing replay: it bounds the scorer to
@@ -292,10 +311,12 @@ def score(since: float, until: float | None = None) -> dict:
         [(float(r["p_side"]), 1 if float(r["pnl"]) > 0 else 0) for r in kept]), 4)
     lanes_pos = sum(1 for v in (summary.get("by_lane") or {}).values()
                     if float(v.get("net") or 0) > 0)
-    gate = gate_from_summary(summary, payoff_ece, lanes_pos)
+    gate = gate_from_summary(summary, payoff_ece, lanes_pos, regime=regime)
     return {
         "generated": datetime.now(timezone.utc).isoformat(),
         "score_model": "openkal.sim_core",
+        "regime_mode": regime,
+        "gate_mode": gate["mode"],
         "fill_rules": {
             "entry_lag_s": LAG_S,
             "exit_placement_lag_s": sim_core.LAG_S,
@@ -536,7 +557,7 @@ def _settlement_triggers(lane: Lane, name: str, closes: set[float],
 
 def score_student_t_l2(since: float, until: float | None = None,
                        gate_filter: bool = False, gate_min_confidence: float = 0.0,
-                       db_path: Path | None = None) -> dict:
+                       db_path: Path | None = None, regime: bool = False) -> dict:
     """Score the settlement program on windows closing in `[since, until)`.
 
     The probability this program carries is a *settlement* probability, so the
@@ -626,10 +647,12 @@ def score_student_t_l2(since: float, until: float | None = None,
     settlement_ece = float(summary["ece"]) if kept else 1.0
     lanes_pos = sum(1 for v in (summary.get("by_lane") or {}).values()
                     if float(v.get("net") or 0) > 0)
-    gate = gate_from_summary(summary, settlement_ece, lanes_pos)
+    gate = gate_from_summary(summary, settlement_ece, lanes_pos, regime=regime)
     return {
         "generated": datetime.now(timezone.utc).isoformat(),
         "score_model": "openkal.sim_core",
+        "regime_mode": regime,
+        "gate_mode": gate["mode"],
         "strategy": "student_t_l2_settle",
         "gate_filter": gate_filter,
         "gate_min_confidence": gate_min_confidence,
@@ -676,7 +699,10 @@ def score_student_t_l2(since: float, until: float | None = None,
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--since", type=float, default=float(FORWARD_OOS_START_TS))
+    # None, not the frozen start: regime mode's default is a rolling window that
+    # only exists at run time, and a non-regime run still resolves to the same
+    # `FORWARD_OOS_START_TS` it always used.
+    ap.add_argument("--since", type=float, default=None)
     # Drill only: bound the replay strictly below the forward start. The noon run
     # never passes it, so its slice is unchanged.
     ap.add_argument("--until", type=float, default=None)
@@ -689,15 +715,26 @@ def main() -> int:
     # whose trigger carried an `allow == True` verdict in the recorded ticks.
     ap.add_argument("--gate-filter", action="store_true")
     ap.add_argument("--gate-min-confidence", type=float, default=0.0)
+    # The fast-decay gate: a rolling 48h slice scored against a bar a 2-3 day
+    # edge can reach. Same rule, same simulator, same $0.62 cap and 50-contract
+    # print-through -- only the window and the counts move.
+    ap.add_argument("--regime-mode", action="store_true",
+                    help=f"score the rolling {REGIME_WINDOW_HOURS}h slice with the "
+                         "decay gate instead of the frozen all-history gate")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
+    since = args.since
+    if since is None:
+        since = (time.time() - REGIME_WINDOW_HOURS * 3600 if args.regime_mode
+                 else float(FORWARD_OOS_START_TS))
     if args.strategy == "student_t_l2_settle":
         if args.out == str(OUT):
             args.out = str(OUT_STUDENT_T)
-        report = score_student_t_l2(args.since, args.until, gate_filter=args.gate_filter,
-                                   gate_min_confidence=args.gate_min_confidence)
+        report = score_student_t_l2(since, args.until, gate_filter=args.gate_filter,
+                                   gate_min_confidence=args.gate_min_confidence,
+                                   regime=args.regime_mode)
     else:
-        report = score(args.since, args.until)
+        report = score(since, args.until, regime=args.regime_mode)
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=1, default=str))

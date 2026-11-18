@@ -7,6 +7,7 @@ unless the operator sets it deliberately.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from decimal import ROUND_DOWN, Decimal, InvalidOperation
 from pathlib import Path
@@ -104,6 +105,80 @@ def peak_drawdown_tripped(equity: Decimal | float | str | None,
     if peak <= 0:
         return False
     return current <= peak * (Decimal("1") - MAX_PEAK_DRAWDOWN_PCT)
+
+
+# --- rolling 48h regime gate ------------------------------------------------
+# A 2-3 day edge is real but short: waiting for a 20-trade, month-long sample
+# means trading it after it is gone. `scripts/forward_oos.py --regime-mode`
+# scores a rolling 48h slice with the same frozen rule and the same execution
+# model (T+1s entry, >= 50-contract print-through, $0.62 cap, settlement exits),
+# and a bar that a smaller sample can clear. Nothing about the simulator, the
+# sizing or the entry cap changes; only the evidence window and the counts it
+# has to show.
+REGIME_WINDOW_HOURS = 48
+REGIME_MIN_TRADES = 12
+REGIME_MIN_PROFIT_FACTOR = Decimal("1.25")
+REGIME_MAX_ECE = Decimal("0.10")
+REGIME_MIN_PROFITABLE_LANES = 2
+
+
+# --- live rolling-decay breaker ---------------------------------------------
+# The forward gate is scored before arming; afterwards the epoch's own closed
+# trades are the only evidence that the edge is still there. A rule that stops
+# paying must hand the account back to paper without waiting for the 20%
+# trailing balance floor: ten trades is a full sample for a 15-minute binary, and
+# 12% is the drawdown a decayed edge produces before it is obvious.
+DECAY_WINDOW_TRADES = 10
+DECAY_MIN_PROFIT_FACTOR = Decimal("1.05")
+DECAY_MAX_DRAWDOWN_PCT = Decimal("0.12")
+
+
+def rolling_decay_breaker(pnls: Iterable[Decimal | float | str],
+                          equity: Decimal | float | str, *,
+                          window: int = DECAY_WINDOW_TRADES,
+                          min_profit_factor: Decimal = DECAY_MIN_PROFIT_FACTOR,
+                          max_drawdown_pct: Decimal = DECAY_MAX_DRAWDOWN_PCT) -> str | None:
+    """The decay trip, as a pure function of the epoch's last closed trades.
+
+    `pnls` is in chronological order and `equity` is the account after the last
+    of them. Two independent ways to fail, one reason string: a profit factor
+    below `min_profit_factor` (gross wins over gross losses) says the payoff has
+    gone, and a peak-to-trough fall of more than `max_drawdown_pct` inside the
+    window says the edge is costing more than the account can carry.
+
+    Fewer than `window` trades is not a trip. A short sample cannot show decay,
+    and a breaker that fired on the first two losers would disarm every lane
+    before it had a chance to work. Returns None when the window is short or
+    healthy.
+    """
+    try:
+        trades = [Decimal(str(p)) for p in list(pnls)[-window:]]
+        current = Decimal(str(equity))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    if len(trades) < window or current <= 0:
+        return None
+    wins = sum((p for p in trades if p > 0), Decimal("0"))
+    losses = -sum((p for p in trades if p < 0), Decimal("0"))
+    pf = Decimal("Infinity") if losses == 0 else wins / losses
+    # Walk the window forward from the equity it started with, so the drawdown is
+    # measured against the running peak inside the window -- the same reading as
+    # the trailing-peak breaker, just on ten trades instead of the epoch.
+    running = peak = current - sum(trades, Decimal("0"))
+    worst = Decimal("0")
+    for pnl in trades:
+        running += pnl
+        peak = max(peak, running)
+        if peak > 0:
+            worst = max(worst, (peak - running) / peak)
+    reasons: list[str] = []
+    if pf < min_profit_factor:
+        shown = "inf" if pf == Decimal("Infinity") else f"{pf:.2f}"
+        reasons.append(f"last {window} trades PF {shown} < {min_profit_factor}")
+    if worst > max_drawdown_pct:
+        reasons.append(f"last {window} trades drawdown {worst * 100:.1f}% "
+                       f"> {max_drawdown_pct * 100:.0f}%")
+    return "; ".join(reasons) or None
 
 
 def load_env(path: Path | None = None) -> dict[str, str]:

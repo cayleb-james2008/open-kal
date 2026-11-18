@@ -1625,6 +1625,102 @@ def control_until_parse() -> None:
           f"until={rolled}")
 
 
+def control_regime_gate() -> None:
+    """The rolling 48h gate must bind on its own counts, not the frozen ones.
+
+    The frozen gate needs 20 trades and PF 1.15; a 2-3 day edge never reaches 20
+    before it decays. The regime gate lowers the sample floor to 12 and raises
+    the PF bar to 1.25, and it must still refuse a crossed fill or a 63c cost --
+    those are properties of the fill model, not of the sample size.
+    """
+    from openkal.config import (REGIME_MAX_ECE, REGIME_MIN_PROFIT_FACTOR,
+                                REGIME_MIN_TRADES, REGIME_WINDOW_HOURS)
+    from scripts import forward_oos as F
+
+    healthy = {
+        "trades": REGIME_MIN_TRADES, "net_pnl": 6.0, "pf": 1.6,
+        "crossed_fills": 0, "max_side_cost": 0.61,
+        "by_lane": {"KXBTC15M": {"net": 4.0}, "KXETH15M": {"net": 2.0},
+                    "KXSOL15M": {"net": -1.0}},
+    }
+    regime = F.gate_from_summary(healthy, 0.08, regime=True)
+    frozen = F.gate_from_summary(healthy, 0.08)
+    check("regime: the 48h thresholds are the documented ones",
+          REGIME_WINDOW_HOURS == 48 and REGIME_MIN_TRADES == 12
+          and REGIME_MIN_PROFIT_FACTOR == Decimal("1.25")
+          and REGIME_MAX_ECE == Decimal("0.10"),
+          f"{REGIME_WINDOW_HOURS}h/{REGIME_MIN_TRADES}tr/{REGIME_MIN_PROFIT_FACTOR}/"
+          f"{REGIME_MAX_ECE}")
+    check("regime: a 12-trade slice passes the regime gate and not the frozen one",
+          regime["pass"] and regime["mode"] == "regime-48h"
+          and not frozen["pass"]
+          and any("trades < 20" in r for r in frozen["reasons"]),
+          f"regime={regime['pass']} frozen={frozen['reasons']}")
+
+    def reason(**over) -> list[str]:
+        summary = dict(healthy) | over
+        return F.gate_from_summary(summary, over.pop("ece", 0.08), regime=True)["reasons"]
+
+    check("regime: 11 trades is below the 12-trade floor",
+          any("11 forward trades < 12" in r for r in reason(trades=11)),
+          str(reason(trades=11)))
+    check("regime: PF 1.24 is below the 1.25 bar",
+          any("PF 1.240 < 1.25" in r for r in reason(pf=1.24)),
+          str(reason(pf=1.24)))
+    check("regime: ECE 0.11 is above the 0.10 ceiling",
+          any("0.1100 > 0.1" in r
+              for r in F.gate_from_summary(healthy, 0.11, regime=True)["reasons"]),
+          str(F.gate_from_summary(healthy, 0.11, regime=True)["reasons"]))
+    check("regime: one profitable lane is not two",
+          any("1 profitable lane" in r for r in reason(
+              by_lane={"KXBTC15M": {"net": 4.0}, "KXETH15M": {"net": -2.0}})),
+          "one lane")
+    check("regime: a crossed fill is refused at any sample size",
+          any("1 crossed fills" in r for r in reason(crossed_fills=1)),
+          str(reason(crossed_fills=1)))
+    check("regime: a 63c entry breaches the unchanged $0.62 cap",
+          any("0.630 > 0.62" in r for r in reason(max_side_cost=0.63)),
+          str(reason(max_side_cost=0.63)))
+    check("regime: a non-positive net is refused",
+          any("net $0.00 <= 0" in r for r in reason(net_pnl=0.0)),
+          str(reason(net_pnl=0.0)))
+    # The frozen path is untouched: the same artifact on the default gate still
+    # needs 20 trades, and an ordinary passing artifact still passes it.
+    full = dict(healthy) | {"trades": 20}
+    check("regime: the frozen gate still requires its unchanged 20 trades",
+          F.gate_from_summary(full, 0.08)["pass"]
+          and F.gate_from_summary(full, 0.08)["mode"] == "frozen"
+          and not F.gate_from_summary(full | {"trades": 19}, 0.08)["pass"],
+          "frozen mode intact")
+
+
+def control_decay_breaker() -> None:
+    """The live decay breaker: ten closed trades, PF 1.05 and a 12% drawdown."""
+    from openkal.config import rolling_decay_breaker
+
+    check("decay: nine trades is a short window, not a trip",
+          rolling_decay_breaker([Decimal("-3")] * 9, 100) is None,
+          "short windows never trip")
+    check("decay: a healthy ten-trade window does not trip",
+          rolling_decay_breaker([Decimal("2")] * 7 + [Decimal("-1")] * 3, 111) is None,
+          "PF 4.67, no drawdown")
+    check("decay: no losses at all is an infinite PF, not a trip",
+          rolling_decay_breaker([Decimal("0.5")] * 10, 105) is None,
+          "lossless window")
+    even = rolling_decay_breaker([Decimal("1")] * 5 + [Decimal("-1")] * 5, 121)
+    check("decay: a PF of 1.00 trips at the 1.05 floor",
+          even is not None and "PF 1.00 < 1.05" in even, str(even))
+    # Six +$3 wins then four -$4.20 losses: PF 18/16.8 = 1.071 clears the PF
+    # floor, but the peak-to-trough inside the window is 14.2% of 118.
+    drawn = rolling_decay_breaker([Decimal("3")] * 6 + [Decimal("-4.2")] * 4,
+                                  Decimal("101.2"))
+    check("decay: a 12% inside-window drawdown trips even with PF above 1.05",
+          drawn is not None and "drawdown 14.2%" in drawn and "PF" not in drawn,
+          str(drawn))
+    check("decay: an unparseable pnl is not a trip (fail-open on data, fail-closed on edges)",
+          rolling_decay_breaker(["x"] * 10, 100) is None, "bad rows ignored")
+
+
 def main() -> int:
     tp = Decision("exit_tp", "take-profit reached", side="NO", price=Decimal("0.88"))
 
@@ -1775,6 +1871,8 @@ def main() -> int:
     control_settlement_program()
     control_brier_score()
     control_until_parse()
+    control_regime_gate()
+    control_decay_breaker()
 
     width = max(len(n) for n, _, _ in RESULTS)
     failed = 0

@@ -40,6 +40,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from openkal.config import rolling_decay_breaker  # noqa: E402
 from scripts import day_supervisor as DS  # noqa: E402
 
 SINCE = 1794909600.0
@@ -231,7 +232,7 @@ def dec(value) -> Decimal | None:
 
 
 # --------------------------------------------------------------- forward gate
-def evaluate_slot(slot: datetime, state: dict) -> dict | None:
+def evaluate_slot(slot: datetime, state: dict, args=None) -> dict | None:
     """One rebuild and one frozen score for this hourly slot.
 
     `forward_oos.py` returns 1 when the gate refuses the numbers; that is a
@@ -265,8 +266,11 @@ def evaluate_slot(slot: datetime, state: dict) -> dict | None:
         save(state)
         return None
     log(f"forward check {iso}: scoring the frozen F2 rule")
-    code, out = DS.run([str(DS.PY), str(ROOT / "scripts" / "forward_oos.py"),
-                        "--since", str(int(SINCE)), "--out", str(FORWARD)], timeout=3600)
+    cmd = [str(DS.PY), str(ROOT / "scripts" / "forward_oos.py"),
+           "--since", str(int(SINCE)), "--out", str(FORWARD)]
+    if getattr(args, "regime_mode", False):
+        cmd.append("--regime-mode")
+    code, out = DS.run(cmd, timeout=3600)
     if code not in (0, 1):
         log(f"forward scorer failed rc={code}: {out[-300:]}")
         state["last_eval_slot"] = iso
@@ -735,7 +739,7 @@ def run(args) -> int:
                 unarmed_window_check(state, st, floor_base, drawdown, delta_cap,
                                      epoch, force=hourly)
                 if hourly:
-                    fwd = evaluate_slot(slot, state)
+                    fwd = evaluate_slot(slot, state, args)
                     if fwd is DEFERRED:
                         time.sleep(min(args.interval, 30))
                         continue
@@ -799,6 +803,20 @@ def run(args) -> int:
                 trip(state, "; ".join(breaks))
                 continue
 
+            # Rolling-decay guard. The forward gate says the rule was worth
+            # arming; only this epoch's own closed trades say it still is. The
+            # trades table is newest-first and holds older epochs, so the window
+            # is sorted by close time and cut at this epoch's start.
+            epoch_trades = sorted(
+                (t for t in (st.get("trades") or [])
+                 if float(t.get("closed_ts") or 0) >= float(epoch or 0)),
+                key=lambda t: float(t.get("closed_ts") or 0))
+            decay = rolling_decay_breaker([t.get("pnl") for t in epoch_trades],
+                                         (st.get("account") or {}).get("equity") or 0)
+            if decay:
+                trip(state, f"rolling decay: {decay}")
+                continue
+
             state["last_window"] = boundary
             acc = st.get("account") or {}
             slots = st.get("slots") or []
@@ -846,6 +864,9 @@ def main() -> int:
                          "\"operator_arm_approved\": true in the verdict")
     ap.add_argument("--promote-now", action="store_true",
                     help="handover: run the audited chain now on a fresh passing artifact")
+    ap.add_argument("--regime-mode", action="store_true",
+                    help="score the rolling 48h slice with the decay gate "
+                         "(forward_oos.py --regime-mode)")
     args = ap.parse_args()
     SINCE = float(args.since)
 

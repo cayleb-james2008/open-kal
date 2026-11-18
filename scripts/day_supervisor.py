@@ -456,9 +456,14 @@ def artifact_gate(fwd: dict) -> dict:
     """
     from scripts import forward_oos as F
 
+    # A regime artifact is re-scored by the regime gate. Reading it with the
+    # frozen thresholds would refuse every artifact the rolling 48h run passed,
+    # and reading a frozen artifact with the regime thresholds would arm on half
+    # the evidence -- the artifact has to say which gate scored it.
     return F.gate_from_summary(fwd.get("trades") or {},
                                float(fwd.get("payoff_ece") or 1.0),
-                               fwd.get("lanes_profitable"))
+                               fwd.get("lanes_profitable"),
+                               regime=bool(fwd.get("regime_mode")))
 
 
 def attempt_promotion(fwd: dict, state: dict, allow_arm: bool = True) -> dict:
