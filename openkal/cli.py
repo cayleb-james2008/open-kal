@@ -96,6 +96,28 @@ async def _amain(args: argparse.Namespace) -> int:
           f"(live gate {gate}, arms only when the functional readiness gate passes) "
           f"slots={len(engine.slots)} equity=${settings.paper_equity or 'venue balance'}", flush=True)
 
+    # The websocket tapes are far too large to prune only on the shutdown path: a
+    # 34 GB `ws_book` wall means a restart is the one thing an unarmed soak must not
+    # need. This deletes rows that crossed the 3-day window in committed chunks, so
+    # the recorder keeps writing between chunks and the file stops growing while the
+    # engine runs.
+    stop_maintenance = threading.Event()
+
+    def maintain() -> None:
+        delay = 60.0
+        while not stop_maintenance.wait(delay):
+            delay = 300.0
+            try:
+                deleted = store.prune_ws(budget_s=10.0)
+            except Exception as exc:  # noqa: BLE001 - maintenance must not stop the engine
+                print(f"ws prune failed: {type(exc).__name__}: {exc}", flush=True)
+                continue
+            if deleted["ws_book"] or deleted["ws_trade"]:
+                print(f"ws prune: {deleted['ws_book']:,} book / "
+                      f"{deleted['ws_trade']:,} trade rows", flush=True)
+
+    threading.Thread(target=maintain, name="ws-prune", daemon=True).start()
+
     async def publish() -> None:
         while True:
             # `dashboard_payload` says "booting" until the engine has read the
@@ -116,6 +138,7 @@ async def _amain(args: argparse.Namespace) -> int:
         print("\nstopping", flush=True)
     finally:
         engine.stop()
+        stop_maintenance.set()
         publisher.cancel()
         with contextlib.suppress(Exception):
             await publisher

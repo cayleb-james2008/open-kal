@@ -26,7 +26,7 @@ from openkal import arming, parity  # noqa: E402
 from openkal.config import (REQUOTE_COOLDOWN_S, Settings,  # noqa: E402
                             entry_quote_allowed)
 from openkal.engine import Engine  # noqa: E402
-from openkal.store import KEEP_S, SPOT_KEEP_S, Store  # noqa: E402
+from openkal.store import KEEP_S, SPOT_KEEP_S, WS_KEEP_S, Store  # noqa: E402
 from openkal.strategy import Params  # noqa: E402
 
 RESULTS: list[tuple[str, bool, str]] = []
@@ -79,6 +79,54 @@ def test_prune_boundary() -> None:
         check("prune: an explicit zero window clears both tapes",
               store.recent_ticks("KXBTC15M", 0.0, limit=50) == []
               and store.spot_ticks("BTC-USD", 0.0, limit=50) == [])
+        store._db.close()
+
+
+def _write_ws(store: Store, ts: float, ticker: str = "KXBTC15M-T") -> None:
+    store.ws_batch([
+        ("book", ts, ticker, "0.40", "0.42", 1, "10", "12", None),
+        ("trade", ts, ticker, "0.41", "2", "yes", "{}"),
+    ])
+
+
+def test_prune_ws_boundary() -> None:
+    check("prune_ws: the websocket tapes keep 3 days", WS_KEEP_S == 86400 * 3, WS_KEEP_S)
+    with tempfile.TemporaryDirectory() as tmp:
+        store = Store(Path(tmp) / "ws-prune.db")
+        now = time.time()
+        for ts in (now - 60, now - WS_KEEP_S + 60, now - WS_KEEP_S - 60, now - 2 * WS_KEEP_S):
+            _write_ws(store, ts)
+        # chunk=1 forces the delete loop through one committed transaction per row.
+        out = store.prune_ws(chunk=1)
+        check("prune_ws: both tables are pruned", out == {"ws_book": 2, "ws_trade": 2}, out)
+        left = [r["ts"] for r in store._db.execute("SELECT ts FROM ws_book ORDER BY ts")]
+        check("prune_ws: a book row inside the window survives",
+              any(abs(t - (now - 60)) < 1 for t in left))
+        check("prune_ws: a book row just inside the boundary survives",
+              any(abs(t - (now - WS_KEEP_S + 60)) < 1 for t in left))
+        check("prune_ws: a book row just outside the boundary is deleted",
+              not any(abs(t - (now - WS_KEEP_S - 60)) < 1 for t in left))
+        trades = [r["ts"] for r in store._db.execute("SELECT ts FROM ws_trade ORDER BY ts")]
+        check("prune_ws: the print tape is pruned on the same window",
+              len(trades) == 2 and all(t > now - WS_KEEP_S for t in trades), trades)
+        again = store.prune_ws(chunk=1)
+        check("prune_ws: a second pass deletes nothing",
+              again == {"ws_book": 0, "ws_trade": 0}, again)
+        store._db.close()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        store = Store(Path(tmp) / "ws-chunk.db")
+        now = time.time()
+        for i in range(3):
+            _write_ws(store, now - WS_KEEP_S - 60 - i)
+        first = store.prune_ws(chunk=1, budget_s=1e-9)
+        check("prune_ws: a time budget stops after one chunk",
+              sum(first.values()) == 1, first)
+        second = store.prune_ws(chunk=1, budget_s=1e-9)
+        third = store.prune_ws(chunk=1)
+        check("prune_ws: later passes finish the backlog",
+              sum(first.values()) + sum(second.values()) + sum(third.values()) == 6,
+              (first, second, third))
         store._db.close()
 
 
@@ -358,6 +406,7 @@ def test_requote_cooldown() -> None:
 
 def main() -> int:
     test_prune_boundary()
+    test_prune_ws_boundary()
     test_arming_lock()
     test_fresh_engine_is_paper()
     test_boot_payload()

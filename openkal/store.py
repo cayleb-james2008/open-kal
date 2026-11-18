@@ -21,6 +21,13 @@ from typing import Any
 # wrong moment would have deleted evidence the tracker still needed.
 KEEP_S = 86400 * 3
 SPOT_KEEP_S = 86400 * 14
+# The websocket tapes are append-only and dwarf both of the above: `ws_book` is the
+# venue's ladder on every message (~1.1k rows/s, ~12 GB/day on this box) and
+# `ws_trade` is its print tape. They are evidence for a live epoch (hours) and for
+# the 6-hourly npz export, so three days is the window. Without one the file grows
+# without bound, and the old shutdown-only prune never touched it.
+WS_KEEP_S = 86400 * 3
+WS_PRUNE_CHUNK = 5000
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS ticks (
@@ -479,6 +486,75 @@ class Store:
         with self._lock:
             row = self._db.execute("SELECT v FROM meta WHERE k=?", (key,)).fetchone()
         return json.loads(row["v"]) if row else default
+
+    def _ws_boundary(self, table: str, cutoff: float) -> int | None:
+        """The last rowid written at or before the cutoff, without a table scan.
+
+        The ws tables are append-ordered (`ws_batch` inserts in arrival order), so
+        `ts` rises with `rowid`. Thirty probes find the cutoff in milliseconds;
+        `MAX(rowid) WHERE ts<?` would read the whole 34 GB tape and run for minutes
+        while the engine is trying to write to it.
+        """
+        with self._lock:
+            lo = self._db.execute(f"SELECT MIN(rowid) FROM {table}").fetchone()[0]
+            hi = self._db.execute(f"SELECT MAX(rowid) FROM {table}").fetchone()[0]
+        if lo is None or hi is None:
+            return None
+        low, high = int(lo), int(hi) + 1
+        while low < high:
+            mid = (low + high) // 2
+            with self._lock:
+                row = self._db.execute(
+                    f"SELECT ts FROM {table} WHERE rowid>=? ORDER BY rowid LIMIT 1",
+                    (mid,)).fetchone()
+            if row is None or float(row[0]) >= cutoff:
+                high = mid
+            else:
+                low = mid + 1
+        # Every row below this one was written before the first row at/after the
+        # cutoff, so it is older. The DELETE still re-checks `ts<?`: a tape that is
+        # not perfectly ordered keeps the newer row rather than trusting the hint.
+        return low - 1
+
+    def prune_ws(self, keep_s: float = WS_KEEP_S, chunk: int = WS_PRUNE_CHUNK,
+                 budget_s: float = 0.0) -> dict[str, int]:
+        """Age `ws_book` and `ws_trade` out in committed chunks.
+
+        `prune()` runs on the shutdown path and deletes one statement per table; at
+        1.1k rows/s that is a multi-minute write lock on the live DB, so the
+        websocket tapes were only ever pruned by a restart. This deletes the oldest
+        `chunk` rows at a time and commits between chunks, so the recorder keeps
+        writing: `budget_s` bounds one call (a maintenance thread returns to the
+        tick loop), and the next call resumes from the oldest surviving row.
+        """
+        cutoff = time.time() - keep_s
+        started = time.monotonic()
+        deleted = {"ws_book": 0, "ws_trade": 0}
+        for table in ("ws_book", "ws_trade"):
+            boundary = self._ws_boundary(table, cutoff)
+            if boundary is None:
+                continue
+            while True:
+                with self._lock:
+                    first = self._db.execute(
+                        f"SELECT MIN(rowid) FROM {table}").fetchone()[0]
+                    if first is None or int(first) > boundary:
+                        break
+                    cur = self._db.execute(
+                        f"DELETE FROM {table} WHERE rowid IN ("
+                        f"SELECT rowid FROM {table} WHERE rowid>=? AND rowid<=? "
+                        f"AND ts<? ORDER BY rowid LIMIT ?)",
+                        (int(first), boundary, cutoff, chunk))
+                    removed = max(0, cur.rowcount)
+                    self._db.commit()
+                deleted[table] += removed
+                if removed == 0:
+                    # Nothing else before the boundary is old enough. The next call
+                    # finds a later boundary as the cutoff advances.
+                    break
+                if budget_s and time.monotonic() - started >= budget_s:
+                    return deleted
+        return deleted
 
     def prune(self, keep_s: float = KEEP_S, spot_keep_s: float | None = None) -> None:
         """Age both tapes out, each on its own window.
