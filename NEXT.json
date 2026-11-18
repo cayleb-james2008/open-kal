@@ -754,7 +754,7 @@
    },
    "run_when": "on or after 2026-11-21 (three full days of spot_ticks), then once",
    "steps": [
-    "scripts/export_spot_ticks.py  (read-only, accumulating: appends new rows to spot_ticks.npz in the evolve cache; --dest to change; needs the engine running so the WAL files exist)",
+    "scripts/export_spot_ticks.py  (once, by hand, at the gate about 2026-11-21: read-only, accumulating; writes spot_ticks.npz to the evolve cache and mirrors it to data/track9-archive/; needs the engine running so the WAL files exist)",
     "scripts/track9_coinbase_lead_lag.py --build-tape   (consistency-checked cache snapshot plus spot_ticks.npz, pinned in data/track9-tape)",
     "scripts/track9_coinbase_lead_lag.py --check-only   (counts eligible windows against the 288 gate; computes nothing else)",
     "scripts/track9_coinbase_lead_lag.py               (the premise test, once; writes data/track9-premise.json; one run at a time)"
@@ -762,7 +762,7 @@
    "decision": "lead_lag AND funnel AND brier must all pass on IS; only then may a sweep be designed, on IS, with OOS sealed. Otherwise the premise is closed.",
    "prior_to_beat": "no taker edge at 5 s or longer delay (23.5k windows); market Brier 0.004 vs 0.039 for public feeds in the final 60 s",
    "note": "Premise test only, not a trading track. No spot_ticks data has been read.",
-   "RETENTION_RISK": "openkal Store.prune() (called only when the engine process shuts down) deletes spot_ticks rows older than 3 days. A restart on or after about 2026-11-21 deletes 2026-11-18's rows and the 288-window gate becomes unreachable. The exporter therefore ACCUMULATES: each run appends only rows above its rowid watermark, so exported rows survive a later prune. Run it daily and before any engine restart, or ask Session 1 to raise keep_s for spot_ticks. The archive then holds the only copy of pruned rows, in a directory Session 1 rebuilds.",
+   "RETENTION_RISK": "Mitigated, not removed: Session 1 raises spot_ticks keep_s to 14 days, and the exporter archive is mirrored to data/track9-archive/. A restart before the by-hand export still prunes under the old 3-day rule if keep_s has not been raised yet.",
    "clock_basis": "spot_ticks.ts = host time.time() at the Coinbase print callback; index ts = Kalshi frame received_at (Kalshi-side clock) else host time. A pass means Coinbase as our host saw it leads the RTI as Kalshi stamped it.",
    "exporter_scale": "synthetic 3,000,000-row WAL table: 10 s, 1.07 GB peak, 1 s for a run with nothing new. Not measured on the real table.",
    "owner_may_veto_before_data": [
@@ -776,7 +776,116 @@
     "validity guard: fewer than 30 bootstrap blocks or windows never passes",
     "one run at a time (lock)"
    ],
-   "unverified": "whether 288 eligible windows is reachable: every lane needs >= 30 Coinbase prints with no gap over 3 s in the last 150 s of each window; --check-only will show it"
+   "unverified": "whether 288 eligible windows is reachable: every lane needs >= 30 Coinbase prints with no gap over 3 s in the last 150 s of each window; --check-only will show it",
+   "owner_answers_2026_11_18": {
+    "veto": "none: v3 stands (Brier third gate, thresholds and S = A_1 + A_2 kept); do not amend again before data",
+    "descriptive": "A_3 and A_5 are reported only (A_3 added in aee9a39 outside the registered file; S is bit-identical with and without it)",
+    "retention": "Session 1 is raising spot_ticks keep_s to 14 days; no standing exporter job; export once by hand at the gate",
+    "export_destination": "default evolve-cache path, plus a mirror in data/track9-archive/ that Session 1 does not rebuild"
+   },
+   "tests": "tests/test_track9_premise.py 35, tests/test_export_spot_ticks.py 24"
+  },
+  "track10_champion_rescore": {
+   "status": "scored on 70 post-freeze windows: no cell shows an edge, none Holm-rejected, all six have >= 30 post-freeze trades",
+   "spec": "scripts/track10_prereg.json",
+   "spec_sha256": "0e55a88d67b47252cebe8c6c5ce9fa2fa907dcfe34389e2dc6fa6a64e654cd73",
+   "commits": {
+    "preregistration": "52450e5",
+    "code": "afa18d2"
+   },
+   "receipt": "data/track10-rescore-1795017600.json",
+   "window_ledger": "data/track10-window-ledger.json",
+   "cells": {
+    "F2_taker_1s@1s": {
+     "post_trades": 41,
+     "post_net": -50.92,
+     "pre_net": -177.98,
+     "p": 0.9646035396460354,
+     "verdict": "no_edge_shown"
+    },
+    "F2_taker_1s@2s": {
+     "post_trades": 36,
+     "post_net": -46.92,
+     "pre_net": -197.93,
+     "p": 0.9622037796220378,
+     "verdict": "no_edge_shown"
+    },
+    "F2_taker_1s@5s": {
+     "post_trades": 38,
+     "post_net": -52.92,
+     "pre_net": -191.01,
+     "p": 0.8685131486851315,
+     "verdict": "no_edge_shown"
+    },
+    "passive_mm_fade@1s": {
+     "post_trades": 36,
+     "post_net": -47.8,
+     "pre_net": -62.95,
+     "p": 0.847015298470153,
+     "verdict": "no_edge_shown"
+    },
+    "passive_mm_fade@2s": {
+     "post_trades": 35,
+     "post_net": -50.94,
+     "pre_net": -114.33,
+     "p": 0.8739126087391261,
+     "verdict": "no_edge_shown"
+    },
+    "passive_mm_fade@5s": {
+     "post_trades": 37,
+     "post_net": -31.18,
+     "pre_net": -121.72,
+     "p": 0.7362263773622638,
+     "verdict": "no_edge_shown"
+    }
+   },
+   "not_scored": [
+    "zobi_xrp_carry",
+    "zobi_band_084"
+   ],
+   "not_scored_reason": "sim_core refuses a cost ceiling above 0.62",
+   "owner_questions": [
+    "which family is the 'energy/opposite-side fade'? passive_mm_fade was assumed",
+    "may a diagnostic score the 0.62-0.84 band outside sim_core's ceiling?"
+   ]
+  },
+  "track11_queue_short_favourite_bid": {
+   "status": "pre-registered, scored in sample only: 10 fills, net -17.50, PF 0.87; bar missed; OOS sealed (oos_scored null)",
+   "spec": "scripts/track11_prereg.json",
+   "spec_sha256": "ed39fd6c19f604c129833374e0e8d60728a19d10833d7740424f2ebd0d6d45d4",
+   "commits": {
+    "queue_model": "62d71bd",
+    "preregistration_v1": "ab5ede3",
+    "amendment_v2": "1c2d615",
+    "code": "6ce0ddc"
+   },
+   "receipt": "data/track11-queue-maker.json",
+   "oos_scored": null,
+   "windows": {
+    "l2": 46,
+    "in_sample": 27,
+    "oos_sealed": 19
+   },
+   "arms": {
+    "primary": {
+     "fills": 10,
+     "net": -17.5,
+     "pf": 0.8694029850746269,
+     "eligible": false
+    },
+    "legacy_fill": {
+     "fills": 10,
+     "net": -17.5,
+     "pf": 0.8694029850746269,
+     "eligible": false
+    },
+    "long_queue": {
+     "fills": 36,
+     "net": -93.0,
+     "pf": 0.8111675126903554,
+     "eligible": false
+    }
+   }
   }
  },
  "state": {
