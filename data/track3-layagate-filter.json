@@ -1,0 +1,131 @@
+{
+ "audit_name": "track3_layagate_filter",
+ "timestamp_utc": "2026-11-18T01:19:01Z",
+ "prod_db": "/home/cayleb/open-kal/data/openkal-prod.db",
+ "db_gate_ranges": {
+  "KXBTC15M": {
+   "min_gate_ts": 1794952390.8497603,
+   "max_gate_ts": 1794964735.5424256
+  },
+  "KXETH15M": {
+   "min_gate_ts": 1794952390.8497603,
+   "max_gate_ts": 1794964735.7771704
+  },
+  "KXSOL15M": {
+   "min_gate_ts": 1794952390.8497603,
+   "max_gate_ts": 1794964735.9780896
+  },
+  "KXXRP15M": {
+   "min_gate_ts": 1794952390.8497603,
+   "max_gate_ts": 1794964736.1782033
+  }
+ },
+ "results": {
+  "track1_asian_pin_is": {
+   "trades_total": 8,
+   "gate_covered": 0,
+   "coverage_pct": 0.0,
+   "gate_allowed": 0,
+   "gate_denied": 0,
+   "before": {
+    "trades": 8,
+    "net": -26.5,
+    "pf": 0.7665198237885462,
+    "win_rate": 0.375,
+    "profitable_lanes": 2
+   },
+   "after_filtering_allow_false": {
+    "trades": 8,
+    "net": -26.5,
+    "pf": 0.7665198237885462,
+    "win_rate": 0.375,
+    "profitable_lanes": 2
+   },
+   "impact": {
+    "trades_filtered": 0,
+    "delta_net": 0.0,
+    "delta_pf": 0.0
+   }
+  },
+  "track2a_btc_lead_settle_is": {
+   "trades_total": 4,
+   "gate_covered": 0,
+   "coverage_pct": 0.0,
+   "gate_allowed": 0,
+   "gate_denied": 0,
+   "before": {
+    "trades": 4,
+    "net": 85.04,
+    "pf": Infinity,
+    "win_rate": 1.0,
+    "profitable_lanes": 3
+   },
+   "after_filtering_allow_false": {
+    "trades": 4,
+    "net": 85.04,
+    "pf": Infinity,
+    "win_rate": 1.0,
+    "profitable_lanes": 3
+   },
+   "impact": {
+    "trades_filtered": 0,
+    "delta_net": 0.0,
+    "delta_pf": 0.0
+   }
+  },
+  "track2b_flow_student_t_is": {
+   "trades_total": 44,
+   "gate_covered": 0,
+   "coverage_pct": 0.0,
+   "gate_allowed": 0,
+   "gate_denied": 0,
+   "before": {
+    "trades": 44,
+    "net": 333.25,
+    "pf": 1.9047593190888605,
+    "win_rate": 0.6136,
+    "profitable_lanes": 4
+   },
+   "after_filtering_allow_false": {
+    "trades": 44,
+    "net": 333.25,
+    "pf": 1.9047593190888605,
+    "win_rate": 0.6136,
+    "profitable_lanes": 4
+   },
+   "impact": {
+    "trades_filtered": 0,
+    "delta_net": 0.0,
+    "delta_pf": 0.0
+   }
+  },
+  "track2b_flow_student_t_oos": {
+   "trades_total": 36,
+   "gate_covered": 0,
+   "coverage_pct": 0.0,
+   "gate_allowed": 0,
+   "gate_denied": 0,
+   "before": {
+    "trades": 36,
+    "net": 229.38,
+    "pf": 1.6832479447158346,
+    "win_rate": 0.5833,
+    "profitable_lanes": 3
+   },
+   "after_filtering_allow_false": {
+    "trades": 36,
+    "net": 229.38,
+    "pf": 1.6832479447158346,
+    "win_rate": 0.5833,
+    "profitable_lanes": 3
+   },
+   "impact": {
+    "trades_filtered": 0,
+    "delta_net": 0.0,
+    "delta_pf": 0.0
+   }
+  }
+ },
+ "runtime_s": 5.647,
+ "verdict": "Blocked by data availability: first gate row in prod DB is ts 1794952390.85 (2.46h after the frozen tape ends). Coverage across all frozen triggers is 0.0%."
+}
