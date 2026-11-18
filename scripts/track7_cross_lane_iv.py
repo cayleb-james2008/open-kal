@@ -48,12 +48,14 @@ OOS_TRADES = ROOT / "data" / "track7-cross-lane-iv-oos-trades.jsonl"
 SECS = np.arange(720.0, 119.0, -5.0)               # the synchronous grid: secs_left 720..120
 RATIO, D_MIN = 1.35, 0.05
 ASK_LO_M, ASK_HI_M = 350, 600                      # taker ask band in $0.001 units
+QUOTE_MAX_AGE_S = 5.0                              # a quote older than this is not a market-implied vol
 QTY = S.MAX_QTY
 COOLDOWN, PER_WINDOW = 60.0, 2
 MIN_TRADES, MIN_PF, MIN_LANES = 20, 1.25, 2
 ALTS = ("KXETH15M", "KXSOL15M", "KXXRP15M")
 CONFIG = f"alt_iv_ratio_ge_{RATIO:.2f}x_btc_buy_itm_hold"
 CONTROL = "control_buy_itm_hold_no_dispersion_trigger"
+CONFIGS = {CONFIG: True, CONTROL: False}            # config -> does it require the dispersion trigger
 
 
 def implied_vol(mid, ln_spot_strike, tau, nu_table, s):
@@ -81,11 +83,18 @@ def collect(lane, fit: dict, cut: float, split: str) -> dict:
         windows += 1
         times = m["close"] - SECS
         a0, a1 = int(lane.book_bounds[tid]), int(lane.book_bounds[tid + 1])
-        j = np.searchsorted(lane.ts[a0:a1], times, "right") - 1
+        if a1 == a0:                                  # a ticker with no book rows has nothing to quote
+            skips["no_quote"] += len(times)
+            continue
+        bts = lane.ts[a0:a1]
+        j = np.searchsorted(bts, times, "right") - 1
         jj = np.maximum(j, 0)
         b, a = lane.bid[a0 + jj], lane.ask[a0 + jj]
         keep = (j >= 0) & np.isfinite(b) & np.isfinite(a) & (b > 0) & (a < 1) & (b < a - S.EPS)
         skips["no_quote"] += int((~keep).sum())
+        fresh = times - bts[jj] <= QUOTE_MAX_AGE_S
+        skips["stale_quote"] += int((keep & ~fresh).sum())
+        keep &= fresh
         spot = last_vals(its, v, times)
         good = np.isfinite(spot) & (spot > 0)
         skips["no_spot"] += int((keep & ~good).sum())
@@ -113,6 +122,8 @@ def collect(lane, fit: dict, cut: float, split: str) -> dict:
 def attach_btc(pack: dict, btc: dict) -> None:
     """The BTC iv_ratio at the very same window and grid second; NaN where BTC had none."""
     pack["btc_ratio"] = np.full(len(pack["key"]), np.nan)
+    if len(np.unique(btc["key"])) != len(btc["key"]):
+        raise RuntimeError("two BTC rows share a window and second: the cross-lane match would be arbitrary")
     if len(btc["key"]):
         order = np.argsort(btc["key"])
         keys, ratio = btc["key"][order], btc["ratio"][order]
@@ -199,9 +210,11 @@ def run_is() -> dict:
     cut = closes[int(len(closes) * 0.6)]
     fits = {n: fit_scale(n, cut) for n in RC.LANES}
     packs = gather(cut, "is", fits)
-    out = run_split(packs, {CONFIG: True, CONTROL: False})
+    out = run_split(packs, CONFIGS)
     summ = {c: RC.summarize(v["rows"], dict(v["skips"])) for c, v in out.items()}
-    ratio_rows = {n: int((in_band(p) & (p["ratio"] >= RATIO * p["btc_ratio"] - 1e-12)).sum()) for n, p in packs.items() if n in ALTS}
+    hit = lambda p: in_band(p) & (p["ratio"] >= RATIO * p["btc_ratio"] - 1e-12)
+    ratio_rows = {n: int(hit(p).sum()) for n, p in packs.items() if n in ALTS}
+    absz = lambda mask: float(np.median(np.concatenate([np.abs(packs[n]["z"][mask(packs[n])]) for n in ALTS])))
     C.atomic_text(IS_TRADES, "".join(json.dumps(r, default=RC._json_default) + "\n" for r in out[CONFIG]["rows"]))
     obj = {"family": FAMILY, "split": "first 60% / last 40% of the distinct settled window closes, all four lanes", "cut": cut,
            "windows": len(closes), "is_windows": sum(c < cut for c in closes), "oos_windows": sum(c >= cut for c in closes),
@@ -214,6 +227,8 @@ def run_is() -> dict:
            "config": CONFIG, "is": summ[CONFIG], "is_eligible": eligible(summ[CONFIG]), "control_is": summ[CONTROL],
            "brier_is": {"triggered_band_rows": brier_rows({n: packs[n] for n in ALTS}, lambda p: in_band(p) & (p["ratio"] >= RATIO * p["btc_ratio"] - 1e-12)),
                         "all_band_rows": brier_rows({n: packs[n] for n in ALTS}, in_band)},
+           "diagnostics": {"median_abs_z_triggered": absz(hit), "median_abs_z_in_band": absz(in_band),
+                           "quote_max_age_s": QUOTE_MAX_AGE_S},
            "oos_scored": None}
     C.save_receipt(OUT, T.clean(obj), strict=True)
     return obj
@@ -254,6 +269,12 @@ def brier_text(label: str, b: dict) -> str:
     return f"{label}: BTC-premium fair {b['model']:.4f} vs side's own ask {b['ask']:.4f} vs base rate {b['base_rate']:.4f} ({b['rows']} rows)"
 
 
+def fee_text(label: str, s: dict) -> str:
+    """Net split into the part before taker fees and the fees themselves."""
+    fees = s["fees_entry"] + s["fees_exit"]
+    return f"{label}: ${s['net'] + fees:+.2f} before ${fees:.2f} of taker fees ({fees / max(s['trades'], 1):.2f} a trade)"
+
+
 def hand_off(obj: dict) -> None:
     best, score, ok = obj["is"], obj["oos_scored"], obj["is_eligible"]
     state = {"status": "OOS scored" if score else ("IS eligible; OOS pending" if ok else "IS fail; OOS unspent"),
@@ -268,6 +289,10 @@ def hand_off(obj: dict) -> None:
              f"{trig} IS decision rows met the trigger.",
              f"- IS: {T.scorecard(best)}; eligible (>= {MIN_TRADES} trades, PF >= {MIN_PF}, >= {MIN_LANES} lanes): {ok}.",
              f"- Control, same side and band with no dispersion trigger: {T.scorecard(obj['control_is'])}.",
+             f"- Fees: {fee_text('trigger', best)}; {fee_text('control', obj['control_is'])}.",
+             f"- Conditioning: median |z_mkt| {obj['diagnostics']['median_abs_z_triggered']:.3f} on triggered rows vs "
+             f"{obj['diagnostics']['median_abs_z_in_band']:.3f} on all in-band rows (iv is proportional to 1/|z|; quotes older than "
+             f"{obj['diagnostics']['quote_max_age_s']:g}s are dropped).",
              f"- IS {brier_text('triggered rows', obj['brier_is']['triggered_band_rows'])}; {brier_text('all in-band rows', obj['brier_is']['all_band_rows'])}."]
     if score:
         lines += [f"- One sealed OOS look: {T.scorecard(score['oos'])}; payoff-ECE {score['payoff_ece']}. Rolling-edge bar pass: "

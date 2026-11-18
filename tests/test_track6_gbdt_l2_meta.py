@@ -75,6 +75,13 @@ class Sampling(unittest.TestCase):
         self.assertGreater(pack["skips"]["no_gate"], 0)
         self.assertTrue(((pack["secs"] <= 500.0) & (pack["secs"] >= 200.0)).all())
 
+    def test_a_ticker_with_no_book_rows_is_skipped_not_a_crash(self):
+        lane, ex, gates, btc, eth = build(arrays())
+        lane.ts, lane.bid, lane.ask, lane.book_bounds = np.zeros(0), np.zeros(0), np.zeros(0), np.array([0, 0])
+        ex = {k: np.zeros(0) for k in ex}
+        pack = M.collect(lane, ex, gates, btc, eth, FIT, {CLOSE}, CUT, "is")
+        self.assertEqual((len(pack["t"]), pack["skips"]["no_quote"]), (0, 316))
+
     def test_a_stale_l2_row_cannot_feed_a_later_decision(self):
         d = arrays()
         keep = ~((d["ts"] > CLOSE - 500.0) & (d["ts"] < CLOSE - 300.0))                     # the book goes quiet for 200s

@@ -40,6 +40,24 @@ def lane_of(d, y=1):
         trade_bounds=np.array([0, 0]), index={"ts": d["idx_ts"], "value": d["idx"]})
 
 
+def two_window_pack():
+    """One lane with two windows that share the same grid seconds: closes 2000 and 2800 (both in-sample)."""
+    a, b = arrays(), arrays(seed=9)
+    shift = 800.0
+    names = ["KXETH15M-W1", "KXETH15M-W2"]
+    idx_ts = np.concatenate([a["idx_ts"], b["idx_ts"] + shift])
+    order = np.argsort(idx_ts, kind="stable")
+    n = len(a["ts"])
+    lane = SimpleNamespace(
+        lane="KXETH15M", tickers=names,
+        meta={names[0]: {"strike": STRIKE, "close": CLOSE, "y": 1}, names[1]: {"strike": STRIKE, "close": CLOSE + shift, "y": 1}},
+        ts=np.concatenate([a["ts"], b["ts"] + shift]), bid=np.concatenate([a["bid"], b["bid"]]), ask=np.concatenate([a["ask"], b["ask"]]),
+        book_bounds=np.array([0, n, 2 * n]), trade_ts=np.zeros(0), trade_px=np.zeros(0), trade_sz=np.zeros(0),
+        trade_ty=np.zeros(0, np.int8), trade_bounds=np.array([0, 0, 0]),
+        index={"ts": idx_ts[order], "value": np.concatenate([a["idx"], b["idx"]])[order]})
+    return M.collect(lane, FIT, CUT, "is")
+
+
 def pack_of(d=None, y=1):
     lane = lane_of(d or arrays(), y)
     return lane, M.collect(lane, FIT, CUT, "is")
@@ -75,11 +93,12 @@ class Sampling(unittest.TestCase):
         self.assertEqual((float(pack["secs"].min()), float(pack["secs"].max())), (120.0, 720.0))
         self.assertTrue((np.diff(pack["secs"]) == -5.0).all())
         self.assertTrue(pack["itm_yes"].all())
+        self.assertTrue((pack["y"] == 1).all() and (pack["side_won"] == 1).all())            # YES in the money and YES won
         self.assertEqual(set(pack["ask_itm_m"]), {580.0})                                    # the YES ask
-        _, below = pack_of(arrays(spot0=99.7, bid=0.42, ask=0.45))                            # spot under the strike, YES cheap
+        _, below = pack_of(arrays(spot0=99.7, bid=0.42, ask=0.45), y=0)                      # spot under the strike, YES cheap
         self.assertFalse(below["itm_yes"].any())
         self.assertEqual(set(below["ask_itm_m"]), {1000.0 - 420.0})                          # NO ask = 1 - yes_bid
-        self.assertTrue(np.array_equal(below["side_won"], 1.0 - below["y"]))
+        self.assertTrue((below["y"] == 0).all() and (below["side_won"] == 1).all())          # NO in the money and NO won
 
     def test_rows_where_the_price_and_the_spot_disagree_are_dropped_and_counted(self):
         _, pack = pack_of(arrays(spot0=99.7, bid=0.55, ask=0.58))                            # spot below strike, market says YES
@@ -100,6 +119,64 @@ class Sampling(unittest.TestCase):
             self.assertEqual(pack[col][i], other[col][k], col)
         j, l = int(np.flatnonzero(pack["secs"] == 150.0)[0]), int(np.flatnonzero(other["secs"] == 150.0)[0])
         self.assertNotEqual(pack["lnsk"][j], other["lnsk"][l])                               # the perturbation is real
+
+
+class Robustness(unittest.TestCase):
+    def test_a_quote_older_than_five_seconds_is_not_a_market_implied_vol(self):
+        d = arrays()
+        keep = ~((d["ts"] > CLOSE - 500.0) & (d["ts"] < CLOSE - 300.0))                       # the book goes quiet for 200s
+        for k in ("ts", "bid", "ask"):
+            d[k] = d[k][keep]
+        _, pack = pack_of(d)
+        self.assertGreater(pack["skips"]["stale_quote"], 30)
+        self.assertFalse(((pack["secs"] < 495.0) & (pack["secs"] > 305.0)).any())
+
+    def test_a_ticker_with_no_book_rows_is_skipped_not_a_crash(self):
+        d = arrays()
+        lane = lane_of(d)
+        lane.ts, lane.bid, lane.ask, lane.book_bounds = np.zeros(0), np.zeros(0), np.zeros(0), np.array([0, 0])
+        pack = M.collect(lane, FIT, CUT, "is")
+        self.assertEqual((len(pack["t"]), pack["skips"]["no_quote"]), (0, 121))
+
+    def test_two_btc_rows_on_one_window_and_second_are_refused_not_matched_arbitrarily(self):
+        _, alt = pack_of()
+        btc = {"key": np.array([alt["key"][0], alt["key"][0]]), "ratio": np.array([1.0, 3.0])}
+        with self.assertRaisesRegex(RuntimeError, "arbitrary"):
+            M.attach_btc(alt, btc)
+
+    def test_the_window_is_part_of_the_cross_lane_key(self):
+        alt = two_window_pack()
+        first, second = alt["close"] == CLOSE, alt["close"] == CLOSE + 800.0
+        self.assertTrue(first.any() and second.any())
+        self.assertEqual(set(alt["secs"][first]), set(alt["secs"][second]))                   # the same seconds in both windows
+        M.attach_btc(alt, {"key": alt["key"][first], "ratio": np.full(int(first.sum()), 2.0)})   # BTC has only the first window
+        self.assertTrue((alt["btc_ratio"][first] == 2.0).all())
+        self.assertTrue(np.isnan(alt["btc_ratio"][second]).all())
+
+    def test_btc_is_never_traded_and_the_control_has_no_dispersion_trigger(self):
+        self.assertEqual(M.CONFIGS, {M.CONFIG: True, M.CONTROL: False})
+        lane, pack = pack_of()
+        M.attach_btc(pack, {"key": pack["key"].copy(), "ratio": pack["ratio"] / 1.5})
+        seen = []
+
+        def fake_lane(name):
+            seen.append(name)
+            return lane
+
+        with patch.object(M.AD, "Lane", side_effect=fake_lane):
+            out = M.run_split({n: pack for n in M.ALTS}, M.CONFIGS)
+        self.assertEqual(seen, list(M.ALTS))
+        self.assertGreater(len(out[M.CONFIG]["rows"]), 0)
+        self.assertGreaterEqual(len(out[M.CONTROL]["rows"]), len(out[M.CONFIG]["rows"]))
+        self.assertTrue({r["lane"] for r in out[M.CONFIG]["rows"]} <= {"KXETH15M"})
+
+    def test_the_is_phase_is_refused_once_the_family_is_on_the_ledger(self):
+        with tempfile.TemporaryDirectory() as dd:
+            ledger = Path(dd) / "l.jsonl"
+            ledger.write_text(json.dumps({"family": M.FAMILY, "status": "started"}) + "\n")
+            with patch.object(C, "LEDGER", ledger), patch.object(M, "OUT", Path(dd) / "r.json"):
+                with self.assertRaisesRegex(RuntimeError, "already has an OOS ledger entry"):
+                    M.run_is()
 
 
 class CrossLane(unittest.TestCase):
@@ -181,6 +258,10 @@ class Evaluation(unittest.TestCase):
         self.assertEqual(got["rows"], 2)
         self.assertAlmostEqual(got["model"], ((0.3 ** 2) + (0.2 ** 2)) / 2)
         self.assertAlmostEqual(got["ask"], ((0.4 ** 2) + (0.4 ** 2)) / 2)
+
+    def test_the_fee_split_adds_the_fees_back_to_the_net(self):
+        s = {"net": -81.19, "fees_entry": 200.0, "fees_exit": 39.19, "trades": 276}
+        self.assertEqual(M.fee_text("trigger", s), "trigger: $+158.00 before $239.19 of taker fees (0.87 a trade)")
 
     def test_the_is_bar_is_twenty_trades_pf_and_two_lanes(self):
         ok = {"trades": 20, "pf": 1.25, "profitable_lanes": 2, "crossed_fills": 0}

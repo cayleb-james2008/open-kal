@@ -111,6 +111,9 @@ def collect(lane, ex: dict, gates: dict, btc: tuple, eth: tuple, fit: dict, clos
         windows += 1
         times = m["close"] - SECS
         a0, a1 = int(lane.book_bounds[tid]), int(lane.book_bounds[tid + 1])
+        if a1 == a0:                                  # a ticker with no book rows has nothing to quote
+            skips["no_quote"] += len(times)
+            continue
         bts = lane.ts[a0:a1]
         j = np.searchsorted(bts, times, "right") - 1
         jj = np.maximum(j, 0)
