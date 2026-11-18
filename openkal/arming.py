@@ -23,6 +23,22 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 ARM_PATH = ROOT / "data" / "live-arm.json"
 
+
+def arm_path(lane: str | None = None) -> Path:
+    """Where one lane's operator record lives.
+
+    The crypto engine owns `data/live-arm.json`. Every separate lane gets its own
+    file, so arming a new lane can never arm the crypto lanes (or each other). The
+    name is a path-safe slug, never a caller-supplied path.
+    """
+    if not lane or lane.strip().lower() == "crypto":
+        return ARM_PATH
+    safe = "".join(ch if ch.isalnum() or ch in "-_" else "-"
+                   for ch in lane.strip().lower()).strip("-")
+    if not safe:
+        raise ValueError("lane name must contain a letter or digit")
+    return ROOT / "data" / f"live-arm-{safe}.json"
+
 # An arm is a decision about *now*. Fifteen minutes is long enough for an operator
 # to run the command and watch the next readiness pass, and short enough that a
 # forgotten record is not a standing licence.
@@ -43,7 +59,7 @@ def read(path: Path | None = None) -> dict[str, Any] | None:
 
 
 def operator_arm(by: str, *, note: str = "", path: Path | None = None,
-                 now: float | None = None) -> dict[str, Any]:
+                 now: float | None = None, lane: str | None = None) -> dict[str, Any]:
     """Write the arm record. The caller is a person naming themselves.
 
     `by` is required and cannot be a role or a hostname placeholder: an arm with no
@@ -58,7 +74,10 @@ def operator_arm(by: str, *, note: str = "", path: Path | None = None,
         "note": note,
         "nonce": uuid.uuid4().hex,
     }
-    target = path or ARM_PATH
+    if lane and lane.strip().lower() != "crypto":
+        # `--lane crypto` is the legacy engine record, not a tagged lane record.
+        record["lane"] = lane.strip().lower()
+    target = path or arm_path(lane)
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_suffix(".tmp")
     tmp.write_text(json.dumps(record, indent=2) + "\n")
@@ -83,7 +102,7 @@ def clear(path: Path | None = None) -> dict[str, Any] | None:
 
 
 def armed(record: dict[str, Any] | None, *, started: float, now: float,
-          max_age_s: float = MAX_AGE_S) -> bool:
+          max_age_s: float = MAX_AGE_S, lane: str | None = None) -> bool:
     """True only for a named record written after this process started.
 
     `record["ts"] >= started` is the restart rule: a record that predates the boot
@@ -94,10 +113,52 @@ def armed(record: dict[str, Any] | None, *, started: float, now: float,
         return False
     if not str(record.get("by") or "").strip():
         return False
+    # A lane record is only ever permission for that lane. With no lane asked for
+    # (the crypto engine's call), any record carrying a lane is refused, so a
+    # gas-no file copied onto `live-arm.json` still cannot arm crypto.
+    tagged = str(record.get("lane") or "").strip().lower()
+    wanted = (lane.strip().lower()
+              if lane is not None and lane.strip().lower() != "crypto" else None)
+    if wanted is None:
+        if tagged:
+            return False
+    elif tagged != wanted:
+        return False
     try:
         ts = float(record.get("ts") or 0.0)
     except (TypeError, ValueError):
         return False
     if ts < started - CLOCK_SLACK_S:
+        return False
+    return 0.0 <= now - ts <= max_age_s
+
+
+def fresh_operator_act(record: dict[str, Any] | None, *, now: float,
+                       lane: str | None = None,
+                       max_age_s: float = MAX_AGE_S) -> bool:
+    """A one-shot consumer's arm check: a named, fresh, lane-specific act.
+
+    `armed()` requires the record to be written *after* the process started, which
+    is right for a long-running engine: a restart must not inherit the previous
+    boot's act. A one-shot command is armed *before* it starts, so that rule would
+    reject every legitimate use. The protections that still apply are the ones
+    that matter here: a named person, the lane's own record, a 15-minute window,
+    and `consume()` so one act runs exactly one process.
+    """
+    if not record:
+        return False
+    if not str(record.get("by") or "").strip():
+        return False
+    tagged = str(record.get("lane") or "").strip().lower()
+    wanted = (lane.strip().lower()
+              if lane is not None and lane.strip().lower() != "crypto" else None)
+    if wanted is None:
+        if tagged:
+            return False
+    elif tagged != wanted:
+        return False
+    try:
+        ts = float(record.get("ts") or 0.0)
+    except (TypeError, ValueError):
         return False
     return 0.0 <= now - ts <= max_age_s

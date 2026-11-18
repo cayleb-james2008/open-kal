@@ -94,6 +94,44 @@ class Broker:
             status=order.get("status", "resting"), filled=_count(order.get("fill_count")),
         )
 
+    async def place_no_entry(self, ticker: str, no_price: Decimal, contracts: int,
+                             tif: str = "immediate_or_cancel") -> VenueOrder | None:
+        """Buy NO at `no_price` (a NO-denominated price).
+
+        Kalshi V2 quotes every order on the YES leg: `side="ask"` sells YES, and
+        the wire price is the YES price (`1 - no_price`). Sending the NO price in
+        that field is the classic inversion -- a 95c NO becomes a 5c NO -- so this
+        method exists for lanes that buy NO and must reconcile in NO terms. It is
+        deliberately separate from `place()`, whose crypto callers keep their own
+        behaviour untouched.
+        """
+        if contracts <= 0 or not (Decimal("0.01") <= Decimal(no_price) <= Decimal("0.99")):
+            return None
+        yes_price = Decimal(1) - Decimal(no_price)
+        body: dict[str, Any] = {
+            "ticker": ticker,
+            "client_order_id": str(uuid.uuid4()),
+            "side": "ask",
+            "count": str(int(contracts)),
+            "price": _cents(yes_price),
+            "time_in_force": tif,
+            "post_only": False,
+            "self_trade_prevention_type": "taker_at_cross",
+            "cancel_order_on_pause": True,
+        }
+        status, payload = await self.client.post("/portfolio/events/orders", body)
+        if status not in (200, 201):
+            self.errors.append(f"{status} {str(payload)[:160]}")
+            return None
+        order = payload.get("order") or payload
+        return VenueOrder(
+            order_id=order.get("order_id", ""),
+            client_order_id=body["client_order_id"], ticker=ticker, side="NO",
+            action="entry", price=Decimal(no_price), contracts=contracts,
+            status=order.get("status", "resting"),
+            filled=_count(order.get("fill_count")),
+        )
+
     async def cancel(self, order_id: str, market_ticker: str | None = None) -> bool:
         """V2 cancel. The shard is ambiguous without market_ticker, so always pass it."""
         params = {"exchange_index": -1}
