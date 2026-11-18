@@ -1,6 +1,6 @@
 # Open-Kal 24/7 report
 
-Updated 2026-11-18T12:32:26-05:00 by `scripts/daemon_247.py`.
+Updated 2026-11-18T12:33:12-05:00 by `scripts/daemon_247.py`.
 
 ## State
 
@@ -51,7 +51,6 @@ Updated 2026-11-18T12:32:26-05:00 by `scripts/daemon_247.py`.
 
 ## Events
 
-- 2026-11-18T11:46:54-05:00 **report**: gate refused at the hourly check
 - 2026-11-18T12:00:27-05:00 **report**: unarmed 15-minute reconcile
 - 2026-11-18T12:28:51-05:00 **report**: unarmed 15-minute reconcile
 - 2026-11-18T12:28:51-05:00 **report**: hourly slot produced no artifact
@@ -63,3 +62,4 @@ Updated 2026-11-18T12:32:26-05:00 by `scripts/daemon_247.py`.
 - 2026-11-18T12:31:26-05:00 **report**: hourly slot produced no artifact
 - 2026-11-18T12:31:56-05:00 **report**: hourly slot produced no artifact
 - 2026-11-18T12:32:26-05:00 **report**: hourly slot produced no artifact
+- 2026-11-18T12:33:12-05:00 **report**: hourly slot produced no artifact
