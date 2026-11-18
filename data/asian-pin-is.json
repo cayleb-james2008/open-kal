@@ -1,0 +1,300 @@
+{
+ "split": "IS only: markets with close < cut; the Asian model is never fitted, it is read at each decision time",
+ "cut": 1794881700.0,
+ "cut_source": "rnd_common.global_cut over the four lanes",
+ "lanes": [
+  "KXBTC15M",
+  "KXETH15M",
+  "KXSOL15M",
+  "KXXRP15M"
+ ],
+ "hurdles": [
+  0.06,
+  0.09,
+  0.12
+ ],
+ "cost_band": [
+  0.35,
+  0.6
+ ],
+ "features": [
+  "p_side",
+  "edge",
+  "secs_left",
+  "lead_sd"
+ ],
+ "dedupe": {
+  "cooldown_s": 60.0,
+  "per_window": 2
+ },
+ "sampling": {
+  "KXBTC15M": {
+   "tickers": 100,
+   "valid_samples": 4451,
+   "skips": {
+    "no_fair": 1860,
+    "quote_no_quote": 3728,
+    "quote_crossed": 561
+   }
+  },
+  "KXETH15M": {
+   "tickers": 100,
+   "valid_samples": 4734,
+   "skips": {
+    "no_fair": 1926,
+    "quote_no_quote": 3927,
+    "quote_crossed": 13
+   }
+  },
+  "KXSOL15M": {
+   "tickers": 100,
+   "valid_samples": 4915,
+   "skips": {
+    "no_fair": 2230,
+    "quote_no_quote": 3451,
+    "quote_crossed": 4
+   }
+  },
+  "KXXRP15M": {
+   "tickers": 100,
+   "valid_samples": 4884,
+   "skips": {
+    "no_fair": 2156,
+    "quote_no_quote": 3556,
+    "quote_crossed": 4
+   }
+  }
+ },
+ "trigger_counts": {
+  "h0.06": 59,
+  "h0.09": 39,
+  "h0.12": 22
+ },
+ "configs": {
+  "h0.06": {
+   "family": "final_120s_asian_pin",
+   "hurdle": 0.06,
+   "is": {
+    "trades": 44,
+    "wins": 16,
+    "losses": 28,
+    "win_rate": 0.3636,
+    "net": -286.86,
+    "pf": 0.5765654060756354,
+    "avg_pnl": -6.5195454545454545,
+    "max_entry_cost": 0.6,
+    "fees_entry": 37.86,
+    "fees_exit": 0.0,
+    "crossed_fills": 0,
+    "requotes": 0,
+    "profitable_lanes": 1,
+    "net_ex_best_lane": -325.16,
+    "net_ex_best_window": -334.1,
+    "windows": 29,
+    "by_lane": {
+     "KXBTC15M": {
+      "trades": 9,
+      "wins": 2,
+      "net": -130.3
+     },
+     "KXETH15M": {
+      "trades": 10,
+      "wins": 6,
+      "net": 38.3
+     },
+     "KXSOL15M": {
+      "trades": 13,
+      "wins": 3,
+      "net": -132.95
+     },
+     "KXXRP15M": {
+      "trades": 12,
+      "wins": 5,
+      "net": -61.91
+     }
+    },
+    "by_reason": {
+     "settle": {
+      "trades": 44,
+      "net": -286.86
+     }
+    },
+    "skips": {
+     "cost_band": 15
+    }
+   }
+  },
+  "h0.09": {
+   "family": "final_120s_asian_pin",
+   "hurdle": 0.09,
+   "is": {
+    "trades": 30,
+    "wins": 12,
+    "losses": 18,
+    "win_rate": 0.4,
+    "net": -99.24,
+    "pf": 0.7611034881201705,
+    "avg_pnl": -3.308,
+    "max_entry_cost": 0.58,
+    "fees_entry": 25.74,
+    "fees_exit": 0.0,
+    "crossed_fills": 0,
+    "requotes": 0,
+    "profitable_lanes": 1,
+    "net_ex_best_lane": -206.59,
+    "net_ex_best_window": -158.06,
+    "windows": 25,
+    "by_lane": {
+     "KXBTC15M": {
+      "trades": 6,
+      "wins": 2,
+      "net": -48.69
+     },
+     "KXETH15M": {
+      "trades": 6,
+      "wins": 5,
+      "net": 107.35
+     },
+     "KXSOL15M": {
+      "trades": 10,
+      "wins": 2,
+      "net": -111.93
+     },
+     "KXXRP15M": {
+      "trades": 8,
+      "wins": 3,
+      "net": -45.97
+     }
+    },
+    "by_reason": {
+     "settle": {
+      "trades": 30,
+      "net": -99.24
+     }
+    },
+    "skips": {
+     "cost_band": 9
+    }
+   }
+  },
+  "h0.12": {
+   "family": "final_120s_asian_pin",
+   "hurdle": 0.12,
+   "is": {
+    "trades": 15,
+    "wins": 2,
+    "losses": 13,
+    "win_rate": 0.1333,
+    "net": -235.71,
+    "pf": 0.20109137744034708,
+    "avg_pnl": -15.714,
+    "max_entry_cost": 0.58,
+    "fees_entry": 12.71,
+    "fees_exit": 0.0,
+    "crossed_fills": 0,
+    "requotes": 0,
+    "profitable_lanes": 1,
+    "net_ex_best_lane": -265.88,
+    "net_ex_best_window": -265.88,
+    "windows": 14,
+    "by_lane": {
+     "KXBTC15M": {
+      "trades": 5,
+      "wins": 1,
+      "net": -69.76
+     },
+     "KXETH15M": {
+      "trades": 1,
+      "wins": 1,
+      "net": 30.17
+     },
+     "KXSOL15M": {
+      "trades": 5,
+      "wins": 0,
+      "net": -101.16
+     },
+     "KXXRP15M": {
+      "trades": 4,
+      "wins": 0,
+      "net": -94.96
+     }
+    },
+    "by_reason": {
+     "settle": {
+      "trades": 15,
+      "net": -235.71
+     }
+    },
+    "skips": {
+     "cost_band": 7
+    }
+   }
+  }
+ },
+ "champion": {
+  "config": "h0.09",
+  "is_eligible": false,
+  "is": {
+   "trades": 30,
+   "wins": 12,
+   "losses": 18,
+   "win_rate": 0.4,
+   "net": -99.24,
+   "pf": 0.7611034881201705,
+   "avg_pnl": -3.308,
+   "max_entry_cost": 0.58,
+   "fees_entry": 25.74,
+   "fees_exit": 0.0,
+   "crossed_fills": 0,
+   "requotes": 0,
+   "profitable_lanes": 1,
+   "net_ex_best_lane": -206.59,
+   "net_ex_best_window": -158.06,
+   "windows": 25,
+   "by_lane": {
+    "KXBTC15M": {
+     "trades": 6,
+     "wins": 2,
+     "net": -48.69
+    },
+    "KXETH15M": {
+     "trades": 6,
+     "wins": 5,
+     "net": 107.35
+    },
+    "KXSOL15M": {
+     "trades": 10,
+     "wins": 2,
+     "net": -111.93
+    },
+    "KXXRP15M": {
+     "trades": 8,
+     "wins": 3,
+     "net": -45.97
+    }
+   },
+   "by_reason": {
+    "settle": {
+     "trades": 30,
+     "net": -99.24
+    }
+   },
+   "skips": {
+    "cost_band": 9
+   }
+  }
+ },
+ "champion_trades_file": "/home/cayleb/open-kal-rnd/data/asian-pin-is-trades.jsonl",
+ "settlement_calibration": {
+  "ece_is": 0.0371,
+  "n_pairs": 2365,
+  "p_side_mean": 0.4738,
+  "side_won_rate": 0.4554,
+  "cost_band": [
+   0.35,
+   0.6
+  ],
+  "pairs_over": "every IS sampled quote (secs 120..15 step 1), both sides, cost in band"
+ },
+ "runtime_s": 1.1
+}
