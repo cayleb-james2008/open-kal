@@ -59,8 +59,8 @@ MIN_TRADES, MIN_PF, MIN_LANES = 20, 1.25, 2
 WINDOW_S = 60.0
 
 
-def config_name(hurdle: float) -> str:
-    return f"h{hurdle:.2f}"
+def config_name(hurdle: float, divergence: bool = True) -> str:
+    return f"h{hurdle:.2f}" if divergence else f"control_h{hurdle:.2f}_no_divergence_trigger"
 
 
 def asian_p(spot: float, locked_sum: float, locked_s: float, secs_left: float, sigma: float, strike: float) -> float:
@@ -132,19 +132,20 @@ def diverged(pack: dict) -> np.ndarray:
     return np.abs(pack["div_bps"]) >= DIVERGENCE_BPS - 1e-9
 
 
-def triggers(pack: dict, hurdle: float) -> list[tuple[int, str, float]]:
+def triggers(pack: dict, hurdle: float, *, divergence: bool = True) -> list[tuple[int, str, float]]:
     ey = pack["p_cb"] - pack["ask_y_m"] / 1000.0
     en = (1.0 - pack["p_cb"]) - pack["ask_n_m"] / 1000.0
-    oky = diverged(pack) & band(pack["ask_y_m"]) & (ey >= hurdle - 1e-9)
-    okn = diverged(pack) & band(pack["ask_n_m"]) & (en >= hurdle - 1e-9)
+    gate = diverged(pack) if divergence else np.ones(len(pack["t"]), bool)
+    oky = gate & band(pack["ask_y_m"]) & (ey >= hurdle - 1e-9)
+    okn = gate & band(pack["ask_n_m"]) & (en >= hurdle - 1e-9)
     use_y = oky & (~okn | (ey >= en))
     keep = BS.pick({"tid": pack["tid"], "ts": pack["t"]}, oky | okn, cooldown=COOLDOWN, per_window=PER_WINDOW)
     return [(i, S.YES if use_y[i] else S.NO, float(ey[i] if use_y[i] else en[i])) for i in keep]
 
 
-def run_hurdle(lane, pack: dict, hurdle: float, out: dict) -> None:
-    name = config_name(hurdle)
-    for i, side, edge in triggers(pack, hurdle):
+def run_hurdle(lane, pack: dict, hurdle: float, out: dict, *, divergence: bool = True) -> None:
+    name = config_name(hurdle, divergence)
+    for i, side, edge in triggers(pack, hurdle, divergence=divergence):
         res = S.run_trade(RC.tape(lane, int(pack["tid"][i])), side=side, trigger_ts=float(pack["t"][i]), entry_style=S.TAKER,
                           qty=QTY, cost_lo=Decimal("0.35"), cost_hi=Decimal("0.60"))
         if isinstance(res, S.Skip):
@@ -184,10 +185,6 @@ def pick_champion(configs: dict) -> dict:
     return {"config": best, "is_eligible": bool(el), "is": configs[best]["is"]}
 
 
-def rolling_edge_bar(oos: dict) -> dict:
-    return {"pass": oos["trades"] >= 12 and oos["net"] > 0 and oos["pf"] >= MIN_PF and oos["profitable_lanes"] >= MIN_LANES}
-
-
 def gather(cut: float, split: str) -> tuple[dict, dict]:
     """(packs by lane, funnel stats); each lane object is released after its pass."""
     ticks = dict(np.load(TAPE / TICKS, allow_pickle=False))
@@ -200,12 +197,15 @@ def gather(cut: float, split: str) -> tuple[dict, dict]:
     return packs, ticks
 
 
-def run_all(packs: dict, hurdles) -> dict:
-    out = {config_name(h): {"rows": [], "skips": Counter()} for h in hurdles}
+def run_all(packs: dict, hurdles, *, controls: bool = False) -> dict:
+    """{config: {rows, skips}}; with `controls` each hurdle is also run without the divergence trigger (IS diagnostic only)."""
+    flags = (True, False) if controls else (True,)
+    out = {config_name(h, d): {"rows": [], "skips": Counter()} for h in hurdles for d in flags}
     for n in RC.LANES:
         lane = AD.Lane(n)
         for h in hurdles:
-            run_hurdle(lane, packs[n], h, out)
+            for d in flags:
+                run_hurdle(lane, packs[n], h, out, divergence=d)
         del lane
     return out
 
@@ -229,8 +229,10 @@ def run_is() -> dict:
     closes = T.window_closes(TAPE)
     cut = closes[int(len(closes) * 0.6)]
     packs, _ = gather(cut, "is")
-    out = run_all(packs, HURDLES)
-    configs = {c: {"hurdle": float(c[1:]), "is": RC.summarize(v["rows"], dict(v["skips"]))} for c, v in out.items()}
+    out = run_all(packs, HURDLES, controls=True)
+    summ = {c: RC.summarize(v["rows"], dict(v["skips"])) for c, v in out.items()}
+    configs = {config_name(h): {"hurdle": h, "is": summ[config_name(h)]} for h in HURDLES}
+    controls = {config_name(h, False): summ[config_name(h, False)] for h in HURDLES}
     champion = pick_champion(configs)
     C.atomic_text(IS_TRADES, "".join(json.dumps(r, default=RC._json_default) + "\n" for r in out[champion["config"]]["rows"]))
     obj = {"family": FAMILY, "split": "first 60% / last 40% of the distinct settled window closes, all four lanes", "cut": cut,
@@ -240,7 +242,7 @@ def run_is() -> dict:
                     "ask_band": [ASK_LO_M / 1000, ASK_HI_M / 1000], "entry": "taker, T+1s", "exit": "settle", "qty": QTY,
                     "spot_source": "ticks.npz `spot`: the engine's latest print from the lane's feed venues (Coinbase or Kraken; venue not recorded)",
                     "eligibility": [MIN_TRADES, MIN_PF, MIN_LANES]},
-           "funnel": funnel(packs), "configs": configs, "champion": champion,
+           "funnel": funnel(packs), "configs": configs, "controls_is": controls, "champion": champion,
            "brier_is": {"all_in_band": brier_rows(packs, lambda p: np.ones(len(p["t"]), bool)),
                         "diverged_in_band": brier_rows(packs, diverged)},
            "oos_scored": None}
@@ -274,7 +276,6 @@ def score_oos() -> dict:
         return out[config]["rows"], dict(out[config]["skips"]), RC.fit_payoff_model(is_rows)
 
     C.score_with_receipt(OUT, obj, FAMILY, {"config": config, "hurdle": hurdle, **obj["rule"], "frozen_input_sha256": pin["sha256"]}, scorer)
-    obj["rolling_edge_bar"] = rolling_edge_bar(obj["oos_scored"]["oos"])
     C.save_receipt(OUT, T.clean(obj), strict=True)
     return obj
 
@@ -291,7 +292,7 @@ def hand_off(obj: dict) -> None:
     state = {"status": "OOS scored" if score else ("IS eligible; OOS pending" if ok else "IS fail; OOS unspent"),
              "champion": obj["champion"]["config"], "is": best, "is_eligible": ok, "oos_spent": score is not None,
              "oos": score["oos"] if score else None, "payoff_ece": score["payoff_ece"] if score else None,
-             "strict_gate": score["gate"] if score else None, "rolling_edge_bar": obj.get("rolling_edge_bar"),
+             "strict_gate": score["gate"] if score else None,
              "funnel": obj["funnel"], "brier_is": obj["brier_is"], "brier_oos": obj.get("brier_oos"),
              "result_artifact": str(OUT.relative_to(ROOT)), "note": "Research only; no live promotion or trading."}
     f = obj["funnel"]
@@ -306,11 +307,12 @@ def hand_off(obj: dict) -> None:
               f"- No IS config met the bar (>= {MIN_TRADES} trades, PF >= {MIN_PF}, >= {MIN_LANES} lanes); best traded `{obj['champion']['config']}`: "
               f"{T.scorecard(best)}."),
              "- All configs: " + "; ".join(f"{c} {v['is']['trades']} trades, ${v['is']['net']:+.2f}" for c, v in obj["configs"].items()) + ".",
+             "- Controls (same rule with no divergence trigger, IS only, never eligible for OOS): "
+             + "; ".join(f"{c} {v['trades']} trades, ${v['net']:+.2f}, PF {v['pf']:.2f}, {v['profitable_lanes']} lanes" for c, v in obj["controls_is"].items()) + ".",
              f"- IS Brier: {brier_text('all in-band rows', obj['brier_is']['all_in_band'])}; "
              f"{brier_text('divergent rows', obj['brier_is']['diverged_in_band'])}."]
     if score:
-        lines += [f"- One sealed OOS look: {T.scorecard(score['oos'])}; payoff-ECE {score['payoff_ece']}. Rolling-edge bar pass: "
-                  f"{obj['rolling_edge_bar']['pass']}; strict repo gate pass: {score['gate']['pass']}.",
+        lines += [f"- One sealed OOS look: {T.scorecard(score['oos'])}; payoff-ECE {score['payoff_ece']}; strict repo gate pass: {score['gate']['pass']}.",
                   f"- OOS Brier: {brier_text('divergent rows', obj['brier_oos']['diverged_in_band'])}."]
     else:
         lines.append("- IS bar missed; OOS left sealed, no ledger entry.")

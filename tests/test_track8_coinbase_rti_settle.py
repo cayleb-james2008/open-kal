@@ -16,7 +16,9 @@ import numpy as np
 from openkal import sim_core as S
 from scripts import track2c_true_l2_settle as C
 from scripts import track8_coinbase_rti_settle as M
+from scripts import rnd_common as RC
 from scripts.asian_rti import AsianRTI
+from scripts.track6_gbdt_l2_meta import last_vals
 
 CLOSE, STRIKE, CUT = 2000.0, 100.0, 2900.0
 
@@ -190,6 +192,46 @@ class Trades(unittest.TestCase):
         self.assertEqual(res["rows"], [])
 
 
+class Controls(unittest.TestCase):
+    def test_the_control_drops_only_the_divergence_trigger_and_is_named_apart(self):
+        self.assertEqual((M.config_name(0.06), M.config_name(0.06, False)), ("h0.06", "control_h0.06_no_divergence_trigger"))
+        p = {"tid": np.arange(3), "t": np.arange(3) * 100.0, "div_bps": np.array([10.0, 1.0, 0.0]), "p_cb": np.full(3, 0.9),
+             "ask_y_m": np.full(3, 520.0), "ask_n_m": np.full(3, 950.0)}
+        self.assertEqual([i for i, _, _ in M.triggers(p, 0.06)], [0])
+        self.assertEqual([i for i, _, _ in M.triggers(p, 0.06, divergence=False)], [0, 1, 2])
+
+    def test_run_all_adds_the_controls_only_when_asked(self):
+        lane, _, pack = pack_of(arrays(cb_offset_bps=40.0, bid=0.50, ask=0.52))
+        with patch.object(M.AD, "Lane", return_value=lane):
+            plain = M.run_all({n: pack for n in M.RC.LANES}, (0.06,))
+            both = M.run_all({n: pack for n in M.RC.LANES}, (0.06,), controls=True)
+        self.assertEqual(set(plain), {"h0.06"})
+        self.assertEqual(set(both), {"h0.06", "control_h0.06_no_divergence_trigger"})
+
+    def test_an_empty_live_spot_series_gives_no_prices_instead_of_a_crash(self):
+        self.assertTrue(np.isnan(last_vals(np.zeros(0), np.zeros(0), np.array([1.0, 2.0]))).all())
+
+
+class Funnel(unittest.TestCase):
+    def test_the_funnel_counts_rows_divergent_rows_windows_and_rows_clearing_each_hurdle(self):
+        pack = {"windows": 5, "t": np.arange(4.0), "close": np.array([900.0, 900.0, 1800.0, 2700.0]),
+                "div_bps": np.array([9.0, -9.0, 1.0, 12.0]), "p_cb": np.array([0.70, 0.30, 0.9, 0.5]),
+                "ask_y_m": np.full(4, 520.0), "ask_n_m": np.full(4, 520.0), "skips": Counter({"no_quote": 3})}
+        got = M.funnel({"KXBTC15M": pack})["KXBTC15M"]
+        self.assertEqual((got["rows"], got["diverged_rows"], got["diverged_windows"]), (4, 3, 2))
+        self.assertEqual(got["rows_clearing_hurdle"], {"h0.06": 2, "h0.09": 2, "h0.12": 2})   # 0.70-0.52 = 0.18 and 0.70-0.52 on NO
+        self.assertEqual(got["skips"], {"no_quote": 3})
+
+
+class Trades2(unittest.TestCase):
+    def test_the_executed_band_is_passed_to_sim_core(self):
+        lane, _, pack = pack_of(arrays(cb_offset_bps=40.0, bid=0.27, ask=0.30))               # YES ask 0.30: below the 0.35 floor
+        out = {"h0.06": {"rows": [], "skips": Counter()}}
+        with patch.object(M, "triggers", return_value=[(0, S.YES, 0.2)]):
+            M.run_hurdle(lane, pack, 0.06, out)
+        self.assertEqual((out["h0.06"]["rows"], dict(out["h0.06"]["skips"])), ([], {"cost_band": 1}))
+
+
 class Evaluation(unittest.TestCase):
     def test_brier_scores_both_probabilities_and_the_ask_on_the_in_band_side_rows(self):
         pack = {"p_cb": np.array([0.8]), "p_rti": np.array([0.6]), "ask_y_m": np.array([500.0]), "ask_n_m": np.array([500.0]),
@@ -199,6 +241,12 @@ class Evaluation(unittest.TestCase):
         self.assertAlmostEqual(got["cb"], ((0.2 ** 2) + (0.2 ** 2)) / 2)                       # YES 0.8 vs 1; NO 0.2 vs 0
         self.assertAlmostEqual(got["rti"], ((0.4 ** 2) + (0.4 ** 2)) / 2)
         self.assertAlmostEqual(got["ask"], ((0.5 ** 2) + (0.5 ** 2)) / 2)
+
+    def test_brier_leaves_out_side_rows_whose_ask_is_outside_the_band(self):
+        pack = {"p_cb": np.array([0.8, 0.8]), "p_rti": np.array([0.6, 0.6]), "ask_y_m": np.array([500.0, 900.0]),
+                "ask_n_m": np.array([500.0, 100.0]), "y": np.array([1.0, 1.0])}
+        got = M.brier_rows({"A": pack}, lambda p: np.ones(2, bool))
+        self.assertEqual(got["rows"], 2)                                                       # only row 0 (YES and NO sides)
 
     def test_the_is_bar_is_twenty_trades_pf_and_two_lanes(self):
         ok = {"trades": 20, "pf": 1.25, "profitable_lanes": 2, "crossed_fills": 0}
@@ -210,6 +258,49 @@ class Evaluation(unittest.TestCase):
         cfg = lambda t, net: {"is": {"trades": t, "pf": 0.5, "profitable_lanes": 0, "crossed_fills": 0, "net": net}}
         got = M.pick_champion({"h0.06": cfg(0, 0.0), "h0.09": cfg(6, -12.0), "h0.12": cfg(3, -5.0)})
         self.assertEqual((got["config"], got["is_eligible"]), ("h0.12", False))
+
+    def receipt(self, d, **over):
+        rec = {"frozen_input_sha256": {"x": "1"}, "oos_scored": None, "cut": 1.0, "rule": {"qty": 50},
+               "champion": {"config": "h0.06", "is_eligible": True}, "configs": {"h0.06": {"hurdle": 0.06}}}
+        rec.update(over)
+        (d / "r.json").write_text(json.dumps(rec))
+        (d / "is.jsonl").write_text("")
+
+    def test_an_already_scored_receipt_is_refused_even_with_no_ledger_line(self):
+        with tempfile.TemporaryDirectory() as dd:
+            d = Path(dd)
+            self.receipt(d, oos_scored={"oos": {"trades": 1}})
+            with patch.object(M, "OUT", d / "r.json"), patch.object(M, "IS_TRADES", d / "is.jsonl"), patch.object(C, "LEDGER", d / "l.jsonl"), \
+                    patch.object(M.T, "pin_tape", return_value={"sha256": {"x": "1"}}):
+                with self.assertRaisesRegex(RuntimeError, "stays sealed"):
+                    M.score_oos()
+            self.assertFalse((d / "l.jsonl").exists())
+
+    def test_an_eligible_champion_is_scored_exactly_once_and_the_receipt_and_ledger_record_it(self):
+        def row(pnl):
+            return {"lane": "KXBTC15M", "close": 5.0, "pnl": str(pnl), "reason": "settle", "entry": "0.5", "fee_entry": "0",
+                    "fee_exit": "0", "crossed": 0, "requotes": 0, "feat": [0.5, 0.1, 40.0, 9.0]}
+        with tempfile.TemporaryDirectory() as dd:
+            d = Path(dd)
+            self.receipt(d)
+            ledger = d / "l.jsonl"
+            fake = {"h0.06": {"rows": [row(5), row(-2), row(3)], "skips": Counter()}}
+            with patch.object(M, "OUT", d / "r.json"), patch.object(M, "IS_TRADES", d / "is.jsonl"), patch.object(M, "OOS_TRADES", d / "oos.jsonl"), \
+                    patch.object(C, "LEDGER", ledger), patch.object(RC, "LEDGER", ledger), \
+                    patch.object(M.T, "pin_tape", return_value={"sha256": {"x": "1"}}), patch.object(M, "gather", return_value=({}, {})), \
+                    patch.object(M, "run_all", return_value=fake), patch.object(M, "brier_rows", return_value={"rows": 0}), \
+                    patch.object(M, "funnel", return_value={}), patch.dict(os.environ, {"RND_OOS_UNSEAL": "lead"}):
+                os.environ.pop("RND_OOS_RESCORE", None)
+                obj = M.score_oos()
+                self.assertEqual(obj["oos_scored"]["oos"]["trades"], 3)
+                lines = [json.loads(line) for line in ledger.read_text().splitlines()]
+                self.assertEqual([r["status"] for r in lines], ["started", "scored"])
+                self.assertEqual({r["family"] for r in lines}, {M.FAMILY})                      # the once-only rule keys on this name
+                self.assertEqual(json.loads((d / "r.json").read_text())["oos_scored"]["oos"]["trades"], 3)
+                self.assertEqual(len((d / "oos.jsonl").read_text().splitlines()), 3)
+                with self.assertRaises(RuntimeError):                                          # a second look is refused
+                    M.score_oos()
+                self.assertEqual(len(ledger.read_text().splitlines()), 2)
 
     def test_oos_refusals_and_the_is_ledger_guard(self):
         with tempfile.TemporaryDirectory() as dd:

@@ -84,6 +84,8 @@ def grid() -> list[tuple[str, float, str]]:
 # ------------------------------------------------------------------ sampling
 def last_vals(its: np.ndarray, v: np.ndarray, times: np.ndarray) -> np.ndarray:
     """The last index print at or before each time, NaN when it is older than `INDEX_TOL`."""
+    if len(its) == 0:
+        return np.full(len(times), np.nan)
     j = np.searchsorted(its, times, "right") - 1
     jj = np.maximum(j, 0)
     return np.where((j >= 0) & (times - its[jj] <= KF.INDEX_TOL), v[jj], np.nan)
