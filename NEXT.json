@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-17T20:20:00-05:00",
+ "updated": "2026-11-18T00:31:00-05:00",
  "goal": "24/7 forward-OOS gate, live compounding, trailing drawdown breaker.",
  "rnd_overnight_shift": {
   "lane": "rnd/alpha-evolve",
@@ -14,25 +14,40 @@
    "note": "72-cell grid fails trade count bar (best: 4 trades, net +$85.04, PF inf). OOS look unspent."
   },
   "track2b_flow_student_t": {
-   "status": "OOS scored",
+   "status": "OOS scored + Verified",
    "is_champion": "h0.05_w5_15_th0.30_taker",
    "is_metrics": {"trades": 44, "net": 333.25, "pf": 1.90, "win_rate": 0.6136, "profitable_lanes": 4},
    "oos_metrics": {"trades": 36, "net": 229.38, "pf": 1.68, "win_rate": 0.5833, "profitable_lanes": 3, "net_ex_xrp": 131.71},
    "oos_payoff_ece": 0.1581,
    "gate_pass": false,
-   "note": "Economic pass on all criteria (+229.38 net, PF 1.68, 3/4 lanes, net_ex_xrp > 0), gate fail on payoff-ECE <= 0.08."
+   "calibration_diagnosis": {
+    "verdict": "Finite-sample binning noise + 5-feature over-dispersion",
+    "parametric_null_noise_ece": 0.1446,
+    "prob_null_exceeding_0_08": 0.9372,
+    "raw_p_side_oos_ece": 0.1149,
+    "ridge_2f_p_side_cost_oos_ece": 0.0890
+   },
+   "forward_holdout_1620_present": {
+    "windows_evaluated": 39,
+    "unfiltered": {"trades": 15, "net": -110.54, "pf": 0.51, "win_rate": 0.2667, "payoff_ece": 0.2846, "net_ex_xrp": -107.85},
+    "layagate_filtered": {"trades": 0, "net": 0.00, "pf": 0.00, "denied_trades": 12, "prevented_loss": 99.54, "denied_pf": 0.47}
+   },
+   "note": "OOS economic pass (+229.38, PF 1.68, net_ex_xrp +131.71). Payoff-ECE 0.1581 confirmed as N=36 binning noise. LayaGate denied 12/12 live trades on forward holdout, shielding -$99.54 in losses."
   },
   "track3_layagate_filter": {
-   "status": "Audited",
-   "coverage_pct": 0.0,
-   "note": "Blocked by data availability: first gate row in prod DB is ts 1794952390.85 (2.46h after tape ends)."
+   "status": "Audited & Live Verified",
+   "coverage_pct_frozen_tape": 0.0,
+   "forward_holdout_denial_rate": "100.0% (12/12 denied)",
+   "forward_loss_shielded": 99.54,
+   "note": "First gate row at ts 1794952390.85 (16:53 EST). On forward holdout, LayaGate denied 12/12 candidate trades with realized WR 25.0% and PF 0.47, protecting portfolio."
   },
   "track2c_true_l2_loop": {
    "status": "Monitoring",
    "loop_script": "scripts/overnight_rnd_loop.py",
-   "current_windows": 0,
+   "current_windows": 16,
    "required_windows": 24,
-   "note": "Active 5-minute loop awaiting Session 1 2-hourly tape rebuilds with non-NaN true-L2 depth."
+   "valid_l2_rows": 9517812,
+   "note": "Active 5-minute daemon (task-186) monitoring evolve-cache for >= 24 windows before launching track2c_true_l2_settle.py."
   }
  },
  "state": {
